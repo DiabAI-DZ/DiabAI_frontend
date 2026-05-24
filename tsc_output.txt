@@ -1,0 +1,6 @@
+src/screens/GlucoVisionHome.tsx(22,22): error TS2322: Type '{ onBack: () => void; onComplete: () => void; }' is not assignable to type 'IntrinsicAttributes & ScanFlowProps'.
+  Property 'onBack' does not exist on type 'IntrinsicAttributes & ScanFlowProps'.
+src/screens/LogbookScreen.tsx(65,107): error TS2339: Property 'divider' does not exist on type '{ red: string; redDark: string; redLight: string; redBg: string; redBorder: string; redMuted: string; green: string; greenBg: string; greenBorder: string; amber: string; amberBg: string; amberBorder: string; ... 12 more ...; black: string; }'.
+src/screens/ScanFlow.tsx(42,26): error TS2339: Property 'button' does not exist on type '{ container: { flex: number; }; message: { fontSize: number; }; header: { flexDirection: "row"; justifyContent: "space-between"; alignItems: "center"; padding: number; zIndex: number; }; headerTitle: { ...; }; ... 17 more ...; confirmText: { ...; }; }'.
+src/screens/ScanFlow.tsx(65,9): error TS2353: Object literal may only specify known properties, and 'value' does not exist in type 'Omit<LogEntry, "id">'.
+src/screens/ScanFlow.tsx(214,19): error TS2551: Property 'absoluteFillObject' does not exist on type 'typeof StyleSheet'. Did you mean 'absoluteFill'?

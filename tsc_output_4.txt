@@ -1,0 +1,5 @@
+src/screens/Dashboard.tsx(99,58): error TS2339: Property 'value' does not exist on type 'LogEntry'.
+  Property 'value' does not exist on type 'MealEntry'.
+src/screens/Dashboard.tsx(100,57): error TS2339: Property 'unit' does not exist on type 'LogEntry'.
+  Property 'unit' does not exist on type 'MealEntry'.
+src/screens/ScanFlow.tsx(220,5): error TS2698: Spread types may only be created from object types.
