@@ -52,9 +52,18 @@ const normalizeBaseUrl = (value: string): string => {
 
 export const authApi = {
   baseUrl: AUTH_BASE_URL,
+  token: null as string | null,
 
   setBaseUrl(newUrl: string) {
     this.baseUrl = normalizeBaseUrl(newUrl);
+  },
+
+  setToken(newToken: string | null) {
+    this.token = newToken;
+  },
+
+  getToken(): string | null {
+    return this.token;
   },
 
   async login(email: string, password: string) {

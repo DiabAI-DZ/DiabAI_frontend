@@ -51,13 +51,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteLog = useCallback(async (id: number) => {
     try {
-      await apiService.deleteLog(id);
+      const log = logs.find(l => l.id === id);
+      await apiService.deleteLog(id, log?.type);
       setLogs((prev) => prev.filter(l => l.id !== id));
     } catch (error) {
       console.error("DataContext: Failed to delete log:", error);
       throw error;
     }
-  }, []);
+  }, [logs]);
 
   const markAlertRead = useCallback(async (id: number) => {
     try {

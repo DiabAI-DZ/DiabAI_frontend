@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import Svg, { Path, Line, Circle, Defs, LinearGradient as SvgLinearGradient, Sto
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
 import { useUser } from '../context/UserContext';
+import { apiService } from '../services/apiService';
 import { 
   Bell, 
   TrendingUp, 
@@ -29,7 +30,7 @@ import {
   Target
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MeasurementEntry, GlucoseStatus, MealEntry } from '../services/types';
+import { MeasurementEntry, GlucoseStatus, MealEntry, HomeData } from '../services/types';
 
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - 48;

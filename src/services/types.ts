@@ -75,3 +75,45 @@ export interface AISummary {
   recommendation: string;
   status: "Normal" | "High" | "Low";
 }
+
+export interface HomeRecommendation {
+  id: number;
+  title: string;
+  image_url: string | null;
+  impact_level: "low" | "moderate" | "high";
+  impact_label: string;
+  calories: number;
+  estimated_glucose_impact_mg_dl: number;
+}
+
+export interface HomeTrendPoint {
+  date: string;
+  label: string;
+  avg_value: number | null;
+}
+
+export interface HomeData {
+  greeting: {
+    name: string;
+    date: string;
+  };
+  latest_reading?: {
+    id: number;
+    value_mg_dl: number;
+    health_status: "low" | "normal" | "high";
+    trend: "stable" | "rising" | "falling" | null;
+    delta_since_last: number | null;
+    measured_at: string;
+    target: {
+      min: number;
+      max: number;
+    };
+  } | null;
+  glucose_trend: {
+    period: "7d" | "30d";
+    target_min: number;
+    target_max: number;
+    points: HomeTrendPoint[];
+  };
+  recommendations: HomeRecommendation[];
+}

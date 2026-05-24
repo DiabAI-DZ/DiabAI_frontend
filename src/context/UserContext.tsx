@@ -43,14 +43,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       const result = await authApi.login(email, password);
-      // Fetch user profile or map credentials upon successful authentication
-      const userProfile: UserProfile = {
-        name: result.user?.name || result.name || email.split('@')[0],
-        email: email,
-        diabetesType: "Type 2", // Default
-        glucoseUnit: "mg/dL",
-        goals: { min: 70, max: 140 }
-      };
+      if (result && result.access_token) {
+        authApi.setToken(result.access_token);
+      }
+      // Fetch user profile upon successful authentication
+      const userProfile = await apiService.fetchProfile();
       setProfile(userProfile);
     } catch (error) {
       console.error("Sign in failed:", error);
@@ -83,6 +80,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = () => {
     console.log("Signing out...");
+    authApi.setToken(null);
     setProfile(null);
   };
 
