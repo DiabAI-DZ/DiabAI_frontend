@@ -1,13 +1,20 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
-// Standard local development base URL.
-// 10.0.2.2 is the Android emulator's alias to your computer's localhost.
-// For iOS simulators or web, localhost (127.0.0.1) is used.
-// If testing on a physical device, change this to your computer's local network IP (e.g. "http://192.168.1.100:8000").
-export const AUTH_BASE_URL = Platform.select({
-  android: 'http://10.0.2.2:8000',
-  default: 'http://localhost:8000',
-});
+const getDevHostIp = (): string => {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (!hostUri) {
+    return Platform.select({
+      android: '10.0.2.2',
+      default: 'localhost',
+    }) || 'localhost';
+  }
+  return hostUri.split(':')[0];
+};
+
+// Auto-discovers your computer's local IP address during development.
+// This allows physical devices (using Expo Go) to connect to the backend without manual configuration.
+export const AUTH_BASE_URL = `http://${getDevHostIp()}:8000`;
 
 export class AuthApiException extends Error {
   statusCode?: number;

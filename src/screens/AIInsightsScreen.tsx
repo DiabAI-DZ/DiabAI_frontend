@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,42 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
+import Svg, { Path, Line, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
 import { useUser } from '../context/UserContext';
-import { Send, Sparkles, User, Trash2, AlertCircle } from 'lucide-react-native';
+import {
+  Send,
+  Sparkles,
+  User,
+  Trash2,
+  AlertCircle,
+  Brain,
+  Activity,
+  AlertTriangle,
+  Clock,
+  Zap,
+  Moon,
+  Eye,
+  Utensils,
+  Sun,
+  BarChart3,
+  Lightbulb,
+  Coffee,
+  Syringe,
+  Shield,
+  CheckCircle2,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+} from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width } = Dimensions.get('window');
+const CHART_WIDTH = width - 48;
+const CHART_HEIGHT = 110;
 
 interface Message {
   id: string;
@@ -24,11 +55,76 @@ interface Message {
   isError?: boolean;
 }
 
+// Sparkline Component using Svg
+const MiniSparkline: React.FC<{ data: number[]; color: string }> = ({ data, color }) => {
+  const h = 24;
+  const w = 56;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+
+  const points = data.map((val, idx) => {
+    const x = (idx / (data.length - 1)) * w;
+    const y = h - ((val - min) / range) * (h - 4) - 2;
+    return { x, y };
+  });
+
+  const path = points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
+  return (
+    <Svg width={w} height={h}>
+      <Path d={path} fill="none" stroke={color} strokeWidth={1.8} />
+    </Svg>
+  );
+};
+
+// Circular Progress Component using Svg
+const ProgressRing: React.FC<{ value: number; max: number; size: number; strokeWidth: number; color: string; bgColor: string }> = ({
+  value,
+  max,
+  size,
+  strokeWidth,
+  color,
+  bgColor,
+}) => {
+  const r = (size - strokeWidth) / 2;
+  const circ = 2 * Math.PI * r;
+  const strokeDashoffset = circ - (value / max) * circ;
+
+  return (
+    <Svg width={size} height={size}>
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={bgColor}
+        strokeWidth={strokeWidth}
+      />
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeDasharray={`${circ} ${circ}`}
+        strokeDashoffset={strokeDashoffset}
+        strokeLinecap="round"
+        rotation="-90"
+        origin={`${size / 2}, ${size / 2}`}
+      />
+    </Svg>
+  );
+};
+
 const AIInsightsScreen: React.FC = () => {
   const { C, isDark } = useTheme();
-  const { getAIInsight } = useData();
+  const { logs, alerts, getAIInsight, loading: dataLoading } = useData();
   const { profile } = useUser();
-  
+  const [activeSegment, setActiveSegment] = useState<'dashboard' | 'chat'>('dashboard');
+
+  // --- CHAT STATE ---
   const initialMessage: Message = {
     id: '1',
     text: `Hello ${profile?.name || 'there'}! I'm your DiabAI assistant. How can I help you manage your health today?`,
@@ -94,148 +190,1219 @@ const AIInsightsScreen: React.FC = () => {
     );
   }, [profile]);
 
+  // --- DASHBOARD HARDCODED/COMPUTED VALUES FROM FIGMA MAKE ---
+  const weeklyTrendData = [128, 142, 118, 155, 132, 125, 130];
+  const predictionData = [
+    { t: "Now", actual: 130, predicted: 130 },
+    { t: "16:00", actual: null, predicted: 142 },
+    { t: "17:00", actual: null, predicted: 158 },
+    { t: "18:00", actual: null, predicted: 172 },
+    { t: "19:00", actual: null, predicted: 180 },
+    { t: "20:00", actual: null, predicted: 168 },
+  ];
+
+  const mealImpactData = [
+    { meal: "White Rice", before: 110, after: 152, delta: "+42", emoji: "🍚", severity: "high" as const },
+    { meal: "Grilled Chicken", before: 115, after: 123, delta: "+8", emoji: "🍗", severity: "low" as const },
+    { meal: "Orange Juice", before: 105, after: 140, delta: "+35", emoji: "🧃", severity: "high" as const },
+    { meal: "Mixed Salad", before: 120, after: 125, delta: "+5", emoji: "🥗", severity: "low" as const },
+  ];
+
+  const anomalyAlerts = [
+    { id: 1, title: "3 hypoglycemia events detected", desc: "Blood glucose dropped below 70 mg/dL on Mon, Wed, Fri — mostly before lunch", severity: "high" as const, icon: Zap, iconColor: '#EF4444', bg: '#FEF2F2', border: '#FECACA', time: "Last 7 days" },
+    { id: 2, title: "High glucose levels at night", desc: "Readings between 9PM–12AM averaged 158 mg/dL — 40% above normal range", severity: "medium" as const, icon: Moon, iconColor: C.amber, bg: C.amberBg, border: C.amberBorder, time: "Nightly pattern" },
+    { id: 3, title: "Irregular meal timing pattern", desc: "Lunch timing varied by ±90 min this week — affecting post-meal spikes", severity: "low" as const, icon: Clock, iconColor: C.blue, bg: C.blueBg, border: C.blueBorder, time: "Behavioral" },
+  ];
+
+  const patterns = [
+    { id: 1, title: "Post-lunch glucose spike", desc: "Avg +38 mg/dL within 2hrs after lunch — significantly higher than other meals", icon: Utensils, iconBg: C.amberBg, color: C.amber, confidence: 94, trend: "up" as const, sparkData: [115, 120, 135, 155, 148, 138] },
+    { id: 2, title: "Stable morning glucose", desc: "6AM–10AM readings consistently between 95–115 mg/dL — excellent stability", icon: Sun, iconBg: C.greenBg, color: C.green, confidence: 91, trend: "stable" as const, sparkData: [102, 105, 98, 108, 103, 106] },
+    { id: 3, title: "Weekend elevation pattern", desc: "Weekend glucose averages 15 mg/dL higher — likely due to dietary changes", icon: BarChart3, iconBg: C.orangeBg, color: C.orange, confidence: 87, trend: "up" as const, sparkData: [125, 128, 132, 142, 148, 138] },
+    { id: 4, title: "Exercise lowers readings", desc: "Post-exercise readings average 22 mg/dL lower for 3+ hours", icon: Activity, iconBg: C.blueBg, color: C.blue, confidence: 89, trend: "down" as const, sparkData: [140, 132, 118, 112, 108, 110] },
+  ];
+
+  const recommendations = [
+    { id: 1, title: "Reduce carbs at lunch", desc: "Your post-lunch average is 165 mg/dL. Try replacing white rice with cauliflower rice or quinoa.", icon: Utensils, iconBg: C.amberBg, priority: "High", color: '#EF4444', bg: '#FEF2F2', border: '#FECACA' },
+    { id: 2, title: "Add a mid-morning snack", desc: "A small protein snack before 11:00 can prevent the hypoglycemia dips detected this week.", icon: Coffee, iconBg: C.greenBg, priority: "Medium", color: C.amber, bg: C.amberBg, border: C.amberBorder },
+    { id: 3, title: "15-min walk after dinner", desc: "Light post-meal activity can reduce nighttime spikes by ~20 mg/dL based on your data.", icon: Activity, iconBg: C.blueBg, priority: "Suggested", color: C.blue, bg: C.blueBg, border: C.blueBorder },
+  ];
+
+  // Prediction Custom SVG Graph
+  const predictionSVG = useMemo(() => {
+    const minVal = 100;
+    const maxVal = 200;
+    const paddingLeft = 25;
+    const paddingRight = 10;
+    const paddingTop = 10;
+    const paddingBottom = 20;
+
+    const graphWidth = CHART_WIDTH - paddingLeft - paddingRight;
+    const graphHeight = CHART_HEIGHT - paddingTop - paddingBottom;
+
+    const pointsActual = predictionData.map((item, index) => {
+      if (item.actual === null) return null;
+      const x = paddingLeft + (index / (predictionData.length - 1)) * graphWidth;
+      const y = paddingTop + graphHeight - ((item.actual - minVal) / (maxVal - minVal)) * graphHeight;
+      return { x, y };
+    }).filter(Boolean) as { x: number; y: number }[];
+
+    const pointsPred = predictionData.map((item, index) => {
+      const x = paddingLeft + (index / (predictionData.length - 1)) * graphWidth;
+      const y = paddingTop + graphHeight - ((item.predicted - minVal) / (maxVal - minVal)) * graphHeight;
+      return { x, y };
+    });
+
+    const pathActual = pointsActual.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    const pathPred = pointsPred.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
+    const limitY = paddingTop + graphHeight - ((140 - minVal) / (maxVal - minVal)) * graphHeight;
+
+    return {
+      pointsActual,
+      pointsPred,
+      pathActual,
+      pathPred,
+      limitY,
+      paddingLeft,
+    };
+  }, []);
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[styles.container, { backgroundColor: C.bg }]}
     >
+      {/* Header */}
       <View style={[styles.header, { borderBottomColor: C.divider }]}>
-        <View style={styles.titleRow}>
-          <Sparkles size={24} color={C.red} fill={C.red} />
+        <View style={styles.headerTitleRow}>
+          <Brain size={24} color={C.red} strokeWidth={2.5} />
           <View>
-            <Text style={[styles.title, { color: C.text }]}>AI Insights</Text>
-            <Text style={[styles.subtitle, { color: C.textSm }]}>Personalized advice by Gemini</Text>
+            <Text style={[styles.headerTitleText, { color: C.text }]}>AI Insights</Text>
+            <Text style={[styles.headerSubText, { color: C.textSm }]}>Personalized advice by Gemini</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={clearChat} style={[styles.clearBtn, { backgroundColor: C.redBg }]}>
-          <Trash2 size={20} color={C.red} />
-        </TouchableOpacity>
-      </View>
 
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.chatArea}
-        contentContainerStyle={styles.chatContent}
-        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-      >
-        {messages.map((msg) => (
-          <View
-            key={msg.id}
-            style={[
-              styles.messageWrapper,
-              msg.sender === 'user' ? styles.userWrapper : styles.aiWrapper
-            ]}
-          >
-            <View style={[
-              styles.avatarContainer,
-              { backgroundColor: msg.sender === 'user' ? C.bg : C.redBg }
-            ]}>
-              {msg.sender === 'user' ? <User size={16} color={C.textSm} /> : <Sparkles size={16} color={C.red} />}
-            </View>
-            <View style={[
-              styles.messageBubble,
-              { backgroundColor: msg.sender === 'user' ? C.red : (msg.isError ? '#FEF2F2' : C.white) },
-              msg.sender === 'user' ? styles.userBubble : styles.aiBubble,
-              msg.isError && { borderColor: '#FECACA', borderWidth: 1 }
-            ]}>
-              {msg.isError && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <AlertCircle size={14} color="#EF4444" />
-                  <Text style={{ fontSize: 10, fontWeight: '900', color: '#EF4444' }}>ERROR</Text>
-                </View>
-              )}
-              <Text style={[
-                styles.messageText,
-                { color: msg.sender === 'user' ? '#FFF' : (msg.isError ? '#B91C1C' : C.text) }
-              ]}>
-                {msg.text}
-              </Text>
-              <Text style={[
-                styles.messageTime,
-                { color: msg.sender === 'user' ? 'rgba(255,255,255,0.7)' : C.textXs }
-              ]}>
-                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </Text>
-            </View>
-          </View>
-        ))}
-        {loading && (
-          <View style={styles.aiWrapper}>
-             <View style={[styles.avatarContainer, { backgroundColor: C.redBg }]}>
-                <Sparkles size={16} color={C.red} />
-             </View>
-             <View style={[styles.messageBubble, { backgroundColor: C.white }, styles.aiBubble]}>
-                <View style={styles.typingIndicator}>
-                  <ActivityIndicator size="small" color={C.red} />
-                  <Text style={[styles.messageText, { color: C.textSm, marginLeft: 8 }]}>Thinking...</Text>
-                </View>
-             </View>
-          </View>
+        {activeSegment === 'chat' && (
+          <TouchableOpacity onPress={clearChat} style={[styles.clearBtn, { backgroundColor: C.redBg }]}>
+            <Trash2 size={18} color={C.red} />
+          </TouchableOpacity>
         )}
-      </ScrollView>
-
-      <View style={[styles.inputContainer, { backgroundColor: C.white, borderTopColor: C.divider }]}>
-        <TextInput
-          style={[styles.input, { color: C.text, backgroundColor: isDark ? '#222' : '#F5F5F5' }]}
-          placeholder="Ask about your trends, sugar levels..."
-          placeholderTextColor={C.textXs}
-          value={input}
-          onChangeText={setInput}
-          onSubmitEditing={handleSend}
-          multiline
-        />
-        <TouchableOpacity
-          onPress={handleSend}
-          disabled={!input.trim() || loading}
-          style={[
-            styles.sendBtn,
-            { backgroundColor: input.trim() && !loading ? C.red : C.redBorder }
-          ]}
-        >
-          <Send size={20} color="#FFF" />
-        </TouchableOpacity>
       </View>
+
+      {/* Segment Selector Tab */}
+      <View style={styles.tabSelectorContainer}>
+        <View style={[styles.tabSelectorBg, { backgroundColor: C.redBg }]}>
+          <TouchableOpacity
+            style={[styles.tabBtn, activeSegment === 'dashboard' && [styles.activeTabBtn, { backgroundColor: C.red }]]}
+            onPress={() => setActiveSegment('dashboard')}
+          >
+            <Text style={[styles.tabBtnText, { color: activeSegment === 'dashboard' ? '#FFF' : C.redMuted }]}>
+              Intelligence Dashboard
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabBtn, activeSegment === 'chat' && [styles.activeTabBtn, { backgroundColor: C.red }]]}
+            onPress={() => setActiveSegment('chat')}
+          >
+            <Text style={[styles.tabBtnText, { color: activeSegment === 'chat' ? '#FFF' : C.redMuted }]}>
+              Ask DiabAI
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {activeSegment === 'dashboard' ? (
+        <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          
+          {/* Card 1: Glucose Control Summary */}
+          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder }]}>
+            <LinearGradient colors={[C.red, C.redDark]} style={styles.cardHeaderStrip}>
+              <View style={styles.cardHeaderLeft}>
+                <Activity size={14} color="rgba(255,255,255,0.7)" />
+                <Text style={styles.cardHeaderTitle}>GLUCOSE CONTROL SUMMARY</Text>
+              </View>
+              <View style={styles.statusPill}>
+                <View style={styles.statusDotGreen} />
+                <Text style={styles.statusPillText}>Good Control</Text>
+              </View>
+            </LinearGradient>
+
+            <View style={styles.summaryMetricsRow}>
+              {/* Avg */}
+              <View style={styles.metricBox}>
+                <Text style={[styles.metricLabel, { color: C.textXs }]}>AVG GLUCOSE</Text>
+                <Text style={[styles.metricVal, { color: C.text }]}>132 <Text style={styles.metricUnit}>mg/dL</Text></Text>
+                <View style={styles.metricTrend}>
+                  <TrendingDown size={11} color={C.green} />
+                  <Text style={[styles.metricTrendText, { color: C.green }]}>-8 vs last week</Text>
+                </View>
+              </View>
+
+              {/* Progress Ring */}
+              <View style={styles.ringContainer}>
+                <Text style={[styles.metricLabel, { color: C.textXs, marginBottom: 4 }]}>TIME IN RANGE</Text>
+                <View style={styles.ringWrapper}>
+                  <ProgressRing value={72} max={100} size={54} strokeWidth={5} color={C.green} bgColor={C.redBorder || '#F2D0D0'} />
+                  <Text style={[styles.ringText, { color: C.green }]}>72%</Text>
+                </View>
+              </View>
+
+              {/* Stability */}
+              <View style={[styles.metricBox, { alignItems: 'flex-end' }]}>
+                <Text style={[styles.metricLabel, { color: C.textXs }]}>STABILITY</Text>
+                <Text style={[styles.metricVal, { color: C.red }]}>78 <Text style={styles.metricUnit}>/100</Text></Text>
+                <View style={[styles.progressBar, { backgroundColor: C.redBorder || '#F2D0D0' }]}>
+                  <View style={[styles.progressLine, { width: '78%', backgroundColor: C.red }]} />
+                </View>
+              </View>
+            </View>
+
+            {/* Time in Range Breakdown */}
+            <View style={styles.breakdownContainer}>
+              <View style={styles.breakdownBar}>
+                <View style={[styles.breakdownSegment, { width: '12%', backgroundColor: '#EF4444' }]} />
+                <View style={[styles.breakdownSegment, { width: '72%', backgroundColor: C.green }]} />
+                <View style={[styles.breakdownSegment, { width: '16%', backgroundColor: '#F59E0B' }]} />
+              </View>
+              <View style={styles.breakdownLabels}>
+                <Text style={[styles.breakdownLabelText, { color: C.textSm }]}>🔴 Low 12%</Text>
+                <Text style={[styles.breakdownLabelText, { color: C.green, fontWeight: 'bold' }]}>🟢 Normal 72%</Text>
+                <Text style={[styles.breakdownLabelText, { color: C.textSm }]}>🟡 High 16%</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Card 2: Alerts & Anomalies */}
+          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.iconBox, { backgroundColor: '#EF4444' }]}>
+                <AlertTriangle size={15} color="#FFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: C.text }]}>Alerts & Anomalies</Text>
+                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>Requires your attention</Text>
+              </View>
+              <View style={styles.alertCountBadge}>
+                <Text style={styles.alertCountText}>3 active</Text>
+              </View>
+            </View>
+
+            <View style={styles.alertList}>
+              {anomalyAlerts.map((alert) => {
+                const AlertIcon = alert.icon;
+                return (
+                  <View key={alert.id} style={[styles.alertCard, { borderColor: alert.border }]}>
+                    <View style={[styles.alertCardHeader, { backgroundColor: alert.bg }]}>
+                      <View style={[styles.alertIconBox, { backgroundColor: `${alert.iconColor}18` }]}>
+                        <AlertIcon size={14} color={alert.iconColor} />
+                      </View>
+                      <Text style={[styles.alertTitle, { color: C.text }]} numberOfLines={1}>{alert.title}</Text>
+                      <View style={[styles.severityBadge, { borderColor: alert.border }]}>
+                        <Text style={[styles.severityText, { color: alert.iconColor }]}>
+                          {alert.severity.toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.alertBody}>
+                      <Text style={[styles.alertDesc, { color: C.textMd }]}>{alert.desc}</Text>
+                      <View style={styles.alertTimeRow}>
+                        <Clock size={10} color={C.textXs} />
+                        <Text style={[styles.alertTimeText, { color: C.textXs }]}>{alert.time}</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Card 3: Patterns Detected */}
+          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.iconBox, { backgroundColor: C.purple }]}>
+                <Eye size={15} color="#FFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: C.text }]}>Patterns Detected</Text>
+                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>AI-identified from history</Text>
+              </View>
+              <View style={[styles.alertCountBadge, { backgroundColor: C.purpleBg }]}>
+                <Text style={[styles.alertCountText, { color: C.purple }]}>4 patterns</Text>
+              </View>
+            </View>
+
+            <View style={styles.patternList}>
+              {patterns.map((p) => {
+                const PatternIcon = p.icon;
+                return (
+                  <View key={p.id} style={[styles.patternRow, { backgroundColor: '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>
+                    <View style={[styles.patternIconWrapper, { backgroundColor: p.iconBg, borderColor: `${p.color}25` }]}>
+                      <PatternIcon size={14} color={p.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.patternRowHeader}>
+                        <Text style={[styles.patternTitleText, { color: C.text }]} numberOfLines={1}>{p.title}</Text>
+                        <MiniSparkline data={p.sparkData} color={p.color} />
+                      </View>
+                      <Text style={[styles.patternDescText, { color: C.textMd }]}>{p.desc}</Text>
+                      <View style={styles.patternMetaRow}>
+                        <View style={[styles.confBadge, { backgroundColor: `${p.color}10`, borderColor: `${p.color}30` }]}>
+                          <Text style={[styles.confText, { color: p.color }]}>{p.confidence}% confidence</Text>
+                        </View>
+                        <View style={styles.trendRowSmall}>
+                          {p.trend === 'up' && <TrendingUp size={11} color={C.amber} />}
+                          {p.trend === 'down' && <TrendingDown size={11} color={C.green} />}
+                          {p.trend === 'stable' && <Minus size={11} color={C.green} />}
+                          <Text style={[styles.trendRowText, { color: p.trend === 'up' ? C.amber : C.green }]}>
+                            {p.trend === 'up' ? 'Rising' : p.trend === 'down' ? 'Declining' : 'Stable'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Card 4: Prediction Forecast */}
+          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.iconBox, { backgroundColor: C.blue }]}>
+                <TrendingUp size={15} color="#FFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: C.text }]}>Prediction</Text>
+                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>AI-powered forecast</Text>
+              </View>
+            </View>
+
+            <View style={[styles.predictionBanner, { backgroundColor: C.blueBg, borderColor: C.blueBorder }]}>
+              <View>
+                <Text style={[styles.predBannerLabel, { color: C.blue }]}>EXPECTED AT 19:00</Text>
+                <Text style={[styles.predBannerVal, { color: C.blue }]}>180 <Text style={styles.predBannerUnit}>mg/dL</Text></Text>
+              </View>
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                <Text style={[styles.predBannerAlert, { color: C.amber }]}>⚠️ Above target</Text>
+                <View style={[styles.confBadge, { backgroundColor: C.amberBg, borderColor: C.amberBorder }]}>
+                  <Text style={[styles.confText, { color: C.amber }]}>+50 from now</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Custom SVG Prediction Chart */}
+            <View style={styles.predictionGraphBox}>
+              <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+                {/* Horizontal high target gridline */}
+                <Line
+                  x1={predictionSVG.paddingLeft}
+                  y1={predictionSVG.limitY}
+                  x2={CHART_WIDTH - 10}
+                  y2={predictionSVG.limitY}
+                  stroke={C.amber}
+                  strokeWidth={1}
+                  strokeDasharray="4,4"
+                  strokeOpacity={0.6}
+                />
+
+                {/* Actual Area / Line */}
+                {predictionSVG.pathActual !== '' && (
+                  <Path d={predictionSVG.pathActual} fill="none" stroke={C.red} strokeWidth={2.5} />
+                )}
+
+                {/* Predicted Area / Line */}
+                {predictionSVG.pathPred !== '' && (
+                  <Path d={predictionSVG.pathPred} fill="none" stroke={C.blue} strokeWidth={2} strokeDasharray="6,4" />
+                )}
+
+                {/* Point Circles */}
+                {predictionSVG.pointsActual.map((p, idx) => (
+                  <Circle key={`act-${idx}`} cx={p.x} cy={p.y} r={3.5} fill={C.red} stroke="#FFF" strokeWidth={1} />
+                ))}
+
+                {predictionSVG.pointsPred.map((p, idx) => {
+                  if (idx < predictionSVG.pointsActual.length) return null;
+                  return <Circle key={`pre-${idx}`} cx={p.x} cy={p.y} r={3} fill={C.blue} stroke="#FFF" strokeWidth={1} />;
+                })}
+
+                {/* Text Y Labels */}
+                <Text style={[styles.svgLabel, { position: 'absolute', left: 2, top: predictionSVG.limitY - 6, color: C.textSm }]}>140</Text>
+              </Svg>
+            </View>
+
+            <View style={styles.chartLegend}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: C.red }]} />
+                <Text style={[styles.legendText, { color: C.textSm }]}>Actual</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: C.blue, borderRadius: 0 }]} />
+                <Text style={[styles.legendText, { color: C.textSm }]}>Predicted</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: C.amber, height: 2 }]} />
+                <Text style={[styles.legendText, { color: C.textSm }]}>Threshold</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Card 5: Meal Impact Analysis */}
+          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.iconBox, { backgroundColor: C.green }]}>
+                <Utensils size={15} color="#FFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: C.text }]}>Meal Impact</Text>
+                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>How food affects your glucose</Text>
+              </View>
+            </View>
+
+            <View style={styles.mealImpactList}>
+              {mealImpactData.map((m) => {
+                const isHigh = m.severity === "high";
+                const colorToken = isHigh ? C.amber : C.green;
+                return (
+                  <View key={m.meal} style={[styles.mealImpactRow, { borderColor: isHigh ? C.amberBorder : '#F0EDED' }]}>
+                    <View style={styles.mealLeft}>
+                      <Text style={styles.mealEmoji}>{m.emoji}</Text>
+                      <View>
+                        <Text style={[styles.mealName, { color: C.text }]}>{m.meal}</Text>
+                        <Text style={[styles.mealDeltaText, { color: C.textSm }]}>
+                          {m.before} → <Text style={{ fontWeight: 'bold', color: isHigh ? C.amber : C.text }}>{m.after}</Text> mg/dL
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                      <Text style={[styles.deltaVal, { color: colorToken }]}>{m.delta}</Text>
+                      <View style={[styles.severityPill, { backgroundColor: isHigh ? C.amberBg : C.greenBg, borderColor: isHigh ? C.amberBorder : C.greenBorder }]}>
+                        <Text style={[styles.severityPillText, { color: colorToken }]}>
+                          {isHigh ? "High Impact" : "Low Impact"}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Card 6: AI Recommendations */}
+          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.iconBox, { backgroundColor: C.red }]}>
+                <Lightbulb size={15} color="#FFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: C.text }]}>What You Should Do</Text>
+                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>Personalized recommendations</Text>
+              </View>
+            </View>
+
+            <View style={styles.recList}>
+              {recommendations.map((rec) => {
+                const RecIcon = rec.icon;
+                return (
+                  <View key={rec.id} style={[styles.recRow, { backgroundColor: '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>
+                    <View style={[styles.recIconBox, { backgroundColor: rec.iconBg }]}>
+                      <RecIcon size={14} color={rec.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.recRowHeader}>
+                        <Text style={[styles.recTitle, { color: C.text }]} numberOfLines={1}>{rec.title}</Text>
+                        <View style={[styles.recPriorityBadge, { backgroundColor: rec.bg, borderColor: rec.border }]}>
+                          <Text style={[styles.recPriorityText, { color: rec.color }]}>{rec.priority}</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.recDesc, { color: C.textMd }]}>{rec.desc}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Card 7: Insulin Estimate */}
+          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, overflow: 'hidden' }]}>
+            <LinearGradient colors={['#6366F1', '#4F46E5']} style={styles.insulinHeaderStrip}>
+              <Syringe size={15} color="#FFF" />
+              <Text style={styles.insulinHeaderTitle}>ESTIMATED INSULIN NEED</Text>
+            </LinearGradient>
+
+            <View style={styles.insulinBody}>
+              <View style={styles.insulinContent}>
+                <View style={styles.insulinRingContainer}>
+                  <ProgressRing value={4} max={10} size={60} strokeWidth={5} color="#6366F1" bgColor="#DDD6FE" />
+                  <View style={styles.insulinUnitsBox}>
+                    <Text style={styles.insulinUnitsVal}>4</Text>
+                    <Text style={styles.insulinUnitsLbl}>units</Text>
+                  </View>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.insulinTitle, { color: C.text }]}>Next meal estimate</Text>
+                  <Text style={[styles.insulinDesc, { color: C.textMd }]}>
+                    Based on your current glucose (130 mg/dL), predicted trend, and typical meal impact.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={[styles.disclaimerBox, { backgroundColor: '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>
+                <Shield size={14} color={C.textXs} style={{ marginTop: 1 }} />
+                <Text style={[styles.disclaimerText, { color: C.textSm }]}>
+                  <Text style={{ fontWeight: 'bold' }}>Disclaimer:</Text> For informational purposes only. This is not medical advice. Always consult your healthcare provider before adjusting insulin dosage.
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={{ height: 24 }} />
+        </ScrollView>
+      ) : (
+        /* Conversation Mode (Chat Assistant) */
+        <View style={styles.chatContainer}>
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.chatArea}
+            contentContainerStyle={styles.chatContent}
+            onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+            showsVerticalScrollIndicator={false}
+          >
+            {messages.map((msg) => (
+              <View
+                key={msg.id}
+                style={[
+                  styles.messageWrapper,
+                  msg.sender === 'user' ? styles.userWrapper : styles.aiWrapper
+                ]}
+              >
+                <View style={[
+                  styles.avatarContainer,
+                  { backgroundColor: msg.sender === 'user' ? C.bg : C.redBg }
+                ]}>
+                  {msg.sender === 'user' ? <User size={15} color={C.textSm} /> : <Sparkles size={15} color={C.red} />}
+                </View>
+                <View style={[
+                  styles.messageBubble,
+                  { backgroundColor: msg.sender === 'user' ? C.red : (msg.isError ? '#FEF2F2' : C.white) },
+                  msg.sender === 'user' ? styles.userBubble : styles.aiBubble,
+                  msg.isError && { borderColor: '#FECACA', borderWidth: 1 }
+                ]}>
+                  {msg.isError && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <AlertCircle size={14} color="#EF4444" />
+                      <Text style={{ fontSize: 10, fontWeight: '900', color: '#EF4444' }}>ERROR</Text>
+                    </View>
+                  )}
+                  <Text style={[
+                    styles.messageText,
+                    { color: msg.sender === 'user' ? '#FFF' : (msg.isError ? '#B91C1C' : C.text) }
+                  ]}>
+                    {msg.text}
+                  </Text>
+                  <Text style={[
+                    styles.messageTime,
+                    { color: msg.sender === 'user' ? 'rgba(255,255,255,0.7)' : C.textXs }
+                  ]}>
+                    {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </View>
+              </View>
+            ))}
+            {loading && (
+              <View style={styles.aiWrapper}>
+                <View style={[styles.avatarContainer, { backgroundColor: C.redBg }]}>
+                  <Sparkles size={15} color={C.red} />
+                </View>
+                <View style={[styles.messageBubble, { backgroundColor: C.white }, styles.aiBubble]}>
+                  <View style={styles.typingIndicator}>
+                    <ActivityIndicator size="small" color={C.red} />
+                    <Text style={[styles.messageText, { color: C.textSm, marginLeft: 8 }]}>Thinking...</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={[styles.inputContainer, { backgroundColor: C.white, borderTopColor: C.divider }]}>
+            <TextInput
+              style={[styles.input, { color: C.text, backgroundColor: isDark ? '#222' : '#F5F5F5' }]}
+              placeholder="Ask about your trends, sugar levels..."
+              placeholderTextColor="#9CA3AF"
+              value={input}
+              onChangeText={setInput}
+              onSubmitEditing={handleSend}
+              multiline
+            />
+            <TouchableOpacity
+              onPress={handleSend}
+              disabled={!input.trim() || loading}
+              style={[
+                styles.sendBtn,
+                { backgroundColor: input.trim() && !loading ? C.red : C.redBorder }
+              ]}
+            >
+              <Send size={20} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: {
+    flex: 1,
+  },
   header: {
-    padding: 20,
+    paddingHorizontal: 20,
     paddingTop: 60,
+    paddingBottom: 16,
     borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  title: { fontSize: 22, fontWeight: '900' },
-  subtitle: { fontSize: 11, fontWeight: '700' },
-  clearBtn: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  chatArea: { flex: 1 },
-  chatContent: { padding: 20, gap: 20 },
-  messageWrapper: { flexDirection: 'row', gap: 12, maxWidth: '85%' },
-  userWrapper: { alignSelf: 'flex-end', flexDirection: 'row-reverse' },
-  aiWrapper: { alignSelf: 'flex-start' },
-  avatarContainer: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
-  messageBubble: { 
-    padding: 12, 
-    borderRadius: 18, 
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  headerSubText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  clearBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tabSelectorContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  tabSelectorBg: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 3,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeTabBtn: {
+    shadowColor: '#C41E26',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     elevation: 2,
+  },
+  tabBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  scrollArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    gap: 16,
+  },
+  card: {
+    borderRadius: 24,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  cardHeaderStrip: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardHeaderTitle: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 0.8,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusDotGreen: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#16A34A',
+  },
+  statusPillText: {
+    color: '#16A34A',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  summaryMetricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+  },
+  metricBox: {
+    flex: 1,
+  },
+  metricLabel: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  metricVal: {
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  metricUnit: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  metricTrend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 4,
+  },
+  metricTrendText: {
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  ringContainer: {
+    alignItems: 'center',
+    flex: 1.2,
+  },
+  ringWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ringText: {
+    position: 'absolute',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  progressBar: {
+    height: 5,
+    borderRadius: 2.5,
+    width: '80%',
+    overflow: 'hidden',
+    marginTop: 6,
+  },
+  progressLine: {
+    height: '100%',
+    borderRadius: 2.5,
+  },
+  breakdownContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  breakdownBar: {
+    flexDirection: 'row',
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  breakdownSegment: {
+    height: '100%',
+  },
+  breakdownLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  breakdownLabelText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  iconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  sectionSubtitle: {
+    fontSize: 10,
+    marginTop: 1,
+  },
+  alertCountBadge: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  alertCountText: {
+    color: '#EF4444',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  alertList: {
+    gap: 12,
+  },
+  alertCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  alertCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  alertIconBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alertTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  severityBadge: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  severityText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+  },
+  alertBody: {
+    padding: 12,
+    backgroundColor: '#FFF',
+  },
+  alertDesc: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  alertTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  alertTimeText: {
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  patternList: {
+    gap: 10,
+  },
+  patternRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 10,
+  },
+  patternIconWrapper: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  patternRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingRight: 32,
+  },
+  patternTitleText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    flex: 1,
+    marginRight: 8,
+  },
+  patternDescText: {
+    fontSize: 10.5,
+    lineHeight: 14,
+    marginTop: 2,
+    paddingRight: 24,
+  },
+  patternMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  confBadge: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+  },
+  confText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+  },
+  trendRowSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  trendRowText: {
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  predictionBanner: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  predBannerLabel: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  predBannerVal: {
+    fontSize: 26,
+    fontWeight: '900',
+    marginTop: 2,
+    lineHeight: 26,
+  },
+  predBannerUnit: {
+    fontSize: 11,
+    fontWeight: 'normal',
+  },
+  predBannerAlert: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  predictionGraphBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    borderRadius: 16,
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  svgLabel: {
+    fontSize: 8,
+    fontWeight: '600',
+  },
+  chartLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 10,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  legendDot: {
+    width: 10,
+    height: 4,
+    borderRadius: 2,
+  },
+  legendText: {
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  mealImpactList: {
+    gap: 10,
+  },
+  mealImpactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  mealLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  mealEmoji: {
+    fontSize: 20,
+  },
+  mealName: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  mealDeltaText: {
+    fontSize: 10,
+    marginTop: 1,
+  },
+  deltaVal: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  severityPill: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+  },
+  severityPillText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+  },
+  recList: {
+    gap: 10,
+  },
+  recRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 10,
+  },
+  recIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingRight: 28,
+  },
+  recTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  recPriorityBadge: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+  },
+  recPriorityText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+  },
+  recDesc: {
+    fontSize: 10.5,
+    lineHeight: 14,
+    marginTop: 2,
+    paddingRight: 24,
+  },
+  insulinHeaderStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  insulinHeaderTitle: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 0.8,
+  },
+  insulinBody: {
+    padding: 16,
+  },
+  insulinContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  insulinRingContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  insulinUnitsBox: {
+    position: 'absolute',
+    alignItems: 'center',
+  },
+  insulinUnitsVal: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#6366F1',
+    lineHeight: 16,
+  },
+  insulinUnitsLbl: {
+    fontSize: 7,
+    fontWeight: 'bold',
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  insulinTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  insulinDesc: {
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: 2,
+  },
+  disclaimerBox: {
+    flexDirection: 'row',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 14,
+    gap: 8,
+  },
+  disclaimerText: {
+    flex: 1,
+    fontSize: 9,
+    lineHeight: 12,
+  },
+
+  // --- CHAT STYLE SHEET ---
+  chatContainer: {
+    flex: 1,
+  },
+  chatArea: {
+    flex: 1,
+  },
+  chatContent: {
+    padding: 20,
+    gap: 20,
+  },
+  messageWrapper: {
+    flexDirection: 'row',
+    gap: 12,
+    maxWidth: '85%',
+  },
+  userWrapper: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row-reverse',
+  },
+  aiWrapper: {
+    alignSelf: 'flex-start',
+  },
+  avatarContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
+  messageBubble: {
+    padding: 12,
+    borderRadius: 18,
+    elevation: 1,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 5,
   },
-  userBubble: { borderTopRightRadius: 2 },
-  aiBubble: { borderTopLeftRadius: 2 },
-  messageText: { fontSize: 14, lineHeight: 20, fontWeight: '500' },
-  messageTime: { fontSize: 10, marginTop: 4, textAlign: 'right', fontWeight: '700' },
-  typingIndicator: { flexDirection: 'row', alignItems: 'center' },
-  inputContainer: { padding: 16, flexDirection: 'row', alignItems: 'flex-end', gap: 12, borderTopWidth: 1 },
-  input: { flex: 1, minHeight: 48, maxHeight: 100, borderRadius: 24, paddingHorizontal: 20, paddingVertical: 12, fontSize: 14, fontWeight: '600' },
-  sendBtn: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+  userBubble: {
+    borderTopRightRadius: 2,
+  },
+  aiBubble: {
+    borderTopLeftRadius: 2,
+  },
+  messageText: {
+    fontSize: 13.5,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  messageTime: {
+    fontSize: 9,
+    marginTop: 4,
+    textAlign: 'right',
+    fontWeight: 'bold',
+  },
+  typingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inputContainer: {
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    borderTopWidth: 1,
+  },
+  input: {
+    flex: 1,
+    minHeight: 48,
+    maxHeight: 100,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  sendBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });
 
 export default AIInsightsScreen;
