@@ -6,6 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
+  Platform,
+  ToastAndroid,
+  Alert,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
@@ -220,9 +223,20 @@ const AlertsScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             onPress={async () => {
               if (stats.unread <= 0) return;
               try {
-                await markAllAlertsRead();
+                const marked = await markAllAlertsRead();
+                const msg = marked > 0 ? `Marked ${marked} notifications as read` : 'No unread notifications';
+                if (Platform.OS === 'android') {
+                  ToastAndroid.show(msg, ToastAndroid.SHORT);
+                } else {
+                  Alert.alert('Notifications', msg);
+                }
               } catch (e) {
                 console.warn('Failed to mark all alerts read', e);
+                if (Platform.OS === 'android') {
+                  ToastAndroid.show('Failed to mark notifications read', ToastAndroid.SHORT);
+                } else {
+                  Alert.alert('Notifications', 'Failed to mark notifications read');
+                }
               }
             }}
           >
