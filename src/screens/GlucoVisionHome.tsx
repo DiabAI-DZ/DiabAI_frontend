@@ -57,7 +57,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
       case 'log': 
         return <LogbookScreen onNavigateDetail={onNavigateDetail} initialTypeFilter={logbookFilter} />;
       case 'ai': 
-        return <AIInsightsScreen />;
+        return <AIInsightsScreen onNavigateAlerts={onNavigateAlerts} />;
       case 'settings': 
         return <SettingsScreen onNavigateAccountSettings={onNavigateAccountSettings} />;
       default: 

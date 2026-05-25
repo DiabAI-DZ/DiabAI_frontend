@@ -40,6 +40,7 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Bell,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiService } from '../services/apiService';
@@ -119,9 +120,20 @@ const ProgressRing: React.FC<{ value: number; max: number; size: number; strokeW
   );
 };
 
-const AIInsightsScreen: React.FC = () => {
+interface AIInsightsScreenProps {
+  onNavigateAlerts?: () => void;
+}
+
+const formatDateStr = (d: Date): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts }) => {
   const { C, isDark } = useTheme();
-  const { logs, alerts, getAIInsight, loading: dataLoading } = useData();
+  const { logs, alerts, getAIInsight, selectedDate, setSelectedDate, loading: dataLoading } = useData();
   const { profile } = useUser();
   const [activeSegment, setActiveSegment] = useState<'dashboard' | 'chat'>('dashboard');
 
@@ -137,31 +149,59 @@ const AIInsightsScreen: React.FC = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [insightsLoading, setInsightsLoading] = useState(true);
-  const [weeklyTrends, setWeeklyTrends] = useState<number[]>([]);
+  const [calendarDays, setCalendarDays] = useState<any[]>([]);
   const [predictions, setPredictions] = useState<any[]>([]);
   const [anomalyList, setAnomalyList] = useState<any[]>([]);
   const [detectedPatterns, setDetectedPatterns] = useState<any[]>([]);
   const [recList, setRecList] = useState<any[]>([]);
+  const [insulinEstimate, setInsulinEstimate] = useState<any>(null);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const fetchInsights = useCallback(async () => {
     setInsightsLoading(true);
     try {
-      const [recs, patternsData, preds] = await Promise.all([
-        apiService.fetchRecommendations(),
-        apiService.fetchPatterns(),
-        apiService.fetchPredictions(),
+      // 7-day window centered on selectedDate (-3 days to +3 days)
+      const dateFrom = formatDateStr(new Date(selectedDate.getTime() - 3 * 24 * 60 * 60 * 1000));
+      const dateTo = formatDateStr(new Date(selectedDate.getTime() + 3 * 24 * 60 * 60 * 1000));
+      const selDateStr = formatDateStr(selectedDate);
+
+      const [recsResult, patternsResult, predsResult, insulinResult] = await Promise.all([
+        apiService.fetchRecommendations(dateFrom, dateTo, selDateStr).catch(e => { console.warn(e); return null; }),
+        apiService.fetchPatterns(dateFrom, dateTo, selDateStr).catch(e => { console.warn(e); return null; }),
+        apiService.fetchPredictions(dateFrom, dateTo, selDateStr).catch(e => { console.warn(e); return null; }),
+        apiService.fetchInsulinEstimate(dateFrom, dateTo, selDateStr).catch(e => { console.warn(e); return null; }),
       ]);
-      setRecList(recs || []);
-      setDetectedPatterns(patternsData || []);
-      setPredictions(preds || []);
-      setAnomalyList((patternsData || []).filter((p: any) => p.trend === 'up' || p.severity === 'high'));
+
+      if (recsResult?.calendar?.days) {
+        setCalendarDays(recsResult.calendar.days);
+      } else {
+        // Fallback generated calendar days
+        const fallbackDays = [];
+        for (let i = -3; i <= 3; i++) {
+          const dayDate = new Date(selectedDate.getTime() + i * 24 * 60 * 60 * 1000);
+          const dayStr = formatDateStr(dayDate);
+          fallbackDays.push({
+            date: dayStr,
+            label: dayDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
+            day: dayDate.getDate(),
+            has_data: logs.some(l => l.type === 'measurement' && formatDateStr(new Date(l.date)) === dayStr),
+            is_selected: i === 0
+          });
+        }
+        setCalendarDays(fallbackDays);
+      }
+
+      setRecList(recsResult?.recommendations || []);
+      setDetectedPatterns(patternsResult?.patterns || []);
+      setPredictions(predsResult?.prediction ? [predsResult.prediction] : []);
+      setAnomalyList((patternsResult?.patterns || []).filter((p: any) => p.trend === 'rising' || p.priority === 'high'));
+      setInsulinEstimate(insulinResult?.insulin_estimate || null);
     } catch (error) {
       console.error("[AIInsights] Failed to fetch backend insights:", error);
     } finally {
       setInsightsLoading(false);
     }
-  }, []);
+  }, [selectedDate, logs]);
 
   useEffect(() => {
     fetchInsights();
@@ -220,33 +260,215 @@ const AIInsightsScreen: React.FC = () => {
     );
   }, [profile]);
 
-  // --- DASHBOARD VALUES (Using fetched data with mock fallbacks) ---
-  const weeklyTrendData = weeklyTrends.length > 0 ? weeklyTrends : [128, 142, 118, 155, 132, 125, 130];
-  
-  const predictionData = useMemo(() => {
-    if (predictions.length > 0) return predictions;
-    return [
-      { t: "Now", actual: 130, predicted: 130 },
-      { t: "16:00", actual: null, predicted: 142 },
-      { t: "17:00", actual: null, predicted: 158 },
-      { t: "18:00", actual: null, predicted: 172 },
-      { t: "19:00", actual: null, predicted: 180 },
-      { t: "20:00", actual: null, predicted: 168 },
-    ];
-  }, [predictions]);
+  // --- DERIVED METRICS FOR SELECTED DAY ---
+  const selectedDayStats = useMemo(() => {
+    const selectedDateStr = formatDateStr(selectedDate);
+    const dayLogs = logs.filter(l => 
+      l.type === 'measurement' && 
+      formatDateStr(new Date(l.date)) === selectedDateStr
+    );
+    
+    const minGoal = profile?.goals?.min || 70;
+    const maxGoal = profile?.goals?.max || 140;
+    
+    if (dayLogs.length === 0) {
+      return { avg: 120, inRangePercent: 75, stability: 75, lowPercent: 10, normalPercent: 75, highPercent: 15, count: 0 };
+    }
+    
+    const values = dayLogs.map(l => l.value);
+    const sum = values.reduce((a, b) => a + b, 0);
+    const avg = Math.round(sum / values.length);
+    
+    const lowCount = dayLogs.filter(l => l.value < minGoal).length;
+    const normalCount = dayLogs.filter(l => l.value >= minGoal && l.value <= maxGoal).length;
+    const highCount = dayLogs.filter(l => l.value > maxGoal).length;
+    
+    const lowPercent = Math.round((lowCount / values.length) * 100);
+    const normalPercent = Math.round((normalCount / values.length) * 100);
+    const highPercent = 100 - lowPercent - normalPercent;
+    
+    return {
+      avg,
+      inRangePercent: normalPercent,
+      stability: normalPercent,
+      lowPercent,
+      normalPercent,
+      highPercent,
+      count: values.length
+    };
+  }, [logs, selectedDate, profile]);
+
+  const derivedStats = selectedDayStats;
+
+  // Past 7 days ending at selectedDate
+  const weeklyTrendData = useMemo(() => {
+    const points = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(selectedDate);
+      d.setDate(selectedDate.getDate() - i);
+      const dateStr = formatDateStr(d);
+      
+      const dayLogs = logs.filter(l => 
+        l.type === 'measurement' && 
+        formatDateStr(new Date(l.date)) === dateStr
+      );
+      
+      const sum = dayLogs.reduce((acc, curr) => acc + (curr.value || 0), 0);
+      const avg = dayLogs.length > 0 ? Math.round(sum / dayLogs.length) : null;
+      
+      points.push({
+        date: dateStr,
+        label: d.toLocaleDateString('en-US', { weekday: 'narrow' }), // "M", "T" etc
+        value: avg,
+        real: avg !== null
+      });
+    }
+    return points;
+  }, [logs, selectedDate]);
+
+  const hasWeeklyTrendData = useMemo(() => {
+    return weeklyTrendData.some(p => p.real);
+  }, [weeklyTrendData]);
+
+  const interpolatedWeeklyTrendData = useMemo(() => {
+    if (!hasWeeklyTrendData) {
+      return weeklyTrendData.map((item, index) => ({
+        ...item,
+        value: 120 + Math.sin(index * 1.2) * 15,
+      }));
+    }
+    
+    const data = [...weeklyTrendData];
+    let lastRealVal = 120;
+    
+    const firstReal = data.find(d => d.real);
+    if (firstReal && firstReal.value !== null) {
+      lastRealVal = firstReal.value;
+    }
+    
+    for (let i = 0; i < data.length; i++) {
+      if (data[i].value === null) {
+        let nextRealIndex = -1;
+        for (let j = i + 1; j < data.length; j++) {
+          if (data[j].real) {
+            nextRealIndex = j;
+            break;
+          }
+        }
+        
+        if (nextRealIndex !== -1 && data[nextRealIndex].value !== null) {
+          const nextRealVal = data[nextRealIndex].value!;
+          const steps = nextRealIndex - (i - 1);
+          const valDiff = nextRealVal - lastRealVal;
+          data[i].value = lastRealVal + valDiff / steps;
+        } else {
+          data[i].value = lastRealVal;
+        }
+      } else {
+        lastRealVal = data[i].value!;
+      }
+    }
+    return data as { label: string; value: number; real: boolean }[];
+  }, [weeklyTrendData, hasWeeklyTrendData]);
+
+  const weeklyStats = useMemo(() => {
+    const startDate = new Date(selectedDate);
+    startDate.setDate(selectedDate.getDate() - 6);
+    startDate.setHours(0, 0, 0, 0);
+    
+    const endDate = new Date(selectedDate);
+    endDate.setHours(23, 59, 59, 999);
+    
+    const past7DaysLogs = logs.filter(l => {
+      const logDate = new Date(l.date);
+      return l.type === 'measurement' && logDate >= startDate && logDate <= endDate;
+    }) as any[];
+    
+    if (past7DaysLogs.length === 0) {
+      return { lowest: 0, highest: 0, readings: 0, stdDev: 0 };
+    }
+    
+    const values = past7DaysLogs.map(l => l.value);
+    const lowest = Math.min(...values);
+    const highest = Math.max(...values);
+    const readings = values.length;
+    
+    const mean = values.reduce((a, b) => a + b, 0) / readings;
+    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / readings;
+    const stdDev = Math.round(Math.sqrt(variance) * 10) / 10;
+    
+    return { lowest, highest, readings, stdDev };
+  }, [logs, selectedDate]);
+
+  const weeklySVG = useMemo(() => {
+    const minVal = 50;
+    const maxVal = 200;
+    const paddingLeft = 25;
+    const paddingRight = 10;
+    const paddingTop = 10;
+    const paddingBottom = 20;
+
+    const graphWidth = CHART_WIDTH - paddingLeft - paddingRight;
+    const graphHeight = 70;
+
+    const points = interpolatedWeeklyTrendData.map((item, index) => {
+      const x = paddingLeft + (index / (interpolatedWeeklyTrendData.length - 1)) * graphWidth;
+      const y = paddingTop + graphHeight - ((item.value - minVal) / (maxVal - minVal)) * graphHeight;
+      return { x, y };
+    });
+
+    let path = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i];
+      const p1 = points[i + 1];
+      const cpX1 = p0.x + (p1.x - p0.x) / 2;
+      const cpY1 = p0.y;
+      const cpX2 = p0.x + (p1.x - p0.x) / 2;
+      const cpY2 = p1.y;
+      path += ` C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${p1.x} ${p1.y}`;
+    }
+
+    const limitMinY = paddingTop + graphHeight - ((70 - minVal) / (maxVal - minVal)) * graphHeight;
+    const limitMaxY = paddingTop + graphHeight - ((140 - minVal) / (maxVal - minVal)) * graphHeight;
+
+    return {
+      points,
+      path,
+      limitMinY,
+      limitMaxY,
+      paddingLeft
+    };
+  }, [interpolatedWeeklyTrendData]);
+
+  const unreadAlertsCount = useMemo(() => {
+    return alerts.filter(a => !a.read).length;
+  }, [alerts]);
+
+  const selectedDateHeaderStr = useMemo(() => {
+    return selectedDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric'
+    });
+  }, [selectedDate]);
 
   const mealImpactData = useMemo(() => {
-    const mealLogs = logs.filter(l => l.type === 'meal').slice(0, 4);
+    const selectedDateStr = formatDateStr(selectedDate);
+    const mealLogs = logs.filter(l => 
+      l.type === 'meal' && 
+      formatDateStr(new Date(l.date)) === selectedDateStr
+    ).slice(0, 4);
+    
     if (mealLogs.length === 0) return [];
     return mealLogs.map((m: any) => ({
       meal: m.name,
-      before: "--", // We might not have 'before' data in the simple log
+      before: "--",
       after: m.after_meal_glucose || "--",
       delta: m.impact || "--",
       emoji: "🥗",
       severity: (parseInt(m.impact) > 30) ? "high" : "low" as const
     }));
-  }, [logs]);
+  }, [logs, selectedDate]);
 
   const anomalyAlerts = useMemo(() => {
     if (anomalyList.length > 0) {
@@ -262,7 +484,7 @@ const AIInsightsScreen: React.FC = () => {
         time: "Detected pattern"
       }));
     }
-    return []; // No mock fallback
+    return [];
   }, [anomalyList, C]);
 
   const p_patterns = useMemo(() => {
@@ -272,14 +494,14 @@ const AIInsightsScreen: React.FC = () => {
         title: p.title,
         desc: p.description || p.desc,
         icon: p.category === 'diet' ? Utensils : (p.category === 'activity' ? Activity : Brain),
-        iconBg: p.trend === 'up' ? C.amberBg : C.greenBg,
-        color: p.trend === 'up' ? C.amber : C.green,
+        iconBg: p.trend === 'rising' ? C.amberBg : C.greenBg,
+        color: p.trend === 'rising' ? C.amber : C.green,
         confidence: p.confidence || 85,
         trend: (p.trend || 'stable') as "up" | "down" | "stable",
         sparkData: p.spark_data || [110, 115, 120, 118, 122, 120]
       }));
     }
-    return []; // No mock fallback
+    return [];
   }, [detectedPatterns, C]);
 
   const p_recommendations = useMemo(() => {
@@ -296,84 +518,94 @@ const AIInsightsScreen: React.FC = () => {
         border: r.priority === 'high' ? '#FECACA' : C.amberBorder
       }));
     }
-    return []; // No mock fallback
+    return [];
   }, [recList, C]);
 
-  // Prediction Custom SVG Graph
+  // Prediction SVG chart (decorative trend using backend prediction value)
   const predictionSVG = useMemo(() => {
-    const minVal = 100;
-    const maxVal = 200;
-    const paddingLeft = 25;
-    const paddingRight = 10;
-    const paddingTop = 10;
-    const paddingBottom = 20;
-
-    const graphWidth = CHART_WIDTH - paddingLeft - paddingRight;
-    const graphHeight = CHART_HEIGHT - paddingTop - paddingBottom;
-
-    const pointsActual = predictionData.map((item, index) => {
-      if (item.actual === null) return null;
-      const x = paddingLeft + (index / (predictionData.length - 1)) * graphWidth;
-      const y = paddingTop + graphHeight - ((item.actual - minVal) / (maxVal - minVal)) * graphHeight;
-      return { x, y };
-    }).filter(Boolean) as { x: number; y: number }[];
-
-    const pointsPred = predictionData.map((item, index) => {
-      const x = paddingLeft + (index / (predictionData.length - 1)) * graphWidth;
-      const y = paddingTop + graphHeight - ((item.predicted - minVal) / (maxVal - minVal)) * graphHeight;
-      return { x, y };
-    });
-
-    const pathActual = pointsActual.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-    const pathPred = pointsPred.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-
-    const limitY = paddingTop + graphHeight - ((140 - minVal) / (maxVal - minVal)) * graphHeight;
-
-    return {
-      pointsActual,
-      pointsPred,
-      pathActual,
-      pathPred,
-      limitY,
-      paddingLeft,
-    };
-  }, []);
-
-  // --- DERIVED METRICS ---
-  const derivedStats = useMemo(() => {
-    const measurements = logs.filter(l => l.type === 'measurement');
-    const sum = measurements.reduce((acc, curr) => acc + (curr.value || 0), 0);
-    const avg = measurements.length > 0 ? Math.round(sum / measurements.length) : 0;
-    
-    const minGoal = profile?.goals?.min || 70;
-    const maxGoal = profile?.goals?.max || 140;
-    const inRangeCount = measurements.filter(m => m.value >= minGoal && m.value <= maxGoal).length;
-    const inRangePercent = measurements.length > 0 ? Math.round((inRangeCount / measurements.length) * 100) : 0;
-    
-    return { avg, inRangePercent, stability: inRangePercent }; // Using inRangePercent as stability for simplicity
-  }, [logs, profile]);
+    const pred = predictions[0];
+    const minVal = 70; const maxVal = 220;
+    const pL = 10; const pR = 10; const pT = 10;
+    const gW = CHART_WIDTH - pL - pR;
+    const gH = CHART_HEIGHT - pT - 20;
+    const base = pred?.expected_mg_dl ? Math.max(minVal, pred.expected_mg_dl * 0.65) : 110;
+    const end = pred?.expected_mg_dl ?? 160;
+    const fakeSeries = [base, base * 1.05, base * 1.12, base * 1.2, end];
+    const points = fakeSeries.map((v, i) => ({
+      x: pL + (i / (fakeSeries.length - 1)) * gW,
+      y: pT + gH - ((Math.min(v, maxVal) - minVal) / (maxVal - minVal)) * gH,
+    }));
+    let path = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i]; const p1 = points[i + 1];
+      const cpX = p0.x + (p1.x - p0.x) / 2;
+      path += ` C ${cpX} ${p0.y}, ${cpX} ${p1.y}, ${p1.x} ${p1.y}`;
+    }
+    const limitY = pT + gH - ((140 - minVal) / (maxVal - minVal)) * gH;
+    return { points, path, limitY, paddingLeft: pL };
+  }, [predictions]);
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[styles.container, { backgroundColor: C.bg }]}
     >
-      {/* Header */}
+      {/* Header — date greeting + bell */}
       <View style={[styles.header, { borderBottomColor: C.divider }]}>
-        <View style={styles.headerTitleRow}>
-          <Brain size={24} color={C.red} strokeWidth={2.5} />
-          <View>
-            <Text style={[styles.headerTitleText, { color: C.text }]}>AI Insights</Text>
-            <Text style={[styles.headerSubText, { color: C.textSm }]}>Personalized advice by Gemini</Text>
-          </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerDateText, { color: C.textSm }]}>{selectedDateHeaderStr}</Text>
+          <Text style={[styles.headerTitleText, { color: C.text }]}>AI Insights ✨</Text>
+          <Text style={[styles.headerSubText, { color: C.textSm }]}>Personalized advice by Gemini</Text>
         </View>
-
-        {activeSegment === 'chat' && (
-          <TouchableOpacity onPress={clearChat} style={[styles.clearBtn, { backgroundColor: C.redBg }]}>
-            <Trash2 size={18} color={C.red} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {activeSegment === 'chat' && (
+            <TouchableOpacity onPress={clearChat} style={[styles.clearBtn, { backgroundColor: C.redBg }]}>
+              <Trash2 size={18} color={C.red} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.alertButton} onPress={onNavigateAlerts}>
+            <View style={[styles.alertIconBox, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
+              <Bell size={20} color={C.red} strokeWidth={2} />
+            </View>
+            {unreadAlertsCount > 0 && (
+              <View style={[styles.alertBadgeDot, { backgroundColor: C.red, borderColor: C.bg }]} />
+            )}
           </TouchableOpacity>
-        )}
+        </View>
       </View>
+
+      {/* Day Selector Chips */}
+      {activeSegment === 'dashboard' && calendarDays.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.dayScrollRow}
+          contentContainerStyle={styles.dayScrollContent}
+        >
+          {calendarDays.map((day) => (
+            <TouchableOpacity
+              key={day.date}
+              style={[
+                styles.dayChip,
+                day.is_selected
+                  ? [styles.dayChipActive, { backgroundColor: C.red }]
+                  : [styles.dayChipInactive, { backgroundColor: C.redBg, borderColor: C.redBorder }],
+              ]}
+              onPress={() => setSelectedDate(new Date(day.date + 'T12:00:00'))}
+            >
+              <Text style={[styles.dayChipLabel, { color: day.is_selected ? 'rgba(255,255,255,0.75)' : C.textSm }]}>
+                {day.label}
+              </Text>
+              <Text style={[styles.dayChipDay, { color: day.is_selected ? '#FFF' : C.text }]}>
+                {day.day}
+              </Text>
+              {day.has_data && (
+                <View style={[styles.dayChipDot, { backgroundColor: day.is_selected ? '#FFF' : C.red }]} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
 
       {/* Segment Selector Tab */}
       <View style={styles.tabSelectorContainer}>
@@ -446,14 +678,49 @@ const AIInsightsScreen: React.FC = () => {
             {/* Time in Range Breakdown */}
             <View style={styles.breakdownContainer}>
               <View style={styles.breakdownBar}>
-                <View style={[styles.breakdownSegment, { width: '12%', backgroundColor: '#EF4444' }]} />
-                <View style={[styles.breakdownSegment, { width: '72%', backgroundColor: C.green }]} />
-                <View style={[styles.breakdownSegment, { width: '16%', backgroundColor: '#F59E0B' }]} />
+                <View style={[styles.breakdownSegment, { width: `${derivedStats.lowPercent}%`, backgroundColor: '#EF4444' }]} />
+                <View style={[styles.breakdownSegment, { width: `${derivedStats.normalPercent}%`, backgroundColor: C.green }]} />
+                <View style={[styles.breakdownSegment, { width: `${derivedStats.highPercent}%`, backgroundColor: '#F59E0B' }]} />
               </View>
               <View style={styles.breakdownLabels}>
-                <Text style={[styles.breakdownLabelText, { color: C.textSm }]}>🔴 Low 12%</Text>
-                <Text style={[styles.breakdownLabelText, { color: C.green, fontWeight: 'bold' }]}>🟢 Normal 72%</Text>
-                <Text style={[styles.breakdownLabelText, { color: C.textSm }]}>🟡 High 16%</Text>
+                <Text style={[styles.breakdownLabelText, { color: C.textSm }]}>🔴 Low {derivedStats.lowPercent}%</Text>
+                <Text style={[styles.breakdownLabelText, { color: C.green, fontWeight: 'bold' }]}>🟢 Normal {derivedStats.normalPercent}%</Text>
+                <Text style={[styles.breakdownLabelText, { color: C.textSm }]}>🟡 High {derivedStats.highPercent}%</Text>
+              </View>
+            </View>
+
+            {/* Weekly Trend SVG + Stats */}
+            <View style={[styles.weeklySection, { borderTopColor: C.divider }]}>
+              <View style={styles.weeklyStatsRow}>
+                {[
+                  { label: 'LOWEST', val: weeklyStats.lowest > 0 ? String(weeklyStats.lowest) : '--', color: C.blue },
+                  { label: 'HIGHEST', val: weeklyStats.highest > 0 ? String(weeklyStats.highest) : '--', color: C.red },
+                  { label: 'READINGS', val: String(weeklyStats.readings), color: C.text },
+                  { label: 'STD DEV', val: weeklyStats.stdDev > 0 ? String(weeklyStats.stdDev) : '--', color: C.amber },
+                ].map(({ label, val, color }) => (
+                  <View key={label} style={styles.weeklyStat}>
+                    <Text style={[styles.weeklyStatLabel, { color: C.textXs }]}>{label}</Text>
+                    <Text style={[styles.weeklyStatVal, { color }]}>{val}</Text>
+                    <Text style={[styles.weeklyStatUnit, { color: C.textXs }]}>mg/dL</Text>
+                  </View>
+                ))}
+              </View>
+              <Svg width={CHART_WIDTH - 32} height={90} style={{ marginTop: 4 }}>
+                <Path
+                  d={`M ${weeklySVG.paddingLeft} ${weeklySVG.limitMaxY} L ${CHART_WIDTH - 42} ${weeklySVG.limitMaxY} L ${CHART_WIDTH - 42} ${weeklySVG.limitMinY} L ${weeklySVG.paddingLeft} ${weeklySVG.limitMinY} Z`}
+                  fill={C.green + '18'}
+                />
+                <Line x1={weeklySVG.paddingLeft} y1={weeklySVG.limitMaxY} x2={CHART_WIDTH - 42} y2={weeklySVG.limitMaxY} stroke={C.green} strokeWidth={0.8} strokeDasharray="3,3" strokeOpacity={0.5} />
+                <Line x1={weeklySVG.paddingLeft} y1={weeklySVG.limitMinY} x2={CHART_WIDTH - 42} y2={weeklySVG.limitMinY} stroke="#F59E0B" strokeWidth={0.8} strokeDasharray="3,3" strokeOpacity={0.5} />
+                <Path d={weeklySVG.path} fill="none" stroke={C.red} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                {weeklySVG.points.map((pt, idx) => (
+                  <Circle key={idx} cx={pt.x} cy={pt.y} r={interpolatedWeeklyTrendData[idx]?.real ? 3.5 : 2} fill={interpolatedWeeklyTrendData[idx]?.real ? C.red : C.redBorder} stroke="#FFF" strokeWidth={1} />
+                ))}
+              </Svg>
+              <View style={styles.weeklyDayLabels}>
+                {interpolatedWeeklyTrendData.map((d, i) => (
+                  <Text key={i} style={[styles.weeklyDayLabel, { color: C.textXs }]}>{d.label}</Text>
+                ))}
               </View>
             </View>
           </View>
@@ -469,7 +736,7 @@ const AIInsightsScreen: React.FC = () => {
                 <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>Requires your attention</Text>
               </View>
               <View style={styles.alertCountBadge}>
-                <Text style={styles.alertCountText}>3 active</Text>
+                <Text style={styles.alertCountText}>{anomalyAlerts.length > 0 ? `${anomalyAlerts.length} active` : 'None'}</Text>
               </View>
             </View>
 
@@ -513,7 +780,7 @@ const AIInsightsScreen: React.FC = () => {
                 <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>AI-identified from history</Text>
               </View>
               <View style={[styles.alertCountBadge, { backgroundColor: C.purpleBg }]}>
-                <Text style={[styles.alertCountText, { color: C.purple }]}>4 patterns</Text>
+                <Text style={[styles.alertCountText, { color: C.purple }]}>{p_patterns.length > 0 ? `${p_patterns.length} patterns` : 'None'}</Text>
               </View>
             </View>
 
@@ -563,23 +830,34 @@ const AIInsightsScreen: React.FC = () => {
               </View>
             </View>
 
-            <View style={[styles.predictionBanner, { backgroundColor: C.blueBg, borderColor: C.blueBorder }]}>
-              <View>
-                <Text style={[styles.predBannerLabel, { color: C.blue }]}>EXPECTED AT 19:00</Text>
-                <Text style={[styles.predBannerVal, { color: C.blue }]}>180 <Text style={styles.predBannerUnit}>mg/dL</Text></Text>
-              </View>
-              <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                <Text style={[styles.predBannerAlert, { color: C.amber }]}>⚠️ Above target</Text>
-                <View style={[styles.confBadge, { backgroundColor: C.amberBg, borderColor: C.amberBorder }]}>
-                  <Text style={[styles.confText, { color: C.amber }]}>+50 from now</Text>
+            {predictions.length > 0 ? (
+              <View style={[styles.predictionBanner, { backgroundColor: C.blueBg, borderColor: C.blueBorder }]}>
+                <View>
+                  <Text style={[styles.predBannerLabel, { color: C.blue }]}>
+                    {predictions[0]?.expected_at
+                      ? `EXPECTED AT ${new Date(predictions[0].expected_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                      : 'NEXT PREDICTION'}
+                  </Text>
+                  <Text style={[styles.predBannerVal, { color: C.blue }]}>
+                    {predictions[0]?.expected_mg_dl ?? '--'}{' '}
+                    <Text style={styles.predBannerUnit}>mg/dL</Text>
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  <Text style={[styles.predBannerAlert, { color: predictions[0]?.status_label === 'normal' ? C.green : C.amber }]}>
+                    {predictions[0]?.status_label === 'normal' ? '✅ In target' : '⚠️ Above target'}
+                  </Text>
                 </View>
               </View>
-            </View>
+            ) : (
+              <View style={[styles.predictionBanner, { backgroundColor: C.blueBg, borderColor: C.blueBorder }]}>
+                <Text style={[styles.predBannerLabel, { color: C.textSm }]}>No prediction available for this period</Text>
+              </View>
+            )}
 
-            {/* Custom SVG Prediction Chart */}
+            {/* Smooth Prediction Trend Chart */}
             <View style={styles.predictionGraphBox}>
               <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-                {/* Horizontal high target gridline */}
                 <Line
                   x1={predictionSVG.paddingLeft}
                   y1={predictionSVG.limitY}
@@ -590,44 +868,21 @@ const AIInsightsScreen: React.FC = () => {
                   strokeDasharray="4,4"
                   strokeOpacity={0.6}
                 />
-
-                {/* Actual Area / Line */}
-                {predictionSVG.pathActual !== '' && (
-                  <Path d={predictionSVG.pathActual} fill="none" stroke={C.red} strokeWidth={2.5} />
-                )}
-
-                {/* Predicted Area / Line */}
-                {predictionSVG.pathPred !== '' && (
-                  <Path d={predictionSVG.pathPred} fill="none" stroke={C.blue} strokeWidth={2} strokeDasharray="6,4" />
-                )}
-
-                {/* Point Circles */}
-                {predictionSVG.pointsActual.map((p, idx) => (
-                  <Circle key={`act-${idx}`} cx={p.x} cy={p.y} r={3.5} fill={C.red} stroke="#FFF" strokeWidth={1} />
+                <Path d={predictionSVG.path} fill="none" stroke={C.blue} strokeWidth={2.5} strokeLinecap="round" strokeDasharray="6,4" />
+                {predictionSVG.points.map((p, idx) => (
+                  <Circle key={idx} cx={p.x} cy={p.y} r={idx === predictionSVG.points.length - 1 ? 5 : 3} fill={idx === predictionSVG.points.length - 1 ? C.blue : C.redBorder} stroke="#FFF" strokeWidth={1.5} />
                 ))}
-
-                {predictionSVG.pointsPred.map((p, idx) => {
-                  if (idx < predictionSVG.pointsActual.length) return null;
-                  return <Circle key={`pre-${idx}`} cx={p.x} cy={p.y} r={3} fill={C.blue} stroke="#FFF" strokeWidth={1} />;
-                })}
-
-                {/* Text Y Labels */}
-                <Text style={[styles.svgLabel, { position: 'absolute', left: 2, top: predictionSVG.limitY - 6, color: C.textSm }]}>140</Text>
               </Svg>
             </View>
 
             <View style={styles.chartLegend}>
               <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: C.red }]} />
-                <Text style={[styles.legendText, { color: C.textSm }]}>Actual</Text>
-              </View>
-              <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: C.blue, borderRadius: 0 }]} />
-                <Text style={[styles.legendText, { color: C.textSm }]}>Predicted</Text>
+                <Text style={[styles.legendText, { color: C.textSm }]}>Predicted trend</Text>
               </View>
               <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: C.amber, height: 2 }]} />
-                <Text style={[styles.legendText, { color: C.textSm }]}>Threshold</Text>
+                <Text style={[styles.legendText, { color: C.textSm }]}>140 mg/dL target</Text>
               </View>
             </View>
           </View>
@@ -718,9 +973,16 @@ const AIInsightsScreen: React.FC = () => {
             <View style={styles.insulinBody}>
               <View style={styles.insulinContent}>
                 <View style={styles.insulinRingContainer}>
-                  <ProgressRing value={4} max={10} size={60} strokeWidth={5} color="#6366F1" bgColor="#DDD6FE" />
+                  <ProgressRing
+                    value={insulinEstimate?.units ?? 4}
+                    max={10}
+                    size={60}
+                    strokeWidth={5}
+                    color="#6366F1"
+                    bgColor="#DDD6FE"
+                  />
                   <View style={styles.insulinUnitsBox}>
-                    <Text style={styles.insulinUnitsVal}>4</Text>
+                    <Text style={styles.insulinUnitsVal}>{insulinEstimate?.units ?? 4}</Text>
                     <Text style={styles.insulinUnitsLbl}>units</Text>
                   </View>
                 </View>
@@ -728,7 +990,8 @@ const AIInsightsScreen: React.FC = () => {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.insulinTitle, { color: C.text }]}>Next meal estimate</Text>
                   <Text style={[styles.insulinDesc, { color: C.textMd }]}>
-                    Based on your current glucose (130 mg/dL), predicted trend, and typical meal impact.
+                    {insulinEstimate?.basis ?? 'Based on your current glucose, predicted trend, and typical meal impact.'}
+                    {insulinEstimate?.current_mg_dl ? ` Current: ${insulinEstimate.current_mg_dl} mg/dL.` : ''}
                   </Text>
                 </View>
               </View>
@@ -736,7 +999,8 @@ const AIInsightsScreen: React.FC = () => {
               <View style={[styles.disclaimerBox, { backgroundColor: '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>
                 <Shield size={14} color={C.textXs} style={{ marginTop: 1 }} />
                 <Text style={[styles.disclaimerText, { color: C.textSm }]}>
-                  <Text style={{ fontWeight: 'bold' }}>Disclaimer:</Text> For informational purposes only. This is not medical advice. Always consult your healthcare provider before adjusting insulin dosage.
+                  <Text style={{ fontWeight: 'bold' }}>Disclaimer:</Text>{' '}
+                  {insulinEstimate?.disclaimer ?? 'For informational purposes only. This is not medical advice. Always consult your healthcare provider before adjusting insulin dosage.'}
                 </Text>
               </View>
             </View>
@@ -870,6 +1134,119 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerDateText: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    marginBottom: 2,
+  },
+  alertButton: {
+    position: 'relative',
+  },
+  alertIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  alertBadgeDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+  },
+  // Day selector chips
+  dayScrollRow: {
+    maxHeight: 76,
+  },
+  dayScrollContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dayChip: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minWidth: 48,
+    gap: 2,
+  },
+  dayChipActive: {
+    shadowColor: '#C41E26',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  dayChipInactive: {
+    borderWidth: 1,
+  },
+  dayChipLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  dayChipDay: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  dayChipDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginTop: 1,
+  },
+  // Weekly trend in summary card
+  weeklySection: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+  },
+  weeklyStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  weeklyStat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  weeklyStatLabel: {
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  weeklyStatVal: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  weeklyStatUnit: {
+    fontSize: 8,
+    marginTop: 1,
+  },
+  weeklyDayLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    marginTop: 2,
+  },
+  weeklyDayLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    textAlign: 'center',
+    flex: 1,
   },
   tabSelectorContainer: {
     paddingHorizontal: 20,

@@ -437,15 +437,17 @@ export const apiService = {
     return result.data || result;
   },
 
-  async fetchRecommendations(dateFrom?: string, dateTo?: string): Promise<any> {
+  async fetchRecommendations(dateFrom?: string, dateTo?: string, selectedDate?: string): Promise<any> {
     const params = new URLSearchParams();
-    if (dateFrom) params.append('date_from', dateFrom);
-    if (dateTo) params.append('date_to', dateTo);
+    const today = new Date().toISOString().split('T')[0];
+    params.append('date_from', dateFrom || today);
+    params.append('date_to', dateTo || today);
+    if (selectedDate) params.append('selected_date', selectedDate);
     
     console.log(`[API] Fetching recommendations`);
     const response = await authenticatedFetch(`/api/insights/recommendations?${params.toString()}`);
     const result = await response.json();
-    return result.recommendations || [];
+    return result;
   },
 
   async fetchAISummary(): Promise<any> {
@@ -455,18 +457,43 @@ export const apiService = {
     return result.data || result;
   },
 
-  async fetchPatterns(): Promise<any> {
+  async fetchPatterns(dateFrom?: string, dateTo?: string, selectedDate?: string): Promise<any> {
+    const params = new URLSearchParams();
+    const today = new Date().toISOString().split('T')[0];
+    params.append('date_from', dateFrom || today);
+    params.append('date_to', dateTo || today);
+    if (selectedDate) params.append('selected_date', selectedDate);
+
     console.log(`[API] Fetching patterns`);
-    const response = await authenticatedFetch('/api/insights/patterns');
+    const response = await authenticatedFetch(`/api/insights/patterns?${params.toString()}`);
     const result = await response.json();
-    return result.patterns || [];
+    return result;
   },
 
-  async fetchPredictions(): Promise<any> {
+  async fetchPredictions(dateFrom?: string, dateTo?: string, selectedDate?: string): Promise<any> {
+    const params = new URLSearchParams();
+    const today = new Date().toISOString().split('T')[0];
+    params.append('date_from', dateFrom || today);
+    params.append('date_to', dateTo || today);
+    if (selectedDate) params.append('selected_date', selectedDate);
+
     console.log(`[API] Fetching predictions`);
-    const response = await authenticatedFetch('/api/insights/prediction');
+    const response = await authenticatedFetch(`/api/insights/prediction?${params.toString()}`);
     const result = await response.json();
-    return result.prediction || result.data || [];
+    return result;
+  },
+
+  async fetchInsulinEstimate(dateFrom?: string, dateTo?: string, selectedDate?: string): Promise<any> {
+    const params = new URLSearchParams();
+    const today = new Date().toISOString().split('T')[0];
+    params.append('date_from', dateFrom || today);
+    params.append('date_to', dateTo || today);
+    if (selectedDate) params.append('selected_date', selectedDate);
+
+    console.log(`[API] Fetching insulin estimate`);
+    const response = await authenticatedFetch(`/api/insights/insulin-estimate?${params.toString()}`);
+    const result = await response.json();
+    return result;
   },
 
   async fetchProfile(): Promise<UserProfile> {

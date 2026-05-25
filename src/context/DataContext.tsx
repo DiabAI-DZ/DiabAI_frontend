@@ -15,6 +15,8 @@ interface DataContextType {
   deleteLog: (id: number) => Promise<void>;
   markAlertRead: (id: number) => Promise<void>;
   markAllAlertsRead: () => Promise<number>;
+  selectedDate: Date;
+  setSelectedDate: (date: Date) => void;
   getAIInsight: (query: string) => Promise<string>;
   getDailySummary: () => Promise<AISummary>;
   scanImage: (uri: string) => Promise<ScanResult>;
@@ -27,6 +29,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [homeData, setHomeData] = useState<HomeData | null>(null);
   const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
 
   const refreshData = useCallback(async (period: '7d' | '30d' = '7d') => {
@@ -63,13 +66,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addLog = useCallback(async (log: Omit<LogEntry, "id">) => {
     try {
-      const newLog = await apiService.createLog(log);
+      let logDate = log.date;
+      if (selectedDate) {
+        const now = new Date();
+        const d = new Date(selectedDate);
+        const originalTime = log.date ? new Date(log.date) : now;
+        d.setHours(originalTime.getHours(), originalTime.getMinutes(), originalTime.getSeconds(), originalTime.getMilliseconds());
+        logDate = d.toISOString();
+      }
+
+      const newLog = await apiService.createLog({
+        ...log,
+        date: logDate
+      });
       setLogs((prev) => [newLog, ...prev]);
     } catch (error) {
       console.error("DataContext: Failed to add log:", error);
       throw error;
     }
-  }, []);
+  }, [selectedDate]);
 
   const deleteLog = useCallback(async (id: number) => {
     try {
@@ -146,6 +161,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteLog,
       markAlertRead, 
       markAllAlertsRead,
+      selectedDate,
+      setSelectedDate,
       getAIInsight, 
       getDailySummary,
       scanImage 
