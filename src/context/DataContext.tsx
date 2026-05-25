@@ -10,7 +10,7 @@ interface DataContextType {
   homeData: HomeData | null;
   recommendations: any[];
   loading: boolean;
-  refreshData: () => Promise<void>;
+  refreshData: (period?: '7d' | '30d') => Promise<void>;
   addLog: (log: Omit<LogEntry, "id">) => Promise<void>;
   deleteLog: (id: number) => Promise<void>;
   markAlertRead: (id: number) => Promise<void>;
@@ -28,14 +28,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const refreshData = useCallback(async () => {
+  const refreshData = useCallback(async (period: '7d' | '30d' = '7d') => {
     setLoading(true);
     try {
       const [logsData, alertsData, homeDataObj, recsData] = await Promise.all([
-        apiService.fetchLogs(),
-        apiService.fetchAlerts(),
-        apiService.fetchHomeData(),
-        apiService.fetchRecommendations(),
+        apiService.fetchLogs().catch(err => {
+          console.warn("DataContext: Failed to fetch logs:", err);
+          return [];
+        }),
+        apiService.fetchAlerts().catch(err => {
+          console.warn("DataContext: Failed to fetch alerts:", err);
+          return [];
+        }),
+        apiService.fetchHomeData(period).catch(err => {
+          console.warn("DataContext: Failed to fetch home data:", err);
+          return null;
+        }),
+        apiService.fetchRecommendations().catch(err => {
+          console.warn("DataContext: Failed to fetch recommendations:", err);
+          return [];
+        }),
       ]);
       setLogs(logsData);
       setAlerts(alertsData);

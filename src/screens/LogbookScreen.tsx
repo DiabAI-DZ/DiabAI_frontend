@@ -550,14 +550,31 @@ const EntryGroup: React.FC<{
   );
 };
 
-const LogbookScreen: React.FC<{ onNavigateDetail: (entry: any) => void }> = ({ onNavigateDetail }) => {
+interface LogbookScreenProps {
+  onNavigateDetail: (entry: any) => void;
+  initialTypeFilter?: 'all' | 'measurements' | 'meals' | 'injections' | 'activities';
+}
+
+const LogbookScreen: React.FC<LogbookScreenProps> = ({ onNavigateDetail, initialTypeFilter }) => {
   const { C, isDark } = useTheme();
   const { logs, refreshData } = useData();
   const { profile } = useUser();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showFilterSheet, setShowFilterSheet] = useState(false);
-  const [filters, setFilters] = useState<Filters>(defaultFilters);
+  const [filters, setFilters] = useState<Filters>(() => ({
+    ...defaultFilters,
+    typeFilter: initialTypeFilter || "all"
+  }));
+
+  useEffect(() => {
+    if (initialTypeFilter) {
+      setFilters(prev => ({
+        ...prev,
+        typeFilter: initialTypeFilter
+      }));
+    }
+  }, [initialTypeFilter]);
 
   const mockToday = useMemo(() => new Date(), []);
 

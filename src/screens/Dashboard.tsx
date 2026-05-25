@@ -10,7 +10,7 @@ import {
   Image,
   FlatList,
 } from 'react-native';
-import Svg, { Path, Line, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import Svg, { Path, Line, Circle, Defs, LinearGradient as SvgLinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
 import { useUser } from '../context/UserContext';
@@ -39,7 +39,56 @@ const CHART_HEIGHT = 130;
 interface DashboardProps {
   onNavigateAlerts: () => void;
   onNavigateDetail: (entry: any) => void;
+  onSeeAllMeasurements: () => void;
 }
+
+// --- DYNAMIC DATES HELPERS ---
+const getPast7Days = (): { label: string; date: string }[] => {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const result = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    result.push({
+      label: days[d.getDay()],
+      date: d.toISOString().split('T')[0]
+    });
+  }
+  return result;
+};
+
+const getPast30Days = (): { label: string; date: string }[] => {
+  const result = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    result.push({
+      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      date: d.toISOString().split('T')[0]
+    });
+  }
+  return result;
+};
+
+// --- SMOOTH BEZIER PATH GENERATOR ---
+const getBezierCurvePath = (points: { x: number; y: number }[]) => {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i];
+    const p1 = points[i + 1];
+    
+    const cpX1 = p0.x + (p1.x - p0.x) / 3;
+    const cpY1 = p0.y;
+    const cpX2 = p0.x + 2 * (p1.x - p0.x) / 3;
+    const cpY2 = p1.y;
+    
+    d += ` C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${p1.x} ${p1.y}`;
+  }
+  return d;
+};
 
 // --- MOCK DATA FALLBACKS (Will be rarely used now) ---
 const mock7Days = [
@@ -47,15 +96,27 @@ const mock7Days = [
   { day: "Thu", value: 98 }, { day: "Fri", value: 162 }, { day: "Sat", value: 128 }, { day: "Sun", value: 125 },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetail }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetail, onSeeAllMeasurements }) => {
   const { C, isDark } = useTheme();
   const { logs, alerts, homeData, recommendations, loading, refreshData } = useData();
   const { profile } = useUser();
   const [activeTab, setActiveTab] = useState<'7d' | '30d'>('7d');
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    refreshData();
+    refreshData(activeTab);
   }, [activeTab]);
+
+  // --- REAL DYNAMIC DATE GREETING ---
+  const todayDateString = useMemo(() => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June', 
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const now = new Date();
+    return `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}`;
+  }, []);
 
   // --- STATS COMPUTATION ---
   const stats = useMemo(() => {
@@ -109,28 +170,77 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
 
   // --- CUSTOM SVG GRAPH PATH GENERATION ---
   const chartData = useMemo(() => {
+    const defaultPoints = activeTab === '7d' ? getPast7Days() : getPast30Days();
+    
     if (homeData?.glucose_trend?.points && homeData.glucose_trend.points.length > 0) {
-      return homeData.glucose_trend.points.map(p => ({
-        label: p.label,
-        value: p.avg_value || 0
+      return homeData.glucose_trend.points.map(p => {
+        let label = p.label;
+        if (activeTab === '30d' && p.date) {
+          const parts = p.date.split('-');
+          if (parts.length === 3) {
+            const m = parseInt(parts[1], 10);
+            const d = parseInt(parts[2], 10);
+            label = `${m}/${d}`;
+          }
+        }
+        return {
+          label,
+          value: p.avg_value !== null && p.avg_value !== undefined ? p.avg_value : null,
+          real: p.avg_value !== null && p.avg_value !== undefined
+        };
+      });
+    }
+    
+    return defaultPoints.map(p => ({
+      label: p.label,
+      value: null,
+      real: false
+    }));
+  }, [homeData, activeTab]);
+
+  const hasRealData = useMemo(() => {
+    return chartData.some(item => item.real);
+  }, [chartData]);
+
+  const interpolatedData = useMemo(() => {
+    if (!hasRealData) {
+      return chartData.map((item, index) => ({
+        ...item,
+        value: 100 + Math.sin(index * 1.2) * 15,
       }));
     }
-    // If no real data, try to extract from logs of the last 7 days
-    const measurements = logs.filter(l => l.type === 'measurement') as MeasurementEntry[];
-    if (measurements.length > 0) {
-       // Just show last few measurements as points if no full trend from backend
-       return measurements.slice(0, 7).reverse().map((m, i) => ({
-         label: m.time,
-         value: m.value
-       }));
+    
+    const result = chartData.map(item => ({ ...item }));
+    for (let i = 0; i < result.length; i++) {
+      if (result[i].value === null) {
+        let prevReal = null;
+        for (let j = i - 1; j >= 0; j--) {
+          if (chartData[j].real) {
+            prevReal = chartData[j].value;
+            break;
+          }
+        }
+        let nextReal = null;
+        for (let j = i + 1; j < chartData.length; j++) {
+          if (chartData[j].real) {
+            nextReal = chartData[j].value;
+            break;
+          }
+        }
+        
+        if (prevReal !== null && nextReal !== null) {
+          result[i].value = prevReal + (nextReal - prevReal) * 0.5;
+        } else if (prevReal !== null) {
+          result[i].value = prevReal;
+        } else if (nextReal !== null) {
+          result[i].value = nextReal;
+        } else {
+          result[i].value = 100;
+        }
+      }
     }
-    return [
-      { label: "Empty", value: 0 },
-      { label: "Empty", value: 0 },
-      { label: "Empty", value: 0 },
-      { label: "Empty", value: 0 }
-    ];
-  }, [homeData, logs]);
+    return result;
+  }, [chartData, hasRealData]);
 
   const chartSVG = useMemo(() => {
     const minVal = 60;
@@ -143,13 +253,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
     const graphWidth = CHART_WIDTH - paddingLeft - paddingRight;
     const graphHeight = CHART_HEIGHT - paddingTop - paddingBottom;
 
-    const points = chartData.map((item, index) => {
-      const x = paddingLeft + (index / (chartData.length - 1)) * graphWidth;
-      const y = paddingTop + graphHeight - ((item.value - minVal) / (maxVal - minVal)) * graphHeight;
+    const points = interpolatedData.map((item, index) => {
+      const x = paddingLeft + (index / (interpolatedData.length - 1)) * graphWidth;
+      const boundedValue = Math.max(minVal, Math.min(maxVal, item.value || 100));
+      const y = paddingTop + graphHeight - ((boundedValue - minVal) / (maxVal - minVal)) * graphHeight;
       return { x, y, val: item.value };
     });
 
-    const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    const linePath = getBezierCurvePath(points);
     const areaPath = points.length > 0 
       ? `${linePath} L ${points[points.length - 1].x} ${CHART_HEIGHT - paddingBottom} L ${points[0].x} ${CHART_HEIGHT - paddingBottom} Z`
       : '';
@@ -171,7 +282,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
       minVal,
       maxVal,
     };
-  }, [chartData]);
+  }, [interpolatedData, homeData]);
 
   const statusStyle = (status: GlucoseStatus) => {
     if (status === "High") return { color: C.amber, bg: C.amberBg, border: C.amberBorder };
@@ -187,7 +298,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={[styles.greeting, { color: C.textSm }]}>{homeData?.greeting?.date || 'Today'}</Text>
+          <Text style={[styles.greeting, { color: C.textSm }]}>{homeData?.greeting?.date || todayDateString}</Text>
           <Text style={[styles.userName, { color: C.text }]}>Hello, {homeData?.greeting?.name || profile?.name?.split(' ')[0] || 'Sarah'} 👋</Text>
           <Text style={[styles.userGoal, { color: C.textMd }]}>Track your glucose with confidence</Text>
         </View>
@@ -196,9 +307,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
             <Bell size={20} color={C.red} strokeWidth={2} />
           </View>
           {stats.unreadAlerts > 0 && (
-            <View style={[styles.badge, { backgroundColor: C.red }]}>
-              <Text style={styles.badgeText}>{stats.unreadAlerts}</Text>
-            </View>
+            <View style={[styles.badge, { backgroundColor: C.red, borderColor: C.bg }]} />
           )}
         </TouchableOpacity>
       </View>
@@ -297,7 +406,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
           <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
             <Defs>
               <SvgLinearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={C.red} stopOpacity={0.2} />
+                <Stop offset="0%" stopColor={C.red} stopOpacity={hasRealData ? 0.2 : 0.08} />
                 <Stop offset="100%" stopColor={C.red} stopOpacity={0} />
               </SvgLinearGradient>
             </Defs>
@@ -331,47 +440,162 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
 
             {/* Line Path */}
             {chartSVG.linePath !== '' && (
-              <Path d={chartSVG.linePath} fill="none" stroke={C.red} strokeWidth={2.5} />
+              <Path 
+                d={chartSVG.linePath} 
+                fill="none" 
+                stroke={C.red} 
+                strokeWidth={2.5} 
+                strokeOpacity={hasRealData ? 1 : 0.3}
+                strokeDasharray={hasRealData ? undefined : "4,4"}
+              />
             )}
 
             {/* Point Markers */}
-            {chartSVG.points.map((p, i) => (
-              <Circle
-                key={i}
-                cx={p.x}
-                cy={p.y}
-                r={i === chartSVG.points.length - 1 ? 5 : 3.5}
-                fill={i === chartSVG.points.length - 1 ? C.red : '#FFF'}
-                stroke={C.red}
-                strokeWidth={i === chartSVG.points.length - 1 ? 2.5 : 1.5}
-              />
-            ))}
+            {hasRealData && chartSVG.points.map((p, i) => {
+              if (!chartData[i].real) return null;
+              const isLastPoint = i === chartSVG.points.length - 1;
+              return (
+                <Circle
+                  key={i}
+                  cx={p.x}
+                  cy={p.y}
+                  r={isLastPoint ? 5 : 3.5}
+                  fill={isLastPoint ? C.red : '#FFF'}
+                  stroke={C.red}
+                  strokeWidth={isLastPoint ? 2.5 : 1.5}
+                />
+              );
+            })}
 
             {/* Bottom Labels */}
             {chartSVG.points.map((p, i) => {
-              if (activeTab === '30d' && i % 3 !== 0) return null;
+              if (activeTab === '30d' && i % 5 !== 0) return null;
               return (
-                <Text
+                <SvgText
                   key={`lbl-${i}`}
-                  style={[
-                    styles.svgLabel, 
-                    { 
-                      position: 'absolute', 
-                      left: p.x - 12, 
-                      top: CHART_HEIGHT - 16,
-                      color: C.redMuted 
-                    }
-                  ]}
+                  x={p.x}
+                  y={CHART_HEIGHT - 4}
+                  textAnchor="middle"
+                  fill={C.redMuted}
+                  fontSize={8}
+                  fontWeight="600"
                 >
                   {chartData[i].label}
-                </Text>
+                </SvgText>
               );
             })}
 
             {/* Y Axis Reference Labels */}
-            <Text style={[styles.svgLabel, { position: 'absolute', left: 2, top: chartSVG.targetMaxY - 6, color: C.textSm }]}>140</Text>
-            <Text style={[styles.svgLabel, { position: 'absolute', left: 2, top: chartSVG.targetMinY - 6, color: C.textSm }]}>70</Text>
+            <SvgText
+              x={chartSVG.paddingLeft - 6}
+              y={chartSVG.targetMaxY + 3}
+              textAnchor="end"
+              fill={C.textSm}
+              fontSize={8}
+              fontWeight="600"
+            >
+              {stats.targetMax}
+            </SvgText>
+            <SvgText
+              x={chartSVG.paddingLeft - 6}
+              y={chartSVG.targetMinY + 3}
+              textAnchor="end"
+              fill={C.textSm}
+              fontSize={8}
+              fontWeight="600"
+            >
+              {stats.targetMin}
+            </SvgText>
           </Svg>
+
+          {/* Transparent interactive touch areas for tooltip hover */}
+          <View 
+            style={{
+              position: 'absolute',
+              left: chartSVG.paddingLeft,
+              top: 0,
+              width: chartSVG.graphWidth,
+              height: CHART_HEIGHT - chartSVG.paddingBottom,
+              flexDirection: 'row',
+              zIndex: 5,
+            }}
+          >
+            {chartData.map((item, index) => (
+              <TouchableOpacity
+                key={index}
+                activeOpacity={1}
+                onPressIn={() => setHoverIndex(index)}
+                onPressOut={() => setHoverIndex(null)}
+                style={{
+                  flex: 1,
+                  backgroundColor: hoverIndex === index ? 'rgba(196, 30, 38, 0.05)' : 'transparent',
+                }}
+              />
+            ))}
+          </View>
+
+          {/* Absolute tooltip container */}
+          {hoverIndex !== null && chartSVG.points[hoverIndex] && (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.tooltip,
+                {
+                  left: Math.max(10, Math.min(CHART_WIDTH - 110, chartSVG.points[hoverIndex].x - 50)),
+                  top: Math.max(5, chartSVG.points[hoverIndex].y - 45),
+                  backgroundColor: C.redDark,
+                }
+              ]}
+            >
+              <Text style={styles.tooltipText}>
+                {chartData[hoverIndex].real
+                  ? `${chartData[hoverIndex].value} mg/dL`
+                  : 'No entry'}
+              </Text>
+              <Text style={styles.tooltipSubText}>
+                {chartData[hoverIndex].label}
+              </Text>
+            </View>
+          )}
+
+          {/* Absolute overlay banner for placeholder data */}
+          {!hasRealData && (
+            <View 
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: chartSVG.paddingLeft,
+                width: chartSVG.graphWidth,
+                height: CHART_HEIGHT - chartSVG.paddingBottom,
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 2,
+              }}
+            >
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: isDark ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: C.redBorder,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.05,
+                shadowRadius: 6,
+                elevation: 2,
+                gap: 6
+              }}>
+                <Sparkles size={14} color={C.red} />
+                <Text style={{ fontSize: 9, fontWeight: 'bold', color: C.textSm }}>
+                  No readings logged. Showing expected baseline trend.
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
 
         <View style={styles.legendContainer}>
@@ -390,7 +614,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
       <View style={[styles.graphCard, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionTitle, { color: C.text }]}>Recent Measurements</Text>
-          <TouchableOpacity style={styles.seeAllBtn}>
+          <TouchableOpacity style={styles.seeAllBtn} onPress={onSeeAllMeasurements}>
             <Text style={[styles.seeAllText, { color: C.red }]}>See all</Text>
             <ChevronRight size={14} color={C.red} />
           </TouchableOpacity>
@@ -615,20 +839,12 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFF',
-  },
-  badgeText: {
-    color: '#FFF',
-    fontSize: 9,
-    fontWeight: 'bold',
+    top: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1.5,
   },
   mainCard: {
     marginHorizontal: 24,
@@ -1067,6 +1283,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  tooltip: {
+    position: 'absolute',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+    minWidth: 80,
+    zIndex: 10,
+  },
+  tooltipText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  tooltipSubText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 8,
+    marginTop: 2,
   }
 });
 

@@ -35,17 +35,42 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   const [showActionPopup, setShowActionPopup] = useState(false);
   const [actionType, setActionType] = useState<'injection' | 'activity'>('injection');
 
+  const [logbookFilter, setLogbookFilter] = useState<'all' | 'measurements' | 'meals' | 'injections' | 'activities'>('all');
+
   if (showScan) {
     return <ScanFlow mode={scanMode} onBack={() => setShowScan(false)} onComplete={() => setShowScan(false)} />;
   }
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'home': return <Dashboard onNavigateAlerts={onNavigateAlerts} onNavigateDetail={onNavigateDetail} />;
-      case 'log': return <LogbookScreen onNavigateDetail={onNavigateDetail} />;
-      case 'ai': return <AIInsightsScreen />;
-      case 'settings': return <SettingsScreen onNavigateAccountSettings={onNavigateAccountSettings} />;
-      default: return <Dashboard onNavigateAlerts={onNavigateAlerts} onNavigateDetail={onNavigateDetail} />;
+      case 'home': 
+        return (
+          <Dashboard 
+            onNavigateAlerts={onNavigateAlerts} 
+            onNavigateDetail={onNavigateDetail} 
+            onSeeAllMeasurements={() => {
+              setLogbookFilter('measurements');
+              setActiveTab('log');
+            }}
+          />
+        );
+      case 'log': 
+        return <LogbookScreen onNavigateDetail={onNavigateDetail} initialTypeFilter={logbookFilter} />;
+      case 'ai': 
+        return <AIInsightsScreen />;
+      case 'settings': 
+        return <SettingsScreen onNavigateAccountSettings={onNavigateAccountSettings} />;
+      default: 
+        return (
+          <Dashboard 
+            onNavigateAlerts={onNavigateAlerts} 
+            onNavigateDetail={onNavigateDetail} 
+            onSeeAllMeasurements={() => {
+              setLogbookFilter('measurements');
+              setActiveTab('log');
+            }}
+          />
+        );
     }
   };
 
@@ -54,7 +79,12 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
     return (
       <TouchableOpacity 
         style={styles.tabItem} 
-        onPress={() => setActiveTab(name)}
+        onPress={() => {
+          if (name === 'log') {
+            setLogbookFilter('all');
+          }
+          setActiveTab(name);
+        }}
       >
         <Icon size={24} color={isActive ? C.red : C.textXs} />
         <Text style={[styles.tabLabel, { color: isActive ? C.red : C.textXs }]}>{label}</Text>

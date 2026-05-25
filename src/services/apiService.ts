@@ -419,7 +419,7 @@ export const apiService = {
     console.log(`[API] Fetching home data from ${authApi.baseUrl}/api/home?trend_period=${trend_period}`);
     const response = await authenticatedFetch(`/api/home?trend_period=${trend_period}`);
     const result = await response.json();
-    return result.data; // HomeResource wraps it in a 'data' key
+    return result.data || result;
   },
 
   async fetchRecommendations(dateFrom?: string, dateTo?: string): Promise<any> {
