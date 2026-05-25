@@ -1,4 +1,5 @@
 import { LogEntry, ScanResult, AISummary } from './types';
+import { apiService } from './apiService';
 
 // --- CONFIGURATION ---
 export const AI_BASE_URL = "http://your-ai-service.com";
@@ -33,40 +34,43 @@ export const aiService = {
   },
 
   /**
-   * Simulates an LLM analyzing log history to provide personalized insights.
+   * Generates insights by fetching them from the backend.
    */
   async getAIInsights(userLogs: LogEntry[], query: string): Promise<string> {
-    console.log(`[AI] Generating insights at ${AI_BASE_URL}/chat`, { logsCount: userLogs.length, query });
-
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const responses = [
-          "Based on your recent trends, your glucose is 15% more stable after evening walks. I suggest continuing this routine.",
-          "I noticed a spike after your breakfast yesterday. It might be related to the high carb intake in the Avocado Toast.",
-          "Your overnight levels are slightly lower than usual. Consider a small protein-rich snack before bed.",
-          "You've stayed within your target range for 4 days straight! Great job maintaining consistency."
-        ];
-        
-        const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-        resolve(randomResponse);
-      }, 2000);
-    });
+    console.log(`[AI] Fetching insights for query: ${query}`);
+    try {
+      // For now we just fetch the general recommendations as a proxy for 'insights'
+      // since the backend doesn't have a specific GET /chat endpoint yet.
+      const recommendations = await apiService.fetchRecommendations();
+      if (recommendations.length > 0) {
+        return recommendations[0].description;
+      }
+      return "Keep tracking your data to receive personalized AI insights!";
+    } catch (e) {
+      console.error("[AI] Failed to fetch insights:", e);
+      return "Unable to connect to AI service. Please try again later.";
+    }
   },
 
   /**
-   * Simulates a daily summary generation.
+   * Fetches the daily summary from the backend.
    */
   async getAIDailySummary(userLogs: LogEntry[]): Promise<AISummary> {
-    console.log(`[AI] Generating summary at ${AI_BASE_URL}/summary`);
-
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          summary: "Your glucose levels were remarkably stable today, staying within range 88% of the time.",
-          recommendation: "Increase fiber in your dinner to prevent the slight 10:00 PM spike we've seen recently.",
-          status: "Normal"
-        });
-      }, 1500);
-    });
+    console.log(`[AI] Fetching daily summary`);
+    try {
+      const summaryData = await apiService.fetchAISummary();
+      return {
+        summary: summaryData.summary || "No summary available for today.",
+        recommendation: summaryData.recommendation || "Continue monitoring your levels.",
+        status: summaryData.status || "Normal"
+      };
+    } catch (e) {
+      console.error("[AI] Failed to fetch summary:", e);
+      return {
+        summary: "Error connecting to AI service.",
+        recommendation: "Check your connection.",
+        status: "Normal"
+      };
+    }
   }
 };

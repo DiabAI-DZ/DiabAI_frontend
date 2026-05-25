@@ -132,13 +132,18 @@ const TargetGlucoseSlider: React.FC<{
     const touchedPct = (touchX / trackWidth) * 100;
     const value = Math.round(min + (touchedPct / 100) * (max - min));
     
+    // Improved logic: find which handle is TRULY closer
     const distToMin = Math.abs(value - minVal);
     const distToMax = Math.abs(value - maxVal);
     
     if (distToMin < distToMax) {
-      onChange(Math.min(Math.max(min, value), maxVal - 5), maxVal);
+      // Don't let min overlap max
+      const newMin = Math.min(Math.max(min, value), maxVal - 10);
+      onChange(newMin, maxVal);
     } else {
-      onChange(minVal, Math.max(Math.min(max, value), minVal + 5));
+      // Don't let max overlap min 
+      const newMax = Math.max(Math.min(max, value), minVal + 10);
+      onChange(minVal, newMax);
     }
   };
 
@@ -164,21 +169,27 @@ const TargetGlucoseSlider: React.FC<{
         onResponderRelease={handleTrackTouch}
       >
         <View style={[styles.sliderBgTrack, { backgroundColor: isDark ? "#2A2A30" : "#F0EDED" }]} />
-        <LinearGradient
-          colors={[C.red, C.redLight]}
-          style={[styles.sliderActiveTrack, { left: `${pct(minVal)}%`, width: `${pct(maxVal) - pct(minVal)}%` }]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
+        <View
+          style={[
+            styles.sliderActiveTrack, 
+            { 
+              backgroundColor: C.red,
+              left: `${pct(minVal)}%`, 
+              width: `${pct(maxVal) - pct(minVal)}%` 
+            }
+          ]}
         />
-        <View style={[styles.sliderHandle, { left: `${pct(minVal)}%`, borderColor: C.red }]} />
-        <View style={[styles.sliderHandle, { left: `${pct(maxVal)}%`, borderColor: C.red }]} />
+        
+        {/* Handles - White background, Red border as in screenshot */}
+        <View style={[styles.sliderHandle, { left: `${pct(minVal)}%`, borderColor: C.red, backgroundColor: '#FFF' }]} />
+        <View style={[styles.sliderHandle, { left: `${pct(maxVal)}%`, borderColor: C.red, backgroundColor: '#FFF' }]} />
       </View>
 
       <View style={styles.sliderPresetsRow}>
         {[
           { label: "Normal", mn: 70, mx: 140 },
           { label: "Tight", mn: 80, mx: 130 },
-          { label: "Relaxed", mn: 60, mx: 160 },
+          { label: "Relaxed", mn: 60, mx: 180 },
         ].map((p) => {
           const active = minVal === p.mn && maxVal === p.mx;
           return (
@@ -188,12 +199,12 @@ const TargetGlucoseSlider: React.FC<{
               style={[
                 styles.sliderPresetBtn,
                 {
-                  backgroundColor: active ? C.redBg : (isDark ? "#222226" : "#FAFAFA"),
+                  backgroundColor: active ? C.redBg : "transparent",
                   borderColor: active ? C.red : C.divider
                 }
               ]}
             >
-              <Text style={[styles.sliderPresetText, { color: active ? C.red : C.textMd }]}>{p.label}</Text>
+              <Text style={[styles.sliderPresetText, { color: active ? C.red : C.textSm }]}>{p.label}</Text>
             </TouchableOpacity>
           );
         })}
@@ -967,6 +978,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
+  },
+  handleLabel: {
+    position: 'absolute',
+    top: -24,
+    left: -10,
+    right: -10,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  handleLabelText: {
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
   sliderPresetsRow: {
     flexDirection: 'row',

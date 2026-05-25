@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/apiService';
 import { aiService } from '../services/aiService';
-import { LogEntry, AlertItem, ScanResult, AISummary } from '../services/types';
+import { useUser } from './UserContext';
+import { LogEntry, AlertItem, ScanResult, AISummary, HomeData } from '../services/types';
 
 interface DataContextType {
   logs: LogEntry[];
   alerts: AlertItem[];
+  homeData: HomeData | null;
+  recommendations: any[];
   loading: boolean;
   refreshData: () => Promise<void>;
   addLog: (log: Omit<LogEntry, "id">) => Promise<void>;
@@ -21,17 +24,23 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [homeData, setHomeData] = useState<HomeData | null>(null);
+  const [recommendations, setRecommendations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refreshData = useCallback(async () => {
     setLoading(true);
     try {
-      const [logsData, alertsData] = await Promise.all([
+      const [logsData, alertsData, homeDataObj, recsData] = await Promise.all([
         apiService.fetchLogs(),
         apiService.fetchAlerts(),
+        apiService.fetchHomeData(),
+        apiService.fetchRecommendations(),
       ]);
       setLogs(logsData);
       setAlerts(alertsData);
+      setHomeData(homeDataObj);
+      setRecommendations(recsData);
     } catch (error) {
       console.error("DataContext: Failed to fetch data:", error);
     } finally {
@@ -81,14 +90,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return await aiService.processGlucometerImage(uri);
   }, []);
 
+  const { profile } = useUser();
+  const [lastRefreshedUser, setLastRefreshedUser] = useState<string | null>(null);
+
   useEffect(() => {
-    refreshData();
-  }, [refreshData]);
+    if (profile?.email) {
+      if (lastRefreshedUser !== profile.email) {
+        refreshData();
+        setLastRefreshedUser(profile.email);
+      }
+    } else if (!profile) {
+      // Clear data on sign out
+      setLogs([]);
+      setAlerts([]);
+      setHomeData(null);
+      setRecommendations([]);
+      setLastRefreshedUser(null);
+    }
+  }, [profile, refreshData, lastRefreshedUser]);
 
   return (
     <DataContext.Provider value={{ 
       logs, 
       alerts, 
+      homeData,
+      recommendations,
       loading, 
       refreshData, 
       addLog, 

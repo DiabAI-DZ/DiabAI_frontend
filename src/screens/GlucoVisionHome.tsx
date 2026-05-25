@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, SafeAreaView } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { Home, ClipboardList, Scan, MessageSquare, Settings as SettingsIcon, Plus } from 'lucide-react-native';
+import { 
+  Home, ClipboardList, Scan, MessageSquare, Settings as SettingsIcon, 
+  Plus, Utensils, Syringe, Activity, X 
+} from 'lucide-react-native';
 import Dashboard from './Dashboard';
 import LogbookScreen from './LogbookScreen';
 import AIInsightsScreen from './AIInsightsScreen';
 import SettingsScreen from './SettingsScreen';
 import ScanFlow from './ScanFlow';
+import ActionForms from '../components/ActionForms';
+import { BlurView } from 'expo-blur';
+import { Animated, Modal } from 'react-native';
+import { useData } from '../context/DataContext';
 
 interface GlucoVisionHomeProps {
   onNavigateAlerts: () => void;
@@ -19,12 +26,17 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   onNavigateDetail,
   onNavigateAccountSettings 
 }) => {
-  const { C } = useTheme();
+  const { C, isDark } = useTheme();
+  const { addLog } = useData();
   const [activeTab, setActiveTab] = useState<'home' | 'log' | 'ai' | 'settings'>('home');
   const [showScan, setShowScan] = useState(false);
+  const [scanMode, setScanMode] = useState<'glucose' | 'meal'>('glucose');
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [showActionPopup, setShowActionPopup] = useState(false);
+  const [actionType, setActionType] = useState<'injection' | 'activity'>('injection');
 
   if (showScan) {
-    return <ScanFlow onBack={() => setShowScan(false)} onComplete={() => setShowScan(false)} />;
+    return <ScanFlow mode={scanMode} onBack={() => setShowScan(false)} onComplete={() => setShowScan(false)} />;
   }
 
   const renderContent = () => {
@@ -50,26 +62,119 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
     );
   };
 
+  const handleAddOption = (type: 'glucose_scan' | 'meal_scan' | 'injection' | 'activity') => {
+    setAddMenuOpen(false);
+    if (type === 'glucose_scan') {
+      setScanMode('glucose');
+      setShowScan(true);
+    } else if (type === 'meal_scan') {
+      setScanMode('meal');
+      setShowScan(true);
+    } else if (type === 'injection') {
+      setActionType('injection');
+      setShowActionPopup(true);
+    } else if (type === 'activity') {
+      setActionType('activity');
+      setShowActionPopup(true);
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: C.bg }]}>
       <View style={styles.content}>
         {renderContent()}
       </View>
 
+      <ActionForms 
+        visible={showActionPopup} 
+        onClose={() => setShowActionPopup(false)}
+        type={actionType}
+        onSave={addLog}
+      />
+
+      {/* Add Menu Modal */}
+      <Modal
+        visible={addMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddMenuOpen(false)}
+      >
+        <TouchableOpacity 
+          style={styles.menuOverlay} 
+          activeOpacity={1} 
+          onPress={() => setAddMenuOpen(false)}
+        >
+          <BlurView intensity={isDark ? 40 : 60} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
+          
+          <View style={styles.menuContent}>
+            <View style={styles.menuRow}>
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => handleAddOption('glucose_scan')}
+              >
+                <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
+                  <Scan size={24} color="#FFF" />
+                </View>
+                <Text style={[styles.menuText, { color: C.text }]}>Glucose Scan</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => handleAddOption('meal_scan')}
+              >
+                <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
+                  <Utensils size={24} color="#FFF" />
+                </View>
+                <Text style={[styles.menuText, { color: C.text }]}>Meal Scan</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.menuRow, { marginTop: 20 }]}>
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => handleAddOption('injection')}
+              >
+                <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
+                  <Syringe size={24} color="#FFF" />
+                </View>
+                <Text style={[styles.menuText, { color: C.text }]}>Add Injection</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => handleAddOption('activity')}
+              >
+                <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
+                  <Activity size={24} color="#FFF" />
+                </View>
+                <Text style={[styles.menuText, { color: C.text }]}>Add Activity</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.closeMenuBtn, { backgroundColor: C.red }]}
+              onPress={() => setAddMenuOpen(false)}
+            >
+              <X size={32} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Bottom Tab Bar */}
       <View style={[styles.tabBar, { backgroundColor: C.white, borderTopColor: C.redBorder }]}>
         <TabItem name="home" icon={Home} label="Home" />
         <TabItem name="log" icon={ClipboardList} label="Logbook" />
         
-        {/* Floating Scan Button */}
+        {/* Floating Add Button */}
         <View style={styles.scanContainer}>
           <TouchableOpacity 
             style={[styles.scanButton, { backgroundColor: C.red }]}
-            onPress={() => setShowScan(true)}
+            onPress={() => setAddMenuOpen(true)}
           >
-            <Scan size={28} color="#FFF" />
+            <Plus size={32} color="#FFF" />
           </TouchableOpacity>
-          <Text style={[styles.tabLabel, { color: C.textXs, marginTop: 4 }]}>Scan</Text>
+          <Text style={[styles.tabLabel, { color: C.textXs, marginTop: 4 }]}>Add</Text>
         </View>
 
         <TabItem name="ai" icon={MessageSquare} label="AI Insights" />
@@ -121,6 +226,52 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
+  menuOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  menuContent: {
+    paddingBottom: 120,
+    paddingHorizontal: 40,
+    alignItems: 'center',
+  },
+  menuRow: {
+    flexDirection: 'row',
+    gap: 40,
+  },
+  menuItem: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  menuIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  menuText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  closeMenuBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    marginTop: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#C41E26',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  }
 });
 
 export default GlucoVisionHome;

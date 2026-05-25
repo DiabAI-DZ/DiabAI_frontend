@@ -16,6 +16,7 @@ export interface MeasurementEntry {
   trend?: GlucoseTrend;
   previousValue?: number;
   dailyAvg?: number;
+  notes?: string;
 }
 
 export interface MealEntry {
@@ -34,6 +35,7 @@ export interface MealEntry {
   impactLevel: ImpactLevel;
   image: string;
   tags?: string[];
+  notes?: string;
 }
 
 export interface AlertItem {
@@ -47,7 +49,35 @@ export interface AlertItem {
   read?: boolean;
 }
 
-export type LogEntry = MeasurementEntry | MealEntry;
+export interface InsulinInjectionEntry {
+  id: number;
+  type: "injection";
+  insulinType: "rapid_acting" | "short_acting" | "intermediate" | "long_acting" | "ultra_long_acting" | "mixed";
+  dose: number;
+  site?: "abdomen" | "thigh" | "arm" | "buttock";
+  reason: "basal" | "correction" | "meal_coverage" | "other";
+  time: string;
+  date: string;
+  notes?: string;
+}
+
+export interface ActivityEntry {
+  id: number;
+  type: "activity";
+  activityType: "walking" | "running" | "cycling" | "swimming" | "gym" | "yoga" | "football" | "basketball" | "other";
+  duration: number; // minutes
+  intensity: "low" | "moderate" | "high";
+  calories?: number;
+  distance?: number;
+  steps?: number;
+  heartRate?: number;
+  impact?: "decrease" | "stable" | "increase";
+  time: string;
+  date: string;
+  notes?: string;
+}
+
+export type LogEntry = MeasurementEntry | MealEntry | InsulinInjectionEntry | ActivityEntry;
 
 export interface UserProfile {
   name: string;

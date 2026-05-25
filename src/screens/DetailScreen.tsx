@@ -10,12 +10,9 @@ import {
 } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import { useTheme } from '../context/ThemeContext';
+import { useUser } from '../context/UserContext';
 import { 
-  TrendingUp, 
-  TrendingDown, 
-  Minus, 
-  Heart, 
-  Target, 
+  AlertTriangle,
   Zap, 
   Activity, 
   Flame, 
@@ -27,6 +24,11 @@ import {
   Shield,
   ArrowUpRight,
   ArrowDownRight,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Heart,
+  Target,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -92,6 +94,7 @@ const NutritionRingDetail: React.FC<{ label: string; value: number; unit: string
 
 const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
   const { C, isDark } = useTheme();
+  const { profile } = useUser();
 
   const isMeasurement = entry.type === 'measurement';
 
@@ -128,14 +131,17 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
     const maxVal = 300;
     const pct = Math.min(100, Math.max(0, ((entry.value - minVal) / (maxVal - minVal)) * 100));
 
-    const insights = entry.status === 'Normal' ? [
-      { icon: Heart, iconBg: C.greenBg, iconColor: C.green, title: "Great Reading!", desc: "This glucose reading is within your target range (70–140 mg/dL). Keep up the healthy routine." },
+    const minGoal = profile?.goals?.min || 70;
+    const maxGoal = profile?.goals?.max || 140;
+
+    const insights = entry.value >= minGoal && entry.value <= maxGoal ? [
+      { icon: Heart, iconBg: C.greenBg, iconColor: C.green, title: "Great Reading!", desc: `This glucose reading is within your target range (${minGoal}–${maxGoal} mg/dL). Keep up the healthy routine.` },
       { icon: Target, iconBg: C.blueBg, iconColor: C.blue, title: "On Track", desc: "Your fasting glucose is well-controlled. Consistency with meal timing supports stable levels." }
-    ] : entry.status === 'High' ? [
-      { icon: AlertTriangle, iconBg: C.amberBg, iconColor: C.amber, title: "Above Target Range", desc: "This reading exceeds 140 mg/dL. Consider reviewing recent meals and physical activity levels." },
+    ] : entry.value > maxGoal ? [
+      { icon: AlertTriangle, iconBg: C.amberBg, iconColor: C.amber, title: "Above Target Range", desc: `This reading exceeds ${maxGoal} mg/dL. Consider reviewing recent meals and physical activity levels.` },
       { icon: Brain, iconBg: C.purpleBg, iconColor: C.purple, title: "Pattern Detected", desc: "Post-meal spikes have been more common this week. A short walk after meals may help reduce peaks." }
     ] : [
-      { icon: AlertTriangle, iconBg: C.redBg, iconColor: C.red, title: "Below Target Range", desc: "This reading is below the safe threshold of 70 mg/dL. Ensure you're eating regular meals." },
+      { icon: AlertTriangle, iconBg: C.redBg, iconColor: C.red, title: "Below Target Range", desc: `This reading is below the safe threshold of ${minGoal} mg/dL. Ensure you're eating regular meals.` },
       { icon: Zap, iconBg: C.amberBg, iconColor: C.amber, title: "Action Recommended", desc: "Consider consuming 15g of fast-acting carbohydrates and recheck in 15 minutes." }
     ];
 
@@ -198,9 +204,9 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
             />
           </View>
           <View style={styles.gaugeLabels}>
-            <Text style={[styles.gaugeLabelText, { color: C.red }]}>Low &lt;70</Text>
-            <Text style={[styles.gaugeLabelText, { color: C.green }]}>Normal 70-140</Text>
-            <Text style={[styles.gaugeLabelText, { color: C.amber }]}>High &gt;140</Text>
+            <Text style={[styles.gaugeLabelText, { color: C.red }]}>Low &lt;{profile?.goals?.min || 70}</Text>
+            <Text style={[styles.gaugeLabelText, { color: C.green }]}>Normal {profile?.goals?.min || 70}-{profile?.goals?.max || 140}</Text>
+            <Text style={[styles.gaugeLabelText, { color: C.amber }]}>High &gt;{profile?.goals?.max || 140}</Text>
           </View>
         </View>
 
@@ -296,7 +302,7 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
         <View style={styles.sectionWrap}>
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionTitle, { color: C.text }]}>Health Insights</Text>
-            <View style={[styles.compareBadge, { backgroundColor: C.purpleBg, borderColor: C.purpleBorder }]}>
+            <View style={[styles.compareBadge, { backgroundColor: C.purpleBg, borderColor: C.divider }]}>
               <Text style={[styles.compareBadgeText, { color: C.purple }]}>AI Powered</Text>
             </View>
           </View>
@@ -434,7 +440,7 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
         <View style={styles.sectionWrap}>
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionTitle, { color: C.text }]}>Health Insights</Text>
-            <View style={[styles.compareBadge, { backgroundColor: C.purpleBg, borderColor: C.purpleBorder }]}>
+            <View style={[styles.compareBadge, { backgroundColor: C.purpleBg, borderColor: C.divider }]}>
               <Text style={[styles.compareBadgeText, { color: C.purple }]}>AI Powered</Text>
             </View>
           </View>
@@ -817,7 +823,7 @@ const styles = StyleSheet.create({
   },
   mealHeroTitle: {
     fontSize: 22,
-    fontWeight: '950',
+    fontWeight: '900',
     color: '#FFF',
     textShadowColor: 'rgba(0,0,0,0.3)',
     textShadowOffset: { width: 0, height: 1 },

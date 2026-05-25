@@ -1,9 +1,13 @@
-import { LogEntry, AlertItem, UserProfile, GlucoseStatus, GlucoseTrend, ImpactLevel, MeasurementEntry, MealEntry, HomeData } from './types';
+import { 
+  LogEntry, AlertItem, UserProfile, GlucoseStatus, GlucoseTrend, 
+  ImpactLevel, MeasurementEntry, MealEntry, InsulinInjectionEntry, 
+  ActivityEntry, HomeData 
+} from './types';
 import { authApi } from './authApi';
 
 // --- HELPERS ---
 
-const mapStatus = (status?: string): GlucoseStatus => {
+export const mapStatus = (status?: string): GlucoseStatus => {
   if (!status) return "Normal";
   const lower = status.toLowerCase();
   if (lower === 'high') return "High";
@@ -28,7 +32,7 @@ const unmapTag = (tag?: string): string => {
   return 'fasting';
 };
 
-const mapTrend = (trend?: string): GlucoseTrend => {
+export const mapTrend = (trend?: string): GlucoseTrend => {
   if (trend === 'rising' || trend === 'up') return "up";
   if (trend === 'falling' || trend === 'down') return "down";
   return "stable";
@@ -42,7 +46,7 @@ const mapImpactLevel = (level?: string): ImpactLevel => {
   return "low";
 };
 
-const formatTime = (isoString?: string): string => {
+export const formatTime = (isoString?: string): string => {
   if (!isoString) return "";
   try {
     const d = new Date(isoString);
@@ -119,16 +123,17 @@ export const apiService = {
   async fetchLogs(): Promise<LogEntry[]> {
     console.log(`[API] Fetching logs from ${authApi.baseUrl}/api/logbook`);
     try {
-      const response = await authenticatedFetch('/api/logbook');
+      const response = await authenticatedFetch('/api/logbook?per_page=50');
       const result = await response.json();
+      console.log(`[API] Logbook response:`, JSON.stringify(result?.meta), `entries: ${result?.data?.length}`);
       
       if (!result || !Array.isArray(result.data)) {
+        console.warn('[API] Logbook returned unexpected shape:', result);
         return [];
       }
 
       return result.data
-        .filter((row: any) => row.entry_type === 'measurement' || row.entry_type === 'meal')
-        .map((row: any): LogEntry => {
+        .map((row: any): LogEntry | null => {
           if (row.entry_type === 'measurement') {
             return {
               id: row.id,
@@ -141,7 +146,7 @@ export const apiService = {
               tag: mapTag(row.measurement_type),
               trend: mapTrend(row.trend),
             };
-          } else {
+          } else if (row.entry_type === 'meal') {
             return {
               id: row.id,
               type: 'meal',
@@ -159,8 +164,38 @@ export const apiService = {
               image: row.image_url || '',
               tags: row.tags || [],
             };
+          } else if (row.entry_type === 'injection') {
+            return {
+              id: row.id,
+              type: 'injection',
+              insulinType: row.insulin_type,
+              dose: row.dose_units,
+              site: row.injection_site,
+              reason: row.reason,
+              time: formatTime(row.recorded_at),
+              date: row.recorded_at,
+              notes: row.notes
+            };
+          } else if (row.entry_type === 'activity') {
+            return {
+              id: row.id,
+              type: 'activity',
+              activityType: row.activity_type,
+              duration: row.duration_minutes,
+              intensity: row.intensity,
+              calories: row.calories_burned,
+              distance: row.distance_km,
+              steps: row.steps,
+              heartRate: row.heart_rate_avg,
+              impact: row.glucose_impact,
+              time: formatTime(row.recorded_at),
+              date: row.recorded_at,
+              notes: row.notes
+            };
           }
-        });
+          return null;
+        })
+        .filter((entry: LogEntry | null): entry is LogEntry => entry !== null);
     } catch (error) {
       console.error("fetchLogs failed:", error);
       throw error;
@@ -177,14 +212,16 @@ export const apiService = {
           value_mg_dl: mLog.value,
           measurement_type: unmapTag(mLog.tag),
           measured_at: mLog.date,
-          notes: "",
+          notes: mLog.notes || "",
           tags: []
         };
+        console.log(`[API] Measurement payload:`, JSON.stringify(payload));
         const response = await authenticatedFetch('/api/measurements', {
           method: 'POST',
           body: JSON.stringify(payload)
         });
         const result = await response.json();
+        console.log(`[API] Measurement created:`, JSON.stringify(result));
         const row = result.data;
         return {
           id: row.id,
@@ -196,6 +233,68 @@ export const apiService = {
           date: row.measured_at,
           tag: mapTag(row.measurement_type),
           trend: mapTrend(row.trend),
+        };
+      } else if (log.type === 'injection') {
+        const iLog = log as Omit<InsulinInjectionEntry, "id">;
+        const payload = {
+          insulin_type: iLog.insulinType,
+          dose_units: iLog.dose,
+          injection_site: iLog.site,
+          reason: iLog.reason,
+          injected_at: iLog.date,
+          notes: iLog.notes || ""
+        };
+        const response = await authenticatedFetch('/api/injections', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        const row = result.data;
+        return {
+          id: row.id,
+          type: 'injection',
+          insulinType: row.insulin_type,
+          dose: row.dose_units,
+          site: row.injection_site,
+          reason: row.reason,
+          time: formatTime(row.injected_at),
+          date: row.injected_at,
+          notes: row.notes
+        };
+      } else if (log.type === 'activity') {
+        const aLog = log as Omit<ActivityEntry, "id">;
+        const payload = {
+          activity_type: aLog.activityType,
+          duration_minutes: Math.max(1, aLog.duration || 0),
+          intensity: aLog.intensity || 'moderate',
+          started_at: aLog.date,
+          notes: aLog.notes || "",
+          calories_burned: (aLog.calories && aLog.calories > 0) ? aLog.calories : null,
+          distance_km: aLog.distance || 0,
+          steps: (aLog.steps && aLog.steps > 0) ? aLog.steps : null,
+          heart_rate_avg: aLog.heartRate || null,
+          glucose_impact: aLog.impact || 'stable'
+        };
+        const response = await authenticatedFetch('/api/activities', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        const row = result.data;
+        return {
+          id: row.id,
+          type: 'activity',
+          activityType: row.activity_type,
+          duration: row.duration_minutes,
+          intensity: row.intensity,
+          calories: row.calories_burned,
+          distance: row.distance_km,
+          steps: row.steps,
+          heartRate: row.heart_rate_avg,
+          impact: row.glucose_impact,
+          time: formatTime(row.started_at),
+          date: row.started_at,
+          notes: row.notes
         };
       } else {
         const mLog = log as Omit<MealEntry, "id">;
@@ -242,7 +341,7 @@ export const apiService = {
     }
   },
 
-  async deleteLog(id: number, type?: "measurement" | "meal"): Promise<void> {
+  async deleteLog(id: number, type?: "measurement" | "meal" | "activity" | "injection"): Promise<void> {
     console.log(`[API] Deleting log ${id} (type: ${type})`);
     try {
       if (type === 'meal') {
@@ -253,15 +352,22 @@ export const apiService = {
         await authenticatedFetch(`/api/measurements/${id}`, {
           method: 'DELETE'
         });
+      } else if (type === 'injection') {
+        await authenticatedFetch(`/api/injections/${id}`, {
+          method: 'DELETE'
+        });
+      } else if (type === 'activity') {
+        await authenticatedFetch(`/api/activities/${id}`, {
+          method: 'DELETE'
+        });
       } else {
-        try {
-          await authenticatedFetch(`/api/measurements/${id}`, {
-            method: 'DELETE'
-          });
-        } catch (e) {
-          await authenticatedFetch(`/api/meals/${id}`, {
-            method: 'DELETE'
-          });
+        // Fallback or generic delete if type is unknown
+        try { await authenticatedFetch(`/api/measurements/${id}`, { method: 'DELETE' }); } catch(e) {
+          try { await authenticatedFetch(`/api/meals/${id}`, { method: 'DELETE' }); } catch(e) {
+            try { await authenticatedFetch(`/api/injections/${id}`, { method: 'DELETE' }); } catch(e) {
+              await authenticatedFetch(`/api/activities/${id}`, { method: 'DELETE' });
+            }
+          }
         }
       }
     } catch (error) {
@@ -308,11 +414,44 @@ export const apiService = {
     }
   },
 
-  // Profile
+  // Home & Insights
   async fetchHomeData(trend_period: "7d" | "30d" = "7d"): Promise<HomeData> {
     console.log(`[API] Fetching home data from ${authApi.baseUrl}/api/home?trend_period=${trend_period}`);
     const response = await authenticatedFetch(`/api/home?trend_period=${trend_period}`);
-    return await response.json();
+    const result = await response.json();
+    return result.data; // HomeResource wraps it in a 'data' key
+  },
+
+  async fetchRecommendations(dateFrom?: string, dateTo?: string): Promise<any> {
+    const params = new URLSearchParams();
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    
+    console.log(`[API] Fetching recommendations`);
+    const response = await authenticatedFetch(`/api/insights/recommendations?${params.toString()}`);
+    const result = await response.json();
+    return result.recommendations || [];
+  },
+
+  async fetchAISummary(): Promise<any> {
+    console.log(`[API] Fetching AI summary`);
+    const response = await authenticatedFetch('/api/insights/summary');
+    const result = await response.json();
+    return result.data || result;
+  },
+
+  async fetchPatterns(): Promise<any> {
+    console.log(`[API] Fetching patterns`);
+    const response = await authenticatedFetch('/api/insights/patterns');
+    const result = await response.json();
+    return result.patterns || [];
+  },
+
+  async fetchPredictions(): Promise<any> {
+    console.log(`[API] Fetching predictions`);
+    const response = await authenticatedFetch('/api/insights/prediction');
+    const result = await response.json();
+    return result.prediction || result.data || [];
   },
 
   async fetchProfile(): Promise<UserProfile> {

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
+import { useUser } from '../context/UserContext';
 import { 
   Search, 
   SlidersHorizontal, 
@@ -33,7 +34,8 @@ import {
   Moon, 
   Cookie,
   ChevronRight,
-  SmilePlus
+  SmilePlus,
+  Syringe
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { format, isSameDay, isAfter, isBefore, subDays, parseISO } from 'date-fns';
@@ -41,7 +43,7 @@ import { format, isSameDay, isAfter, isBefore, subDays, parseISO } from 'date-fn
 const { width, height } = Dimensions.get('window');
 
 type GlucoseStatus = "Normal" | "High" | "Low";
-type FilterType = "all" | "measurements" | "meals";
+type FilterType = "all" | "measurements" | "meals" | "injections" | "activities";
 type DatePreset = "today" | "7days" | "30days" | "custom";
 type MealTypeFilter = "breakfast" | "lunch" | "dinner" | "snack";
 type GlucosePreset = "low" | "normal" | "high" | null;
@@ -74,7 +76,7 @@ const DateStrip: React.FC<{
   onSelect: (date: Date) => void;
 }> = ({ selectedDate, onSelect }) => {
   const { C } = useTheme();
-  const today = useMemo(() => new Date(2026, 2, 31), []); // Locked mock today date
+  const today = useMemo(() => new Date(), []);
   
   // Generate 14 days: 7 past + today + 6 future (future disabled)
   const days = useMemo(() => {
@@ -156,8 +158,9 @@ const GlucoseTrackSlider: React.FC<{
   const pctMin = ((valueMin - min) / (max - min)) * 100;
   const pctMax = ((valueMax - min) / (max - min)) * 100;
   
-  const lowPct = ((70 - min) / (max - min)) * 100;
-  const highPct = ((140 - min) / (max - min)) * 100;
+  const { profile } = useUser();
+  const lowPct = (((profile?.goals?.min || 70) - min) / (max - min)) * 100;
+  const highPct = (((profile?.goals?.max || 140) - min) / (max - min)) * 100;
 
   // Track layout values
   const trackWidth = width - 80;
@@ -215,30 +218,29 @@ const GlucoseTrackSlider: React.FC<{
       </View>
 
       <View style={styles.sliderLabelsRow}>
-        <Text style={[styles.sliderLabelText, { color: C.red }]}>Low &lt;70</Text>
-        <Text style={[styles.sliderLabelText, { color: C.green }]}>Normal 70-140</Text>
-        <Text style={[styles.sliderLabelText, { color: C.amber }]}>High &gt;140</Text>
+        <Text style={[styles.sliderLabelText, { color: C.red }]}>Low &lt;{profile?.goals?.min || 70}</Text>
+        <Text style={[styles.sliderLabelText, { color: C.green }]}>Normal {profile?.goals?.min || 70}-{profile?.goals?.max || 140}</Text>
+        <Text style={[styles.sliderLabelText, { color: C.amber }]}>High &gt;{profile?.goals?.max || 140}</Text>
       </View>
     </View>
   );
 };
 
 // Sub-Component: Summary Stats
-const SummaryStats: React.FC<{ entries: any[] }> = ({ entries }) => {
+const SummaryStats: React.FC<{ entries: any[]; profile: any }> = ({ entries, profile }) => {
   const { C } = useTheme();
   
   const statsData = useMemo(() => {
     const measurements = entries.filter((e) => e.type === "measurement");
     const meals = entries.filter((e) => e.type === "meal");
-    const avg = measurements.length ? Math.round(measurements.reduce((s, m) => s + m.value, 0) / measurements.length) : 0;
-    const inRange = measurements.filter((m) => m.value >= 70 && m.value <= 140).length;
-    const pct = measurements.length ? Math.round((inRange / measurements.length) * 100) : 0;
+    const injections = entries.filter((e) => e.type === "injection");
+    const activities = entries.filter((e) => e.type === "activity");
     
     return [
-      { label: "Scans", value: String(measurements.length), icon: Activity, color: C.red },
-      { label: "Avg", value: `${avg}`, sub: "mg/dL", icon: Droplets, color: C.blue },
-      { label: "In Range", value: `${pct}%`, icon: Zap, color: C.green },
-      { label: "Meals", value: String(meals.length), icon: Utensils, color: C.amber },
+      { label: "Scans", value: String(measurements.length), icon: Activity, color: C.red, sub: "" },
+      { label: "Meals", value: String(meals.length), icon: Utensils, color: C.amber, sub: "" },
+      { label: "Doses", value: String(injections.length), icon: Syringe, color: C.blue, sub: "" },
+      { label: "Active", value: String(activities.length), icon: Zap, color: C.green, sub: "" },
     ];
   }, [entries, C]);
 
@@ -284,7 +286,6 @@ const MeasurementCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry
 
   return (
     <TouchableOpacity
-      onClick={onSelect}
       onPress={onSelect}
       style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
     >
@@ -341,7 +342,6 @@ const MealCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, onSel
 
   return (
     <TouchableOpacity
-      onClick={onSelect}
       onPress={onSelect}
       style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
     >
@@ -391,6 +391,104 @@ const MealCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, onSel
   );
 };
 
+// Sub-Component: Injection Grid Card
+const InjectionCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, onSelect }) => {
+  const { C, isDark } = useTheme();
+  return (
+    <TouchableOpacity
+      onPress={onSelect}
+      style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
+    >
+      <View style={[styles.gridCardTopGlucometer, { backgroundColor: C.redBg }]}>
+        <Syringe size={48} color={C.red} strokeWidth={1} style={{ opacity: 0.15 }} />
+        <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: C.redBorder }]}>
+          <Text style={[styles.statusBadgeText, { color: C.red, textTransform: 'capitalize' }]}>{entry.site}</Text>
+        </View>
+      </View>
+
+      <LinearGradient
+        colors={['#4B5563', '#1F2937']}
+        style={styles.cardHeaderBand}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <Text style={styles.cardHeaderCategoryText}>{entry.insulinType.replace('_', ' ').toUpperCase()}</Text>
+        <View style={styles.cardHeaderMainValueRow}>
+          <Text style={styles.cardHeaderValueText}>{entry.dose}</Text>
+          <Text style={styles.cardHeaderUnitText}>Units</Text>
+        </View>
+      </LinearGradient>
+
+      <View style={styles.gridCardBottomInfo}>
+        <View style={[styles.trendBadge, { backgroundColor: C.redBg }]}>
+          <Zap size={9} color={C.red} />
+          <Text style={[styles.trendBadgeText, { color: C.red }]}>{entry.reason.replace('_', ' ')}</Text>
+        </View>
+        <View style={styles.cardTimeRow}>
+          <Text style={[styles.cardTimeText, { color: C.textSm }]}>
+            {entry.time} · {format(parseISO(entry.date), "MMM d")}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+// Sub-Component: Activity Grid Card
+const ActivityCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, onSelect }) => {
+  const { C, isDark } = useTheme();
+  const intensityColor = entry.intensity === 'high' ? C.red : (entry.intensity === 'moderate' ? C.amber : C.green);
+  
+  return (
+    <TouchableOpacity
+      onPress={onSelect}
+      style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
+    >
+      <View style={[styles.gridCardTopGlucometer, { backgroundColor: intensityColor + '10' }]}>
+        <Activity size={48} color={intensityColor} strokeWidth={1} style={{ opacity: 0.15 }} />
+        <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: intensityColor + '30' }]}>
+          <Text style={[styles.statusBadgeText, { color: intensityColor, textTransform: 'capitalize' }]}>{entry.intensity}</Text>
+        </View>
+      </View>
+
+      <LinearGradient
+        colors={[intensityColor, intensityColor + 'CC']}
+        style={styles.cardHeaderBand}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <Text style={styles.cardHeaderCategoryText}>{entry.activityType.toUpperCase()}</Text>
+        <View style={styles.cardHeaderMainValueRow}>
+          <Text style={styles.cardHeaderValueText}>{entry.duration}</Text>
+          <Text style={styles.cardHeaderUnitText}>Min</Text>
+        </View>
+      </LinearGradient>
+
+      <View style={styles.gridCardBottomInfo}>
+        <View style={styles.mealMetricsRow}>
+          {entry.distance > 0 && (
+            <View style={styles.mealMetricBox}>
+              <TrendingUp size={9} color={C.textSm} />
+              <Text style={[styles.mealMetricVal, { color: C.textMd }]}>{entry.distance} km</Text>
+            </View>
+          )}
+          {entry.calories > 0 && (
+            <View style={styles.mealMetricBox}>
+              <Flame size={9} color={C.amber} />
+              <Text style={[styles.mealMetricVal, { color: C.textMd }]}>{entry.calories} kcal</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.cardTimeRow}>
+          <Text style={[styles.cardTimeText, { color: C.textSm }]}>
+            {entry.time} · {format(parseISO(entry.date), "MMM d")}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 // Sub-Component: Group Listing Container
 const EntryGroup: React.FC<{
   label: string;
@@ -403,6 +501,8 @@ const EntryGroup: React.FC<{
 
   const measurements = entries.filter((e) => e.type === "measurement");
   const meals = entries.filter((e) => e.type === "meal");
+  const injections = entries.filter((e) => e.type === "injection");
+  const activities = entries.filter((e) => e.type === "activity");
 
   return (
     <View style={styles.groupFrame}>
@@ -419,14 +519,28 @@ const EntryGroup: React.FC<{
       <View style={styles.gridContainer}>
         {measurements.map((entry) => (
           <MeasurementCard 
-            key={entry.id} 
+            key={entry.id || `m-${entry.date}`} 
             entry={entry} 
             onSelect={() => onSelectEntry(entry)} 
           />
         ))}
         {meals.map((entry) => (
           <MealCard 
-            key={entry.id} 
+            key={entry.id || `meal-${entry.date}`} 
+            entry={entry} 
+            onSelect={() => onSelectEntry(entry)} 
+          />
+        ))}
+        {injections.map((entry) => (
+          <InjectionCard 
+            key={entry.id || `inj-${entry.date}`} 
+            entry={entry} 
+            onSelect={() => onSelectEntry(entry)} 
+          />
+        ))}
+        {activities.map((entry) => (
+          <ActivityCard 
+            key={entry.id || `act-${entry.date}`} 
             entry={entry} 
             onSelect={() => onSelectEntry(entry)} 
           />
@@ -438,12 +552,14 @@ const EntryGroup: React.FC<{
 
 const LogbookScreen: React.FC<{ onNavigateDetail: (entry: any) => void }> = ({ onNavigateDetail }) => {
   const { C, isDark } = useTheme();
-  const { logs, loading } = useData();
+  const { logs, refreshData } = useData();
+  const { profile } = useUser();
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [filters, setFilters] = useState<Filters>(defaultFilters);
 
-  const mockToday = useMemo(() => new Date(2026, 2, 31), []);
+  const mockToday = useMemo(() => new Date(), []);
 
   const activeFilterCount = useMemo(() => {
     return [
@@ -457,11 +573,14 @@ const LogbookScreen: React.FC<{ onNavigateDetail: (entry: any) => void }> = ({ o
   const filteredEntries = useMemo(() => {
     let result = logs;
 
-    // Type filter
     if (filters.typeFilter === "measurements") {
       result = result.filter((e) => e.type === "measurement");
     } else if (filters.typeFilter === "meals") {
       result = result.filter((e) => e.type === "meal");
+    } else if (filters.typeFilter === "injections") {
+      result = result.filter((e) => e.type === "injection");
+    } else if (filters.typeFilter === "activities") {
+      result = result.filter((e) => e.type === "activity");
     }
 
     // Date filter
@@ -496,6 +615,14 @@ const LogbookScreen: React.FC<{ onNavigateDetail: (entry: any) => void }> = ({ o
       result = result.filter((e) => {
         if (e.type === "meal") {
           return e.name.toLowerCase().includes(q) || e.mealType.toLowerCase().includes(q);
+        }
+        if (e.type === "injection") {
+          return (e.insulinType?.toLowerCase().includes(q) || false) || 
+                 (e.reason?.toLowerCase().includes(q) || false) || 
+                 (e.site?.toLowerCase().includes(q) || false);
+        }
+        if (e.type === "activity") {
+          return e.activityType.toLowerCase().includes(q) || e.intensity.toLowerCase().includes(q);
         }
         return String(e.value).includes(q) || e.status.toLowerCase().includes(q) || (e.tag && e.tag.toLowerCase().includes(q));
       });
@@ -539,8 +666,10 @@ const LogbookScreen: React.FC<{ onNavigateDetail: (entry: any) => void }> = ({ o
 
   const quickChips: { id: FilterType; label: string }[] = [
     { id: "all", label: "All" },
-    { id: "measurements", label: "Measurements" },
+    { id: "measurements", label: "Scans" },
     { id: "meals", label: "Meals" },
+    { id: "injections", label: "Injections" },
+    { id: "activities", label: "Activities" },
   ];
 
   // Advanced Filters Bottom Sheet Component (Rendered inside standard RN Modal for sliding sheets)
@@ -559,9 +688,9 @@ const LogbookScreen: React.FC<{ onNavigateDetail: (entry: any) => void }> = ({ o
     ];
 
     const glucosePresets: { id: GlucosePreset; label: string; range: string; color: string }[] = [
-      { id: "low", label: "Low", range: "<70", color: C.red },
-      { id: "normal", label: "Normal", range: "70-140", color: C.green },
-      { id: "high", label: "High", range: ">140", color: C.amber },
+      { id: "low", label: "Low", range: `<${profile?.goals?.min || 70}`, color: C.red },
+      { id: "normal", label: "Normal", range: `${profile?.goals?.min || 70}-${profile?.goals?.max || 140}`, color: C.green },
+      { id: "high", label: "High", range: `>${profile?.goals?.max || 140}`, color: C.amber },
     ];
 
     const mealTypes: { id: MealTypeFilter; label: string; icon: any }[] = [
@@ -706,8 +835,8 @@ const LogbookScreen: React.FC<{ onNavigateDetail: (entry: any) => void }> = ({ o
                       <TouchableOpacity
                         key={g.id}
                         onPress={() => {
-                          const minVal = g.id === 'low' ? 40 : (g.id === 'normal' ? 70 : 141);
-                          const maxVal = g.id === 'low' ? 69 : (g.id === 'normal' ? 140 : 300);
+                          const minVal = g.id === 'low' ? 40 : (g.id === 'normal' ? (profile?.goals?.min || 70) : (profile?.goals?.max || 140) + 1);
+                          const maxVal = g.id === 'low' ? (profile?.goals?.min || 70) - 1 : (g.id === 'normal' ? (profile?.goals?.max || 140) : 300);
                           setFilters(f => ({ ...f, glucosePreset: active ? null : g.id, glucoseMin: active ? 40 : minVal, glucoseMax: active ? 300 : maxVal }));
                         }}
                         style={[
@@ -923,7 +1052,8 @@ const LogbookScreen: React.FC<{ onNavigateDetail: (entry: any) => void }> = ({ o
 
       {/* Summary Stats Row Grid */}
       <View style={styles.summaryStatsArea}>
-        <SummaryStats entries={filteredEntries} />
+        {/* Stats Grid */}
+        <SummaryStats entries={filteredEntries} profile={profile} />
       </View>
 
       {/* Results Count Line */}

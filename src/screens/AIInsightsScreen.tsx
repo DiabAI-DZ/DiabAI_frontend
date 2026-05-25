@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -42,6 +42,7 @@ import {
   Minus,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { apiService } from '../services/apiService';
 
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - 48;
@@ -135,7 +136,36 @@ const AIInsightsScreen: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([initialMessage]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [insightsLoading, setInsightsLoading] = useState(true);
+  const [weeklyTrends, setWeeklyTrends] = useState<number[]>([]);
+  const [predictions, setPredictions] = useState<any[]>([]);
+  const [anomalyList, setAnomalyList] = useState<any[]>([]);
+  const [detectedPatterns, setDetectedPatterns] = useState<any[]>([]);
+  const [recList, setRecList] = useState<any[]>([]);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  const fetchInsights = useCallback(async () => {
+    setInsightsLoading(true);
+    try {
+      const [recs, patternsData, preds] = await Promise.all([
+        apiService.fetchRecommendations(),
+        apiService.fetchPatterns(),
+        apiService.fetchPredictions(),
+      ]);
+      setRecList(recs || []);
+      setDetectedPatterns(patternsData || []);
+      setPredictions(preds || []);
+      setAnomalyList((patternsData || []).filter((p: any) => p.trend === 'up' || p.severity === 'high'));
+    } catch (error) {
+      console.error("[AIInsights] Failed to fetch backend insights:", error);
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchInsights();
+  }, [fetchInsights]);
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -190,42 +220,84 @@ const AIInsightsScreen: React.FC = () => {
     );
   }, [profile]);
 
-  // --- DASHBOARD HARDCODED/COMPUTED VALUES FROM FIGMA MAKE ---
-  const weeklyTrendData = [128, 142, 118, 155, 132, 125, 130];
-  const predictionData = [
-    { t: "Now", actual: 130, predicted: 130 },
-    { t: "16:00", actual: null, predicted: 142 },
-    { t: "17:00", actual: null, predicted: 158 },
-    { t: "18:00", actual: null, predicted: 172 },
-    { t: "19:00", actual: null, predicted: 180 },
-    { t: "20:00", actual: null, predicted: 168 },
-  ];
+  // --- DASHBOARD VALUES (Using fetched data with mock fallbacks) ---
+  const weeklyTrendData = weeklyTrends.length > 0 ? weeklyTrends : [128, 142, 118, 155, 132, 125, 130];
+  
+  const predictionData = useMemo(() => {
+    if (predictions.length > 0) return predictions;
+    return [
+      { t: "Now", actual: 130, predicted: 130 },
+      { t: "16:00", actual: null, predicted: 142 },
+      { t: "17:00", actual: null, predicted: 158 },
+      { t: "18:00", actual: null, predicted: 172 },
+      { t: "19:00", actual: null, predicted: 180 },
+      { t: "20:00", actual: null, predicted: 168 },
+    ];
+  }, [predictions]);
 
-  const mealImpactData = [
-    { meal: "White Rice", before: 110, after: 152, delta: "+42", emoji: "🍚", severity: "high" as const },
-    { meal: "Grilled Chicken", before: 115, after: 123, delta: "+8", emoji: "🍗", severity: "low" as const },
-    { meal: "Orange Juice", before: 105, after: 140, delta: "+35", emoji: "🧃", severity: "high" as const },
-    { meal: "Mixed Salad", before: 120, after: 125, delta: "+5", emoji: "🥗", severity: "low" as const },
-  ];
+  const mealImpactData = useMemo(() => {
+    const mealLogs = logs.filter(l => l.type === 'meal').slice(0, 4);
+    if (mealLogs.length === 0) return [];
+    return mealLogs.map((m: any) => ({
+      meal: m.name,
+      before: "--", // We might not have 'before' data in the simple log
+      after: m.after_meal_glucose || "--",
+      delta: m.impact || "--",
+      emoji: "🥗",
+      severity: (parseInt(m.impact) > 30) ? "high" : "low" as const
+    }));
+  }, [logs]);
 
-  const anomalyAlerts = [
-    { id: 1, title: "3 hypoglycemia events detected", desc: "Blood glucose dropped below 70 mg/dL on Mon, Wed, Fri — mostly before lunch", severity: "high" as const, icon: Zap, iconColor: '#EF4444', bg: '#FEF2F2', border: '#FECACA', time: "Last 7 days" },
-    { id: 2, title: "High glucose levels at night", desc: "Readings between 9PM–12AM averaged 158 mg/dL — 40% above normal range", severity: "medium" as const, icon: Moon, iconColor: C.amber, bg: C.amberBg, border: C.amberBorder, time: "Nightly pattern" },
-    { id: 3, title: "Irregular meal timing pattern", desc: "Lunch timing varied by ±90 min this week — affecting post-meal spikes", severity: "low" as const, icon: Clock, iconColor: C.blue, bg: C.blueBg, border: C.blueBorder, time: "Behavioral" },
-  ];
+  const anomalyAlerts = useMemo(() => {
+    if (anomalyList.length > 0) {
+      return anomalyList.map((a, i) => ({
+        id: a.id || i,
+        title: a.title,
+        desc: a.desc || a.description,
+        severity: (a.severity || "medium") as "high" | "medium" | "low",
+        icon: AlertTriangle,
+        iconColor: a.severity === 'high' ? '#EF4444' : C.amber,
+        bg: a.severity === 'high' ? '#FEF2F2' : C.amberBg,
+        border: a.severity === 'high' ? '#FECACA' : C.amberBorder,
+        time: "Detected pattern"
+      }));
+    }
+    return []; // No mock fallback
+  }, [anomalyList, C]);
 
-  const patterns = [
-    { id: 1, title: "Post-lunch glucose spike", desc: "Avg +38 mg/dL within 2hrs after lunch — significantly higher than other meals", icon: Utensils, iconBg: C.amberBg, color: C.amber, confidence: 94, trend: "up" as const, sparkData: [115, 120, 135, 155, 148, 138] },
-    { id: 2, title: "Stable morning glucose", desc: "6AM–10AM readings consistently between 95–115 mg/dL — excellent stability", icon: Sun, iconBg: C.greenBg, color: C.green, confidence: 91, trend: "stable" as const, sparkData: [102, 105, 98, 108, 103, 106] },
-    { id: 3, title: "Weekend elevation pattern", desc: "Weekend glucose averages 15 mg/dL higher — likely due to dietary changes", icon: BarChart3, iconBg: C.orangeBg, color: C.orange, confidence: 87, trend: "up" as const, sparkData: [125, 128, 132, 142, 148, 138] },
-    { id: 4, title: "Exercise lowers readings", desc: "Post-exercise readings average 22 mg/dL lower for 3+ hours", icon: Activity, iconBg: C.blueBg, color: C.blue, confidence: 89, trend: "down" as const, sparkData: [140, 132, 118, 112, 108, 110] },
-  ];
+  const p_patterns = useMemo(() => {
+    if (detectedPatterns.length > 0) {
+      return detectedPatterns.map((p, i) => ({
+        id: p.id || i,
+        title: p.title,
+        desc: p.description || p.desc,
+        icon: p.category === 'diet' ? Utensils : (p.category === 'activity' ? Activity : Brain),
+        iconBg: p.trend === 'up' ? C.amberBg : C.greenBg,
+        color: p.trend === 'up' ? C.amber : C.green,
+        confidence: p.confidence || 85,
+        trend: (p.trend || 'stable') as "up" | "down" | "stable",
+        sparkData: p.spark_data || [110, 115, 120, 118, 122, 120]
+      }));
+    }
+    return []; // No mock fallback
+  }, [detectedPatterns, C]);
 
-  const recommendations = [
-    { id: 1, title: "Reduce carbs at lunch", desc: "Your post-lunch average is 165 mg/dL. Try replacing white rice with cauliflower rice or quinoa.", icon: Utensils, iconBg: C.amberBg, priority: "High", color: '#EF4444', bg: '#FEF2F2', border: '#FECACA' },
-    { id: 2, title: "Add a mid-morning snack", desc: "A small protein snack before 11:00 can prevent the hypoglycemia dips detected this week.", icon: Coffee, iconBg: C.greenBg, priority: "Medium", color: C.amber, bg: C.amberBg, border: C.amberBorder },
-    { id: 3, title: "15-min walk after dinner", desc: "Light post-meal activity can reduce nighttime spikes by ~20 mg/dL based on your data.", icon: Activity, iconBg: C.blueBg, priority: "Suggested", color: C.blue, bg: C.blueBg, border: C.blueBorder },
-  ];
+  const p_recommendations = useMemo(() => {
+    if (recList.length > 0) {
+      return recList.map((r: any, i: number) => ({
+        id: r.id || i,
+        title: r.title,
+        desc: r.description || r.desc,
+        icon: r.category === 'diet' ? Utensils : (r.category === 'activity' ? Activity : Coffee),
+        iconBg: r.priority === 'high' ? '#FEF2F2' : C.greenBg,
+        priority: r.priority_label || r.priority,
+        color: r.priority === 'high' ? '#EF4444' : C.amber,
+        bg: r.priority === 'high' ? '#FEF2F2' : C.amberBg,
+        border: r.priority === 'high' ? '#FECACA' : C.amberBorder
+      }));
+    }
+    return []; // No mock fallback
+  }, [recList, C]);
 
   // Prediction Custom SVG Graph
   const predictionSVG = useMemo(() => {
@@ -266,6 +338,20 @@ const AIInsightsScreen: React.FC = () => {
       paddingLeft,
     };
   }, []);
+
+  // --- DERIVED METRICS ---
+  const derivedStats = useMemo(() => {
+    const measurements = logs.filter(l => l.type === 'measurement');
+    const sum = measurements.reduce((acc, curr) => acc + (curr.value || 0), 0);
+    const avg = measurements.length > 0 ? Math.round(sum / measurements.length) : 0;
+    
+    const minGoal = profile?.goals?.min || 70;
+    const maxGoal = profile?.goals?.max || 140;
+    const inRangeCount = measurements.filter(m => m.value >= minGoal && m.value <= maxGoal).length;
+    const inRangePercent = measurements.length > 0 ? Math.round((inRangeCount / measurements.length) * 100) : 0;
+    
+    return { avg, inRangePercent, stability: inRangePercent }; // Using inRangePercent as stability for simplicity
+  }, [logs, profile]);
 
   return (
     <KeyboardAvoidingView
@@ -331,10 +417,10 @@ const AIInsightsScreen: React.FC = () => {
               {/* Avg */}
               <View style={styles.metricBox}>
                 <Text style={[styles.metricLabel, { color: C.textXs }]}>AVG GLUCOSE</Text>
-                <Text style={[styles.metricVal, { color: C.text }]}>132 <Text style={styles.metricUnit}>mg/dL</Text></Text>
+                <Text style={[styles.metricVal, { color: C.text }]}>{derivedStats.avg} <Text style={styles.metricUnit}>mg/dL</Text></Text>
                 <View style={styles.metricTrend}>
                   <TrendingDown size={11} color={C.green} />
-                  <Text style={[styles.metricTrendText, { color: C.green }]}>-8 vs last week</Text>
+                  <Text style={[styles.metricTrendText, { color: C.green }]}>Status: {derivedStats.avg > 140 ? 'High' : (derivedStats.avg < 70 ? 'Low' : 'Normal')}</Text>
                 </View>
               </View>
 
@@ -342,17 +428,17 @@ const AIInsightsScreen: React.FC = () => {
               <View style={styles.ringContainer}>
                 <Text style={[styles.metricLabel, { color: C.textXs, marginBottom: 4 }]}>TIME IN RANGE</Text>
                 <View style={styles.ringWrapper}>
-                  <ProgressRing value={72} max={100} size={54} strokeWidth={5} color={C.green} bgColor={C.redBorder || '#F2D0D0'} />
-                  <Text style={[styles.ringText, { color: C.green }]}>72%</Text>
+                  <ProgressRing value={derivedStats.inRangePercent} max={100} size={54} strokeWidth={5} color={C.green} bgColor={C.redBorder || '#F2D0D0'} />
+                  <Text style={[styles.ringText, { color: C.green }]}>{derivedStats.inRangePercent}%</Text>
                 </View>
               </View>
 
               {/* Stability */}
               <View style={[styles.metricBox, { alignItems: 'flex-end' }]}>
                 <Text style={[styles.metricLabel, { color: C.textXs }]}>STABILITY</Text>
-                <Text style={[styles.metricVal, { color: C.red }]}>78 <Text style={styles.metricUnit}>/100</Text></Text>
+                <Text style={[styles.metricVal, { color: C.red }]}>{derivedStats.stability} <Text style={styles.metricUnit}>/100</Text></Text>
                 <View style={[styles.progressBar, { backgroundColor: C.redBorder || '#F2D0D0' }]}>
-                  <View style={[styles.progressLine, { width: '78%', backgroundColor: C.red }]} />
+                  <View style={[styles.progressLine, { width: `${derivedStats.stability}%`, backgroundColor: C.red }]} />
                 </View>
               </View>
             </View>
@@ -432,7 +518,7 @@ const AIInsightsScreen: React.FC = () => {
             </View>
 
             <View style={styles.patternList}>
-              {patterns.map((p) => {
+              {p_patterns.map((p) => {
                 const PatternIcon = p.icon;
                 return (
                   <View key={p.id} style={[styles.patternRow, { backgroundColor: '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>
@@ -600,7 +686,7 @@ const AIInsightsScreen: React.FC = () => {
             </View>
 
             <View style={styles.recList}>
-              {recommendations.map((rec) => {
+              {p_recommendations.map((rec) => {
                 const RecIcon = rec.icon;
                 return (
                   <View key={rec.id} style={[styles.recRow, { backgroundColor: '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>

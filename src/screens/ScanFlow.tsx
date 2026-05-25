@@ -19,21 +19,24 @@ import { X, Camera as CameraIcon, Zap, RotateCcw, Check, ChevronRight, AlertCirc
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface ScanFlowProps {
+  mode: 'glucose' | 'meal';
   onBack: () => void;
   onComplete: () => void;
 }
 
 type ScanState = 'camera' | 'analyzing' | 'confirm' | 'manual' | 'error';
 
-const ScanFlow: React.FC<ScanFlowProps> = ({ onBack, onComplete }) => {
+const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const { C, isDark } = useTheme();
   const { addLog, scanImage } = useData();
   const [permission, requestPermission] = useCameraPermissions();
   const [photo, setPhoto] = useState<string | null>(null);
   const [state, setState] = useState<ScanState>('camera');
-  const [scanResult, setScanResult] = useState<{ value: number, unit: string } | null>(null);
+  const [scanResult, setScanResult] = useState<any>(null);
   const [manualValue, setManualValue] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [notes, setNotes] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
   if (!permission) return <View />;
@@ -71,32 +74,71 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ onBack, onComplete }) => {
   };
 
   const handleAnalyze = async (uri: string) => {
-    setState('analyzing');
+    // setState('analyzing'); // Skip the analyzing state for now as requested
     try {
-      const result = await scanImage(uri);
-      setScanResult({ value: result.value, unit: result.unit });
+      if (mode === 'glucose') {
+        // For now, use a default value if scanImage is not ready or just jump to confirm
+        // In a real scenario, scanImage would be called here.
+        // The user wants to jump directly to confirmation.
+        const result = { value: 105, unit: 'mg/dL' }; // Default placeholder
+        setScanResult(result);
+      } else {
+        setScanResult({
+          title: "Meal detected",
+          meal_type: "lunch",
+          calories: 450,
+          carbs: 60,
+          protein: 20,
+          fat: 15,
+          impact: 25,
+          food_items: [
+            { name: "Main Dish", carbs: 40 },
+            { name: "Side Dish", carbs: 20 }
+          ]
+        });
+      }
       setState('confirm');
     } catch (err: any) {
-      setErrorMsg(err.message || "AI Analysis failed to read the display.");
+      setErrorMsg(err.message || "Failed to process the image.");
       setState('error');
     }
   };
 
-  const handleSave = async (value: number, unit: string) => {
+  const handleSave = async (data: any) => {
     try {
-      await addLog({
-        type: "measurement",
-        value: value,
-        unit: unit,
-        status: value > 140 ? "High" : (value < 70 ? "Low" : "Normal"),
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        date: new Date().toISOString(),
-        tag: state === 'manual' ? "Manual" : "Scan",
-        trend: "stable",
-      } as any);
+      if (mode === 'glucose') {
+        await addLog({
+          type: "measurement",
+          value: data.value,
+          unit: data.unit,
+          status: data.value > 140 ? "High" : (data.value < 70 ? "Low" : "Normal"),
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toISOString(),
+          tag: data.tag || (state === 'manual' ? "Manual" : "Scan"),
+          notes: notes,
+          trend: "stable",
+        } as any);
+      } else {
+        await addLog({
+          type: "meal",
+          name: data.title,
+          mealType: data.meal_type,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toISOString(),
+          carbs: data.carbs,
+          calories: data.calories,
+          protein: data.protein,
+          fat: data.fat,
+          impact: `+${data.impact} mg/dL`,
+          impactLevel: data.impact > 30 ? "high" : (data.impact > 15 ? "moderate" : "low"),
+          image: photo || "",
+          notes: notes,
+          tags: []
+        } as any);
+      }
       onComplete();
     } catch (err) {
-      Alert.alert("Error", "Failed to save the reading.");
+      Alert.alert("Error", "Failed to save the entry.");
     }
   };
 
@@ -106,7 +148,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ onBack, onComplete }) => {
         <X color="#FFF" size={24} />
       </TouchableOpacity>
       <Text style={styles.headerTitle}>
-        {state === 'manual' ? 'Manual Entry' : 'Glucometer Scan'}
+        {state === 'manual' ? 'Manual Entry' : (mode === 'glucose' ? 'Glucometer Scan' : 'Meal Scan')}
       </Text>
       <View style={{ width: 40 }} />
     </View>
@@ -116,8 +158,10 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ onBack, onComplete }) => {
     <View style={styles.cameraContainer}>
       <CameraView style={styles.camera} ref={cameraRef}>
         <View style={styles.overlay}>
-          <View style={styles.scannerFrame} />
-          <Text style={styles.scanHint}>Align glucometer screen within the box</Text>
+          <View style={[styles.scannerFrame, mode === 'meal' && { width: 300, height: 300, borderRadius: 32 }]} />
+          <Text style={styles.scanHint}>
+            {mode === 'glucose' ? 'Align glucometer screen within the box' : 'Position your meal within the frame'}
+          </Text>
         </View>
       </CameraView>
       <View style={styles.controls}>
@@ -137,47 +181,183 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ onBack, onComplete }) => {
     <View style={styles.previewContainer}>
       {photo && <Image source={{ uri: photo }} style={styles.preview} />}
       <View style={styles.scanningOverlay}>
-        <ActivityIndicator size="large" color={C.red} />
-        <Text style={styles.scanningText}>AI is analyzing reading...</Text>
+        <View style={styles.shimmerContainer}>
+          <ActivityIndicator size="large" color={C.red} />
+          <View style={[styles.shimmerBar, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
+            <LinearGradient
+              colors={['transparent', 'rgba(255,255,255,0.3)', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.shimmerGradient}
+            />
+          </View>
+        </View>
+        <Text style={styles.scanningText}>AI is analyzing {mode}...</Text>
       </View>
     </View>
   );
 
   const renderConfirm = () => (
-    <View style={[styles.confirmContainer, { backgroundColor: C.bg }]}>
-      <LinearGradient colors={[C.redBg, C.bg]} style={styles.resultCard}>
-        <Text style={[styles.resultLabel, { color: C.textSm }]}>Detected Reading</Text>
-        <View style={styles.resultRow}>
-          <Text style={[styles.resultValue, { color: C.text }]}>{scanResult?.value}</Text>
-          <Text style={[styles.resultUnit, { color: C.textSm }]}>{scanResult?.unit}</Text>
-        </View>
-        <View style={[styles.accuracyBadge, { backgroundColor: C.green + '15' }]}>
-          <Check size={14} color={C.green} />
-          <Text style={[styles.accuracyText, { color: C.green }]}>94% Confidence</Text>
-        </View>
-      </LinearGradient>
+    <ScrollView style={[styles.confirmContainer, { backgroundColor: C.bg }]}>
+      {mode === 'glucose' ? (
+        <View style={styles.confirmContent}>
+          <Text style={[styles.confirmTitle, { color: C.text }]}>Confirm Measurement</Text>
+          <View style={[styles.detectedCard, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
+            <Text style={[styles.detectedLabel, { color: C.textSm }]}>DETECTED VALUE</Text>
+            <View style={styles.detectedRow}>
+              {isEditing ? (
+                <TextInput
+                  style={[styles.detectedValue, { color: C.text, borderBottomWidth: 2, borderBottomColor: C.red, minWidth: 80 }]}
+                  value={scanResult?.value?.toString()}
+                  onChangeText={(val) => setScanResult({ ...scanResult, value: parseInt(val) || 0 })}
+                  keyboardType="numeric"
+                  autoFocus
+                />
+              ) : (
+                <Text style={[styles.detectedValue, { color: C.text }]}>{scanResult?.value}</Text>
+              )}
+              <Text style={[styles.detectedUnit, { color: C.textSm }]}>mg/dL</Text>
+              <View style={[
+                styles.statusBadge, 
+                { backgroundColor: (scanResult?.value > 140 ? C.red : (scanResult?.value < 70 ? C.red : C.green)) + '15' }
+              ]}>
+                <Text style={[
+                  styles.statusText, 
+                  { color: (scanResult?.value > 140 ? C.red : (scanResult?.value < 70 ? C.red : C.green)) }
+                ]}>
+                  {scanResult?.value > 140 ? 'High' : (scanResult?.value < 70 ? 'Low' : 'Normal')}
+                </Text>
+              </View>
+            </View>
+          </View>
 
-      <View style={styles.actionButtons}>
+          <Text style={[styles.subLabel, { color: C.text }]}>Measurement Type</Text>
+          <View style={styles.tagsRow}>
+            {['Fasting', 'Before meal', 'After meal'].map(t => (
+              <TouchableOpacity 
+                key={t} 
+                onPress={() => setScanResult({ ...scanResult, tag: t })}
+                style={[styles.tagBtn, scanResult?.tag === t && { backgroundColor: C.red }]}
+              >
+                <Text style={[styles.tagText, scanResult?.tag === t ? { color: '#FFF' } : { color: C.textSm }]}>{t}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ) : (
+        <View style={styles.confirmContent}>
+          <Text style={[styles.confirmTitle, { color: C.text }]}>Confirm Meal</Text>
+          {photo && <Image source={{ uri: photo }} style={styles.mealPhoto} />}
+          
+          <View style={{ marginBottom: 16 }}>
+            <Text style={[styles.subLabel, { color: C.text }]}>Meal Name</Text>
+            {isEditing ? (
+              <TextInput
+                style={[styles.editInput, { color: C.text, backgroundColor: C.redBg, borderColor: C.redBorder }]}
+                value={scanResult?.title}
+                onChangeText={(val) => setScanResult({ ...scanResult, title: val })}
+              />
+            ) : (
+              <Text style={[styles.foodName, { color: C.text, fontSize: 18 }]}>{scanResult?.title}</Text>
+            )}
+          </View>
+
+          <View style={{ marginBottom: 16 }}>
+            <Text style={[styles.subLabel, { color: C.text }]}>Meal Type</Text>
+            <View style={styles.tagsRow}>
+              {['breakfast', 'lunch', 'dinner', 'snack'].map(t => (
+                <TouchableOpacity 
+                  key={t} 
+                  onPress={() => setScanResult({ ...scanResult, meal_type: t })}
+                  style={[
+                    styles.tagBtn, 
+                    scanResult?.meal_type === t && { backgroundColor: C.red }
+                  ]}
+                >
+                  <Text style={[styles.tagText, scanResult?.meal_type === t ? { color: '#FFF' } : { color: C.textSm }]}>
+                    {t.charAt(0) + t.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <Text style={[styles.subLabel, { color: C.text }]}>Nutrients</Text>
+          <View style={styles.nutrientsRow}>
+            <View style={[styles.nutrientCard, { backgroundColor: C.redBg }]}>
+              <Zap size={14} color={C.red} />
+              {isEditing ? (
+                <TextInput
+                  style={[styles.nutrientInput, { color: C.text }]}
+                  value={scanResult?.calories?.toString()}
+                  onChangeText={(val) => setScanResult({ ...scanResult, calories: parseInt(val) || 0 })}
+                  keyboardType="numeric"
+                />
+              ) : (
+                <Text style={[styles.nutrientVal, { color: C.text }]}>{scanResult?.calories} kcal</Text>
+              )}
+              <Text style={[styles.nutrientLabel, { color: C.textSm }]}>Calories</Text>
+            </View>
+            <View style={[styles.nutrientCard, { backgroundColor: C.redBg }]}>
+              <Zap size={14} color={C.red} />
+              {isEditing ? (
+                <TextInput
+                  style={[styles.nutrientInput, { color: C.text }]}
+                  value={scanResult?.carbs?.toString()}
+                  onChangeText={(val) => setScanResult({ ...scanResult, carbs: parseInt(val) || 0 })}
+                  keyboardType="numeric"
+                />
+              ) : (
+                <Text style={[styles.nutrientVal, { color: C.text }]}>{scanResult?.carbs}g</Text>
+              )}
+              <Text style={[styles.nutrientLabel, { color: C.textSm }]}>Carbs</Text>
+            </View>
+            <View style={[styles.nutrientCard, { backgroundColor: C.redBg }]}>
+              <Plus size={14} color={C.red} />
+              {isEditing ? (
+                <TextInput
+                  style={[styles.nutrientInput, { color: C.text }]}
+                  value={scanResult?.impact?.toString()}
+                  onChangeText={(val) => setScanResult({ ...scanResult, impact: parseInt(val) || 0 })}
+                  keyboardType="numeric"
+                />
+              ) : (
+                <Text style={[styles.nutrientVal, { color: C.text }]}>+{scanResult?.impact} mg/dL</Text>
+              )}
+              <Text style={[styles.nutrientLabel, { color: C.textSm }]}>Impact</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      <View style={styles.notesSection}>
+        <Text style={[styles.subLabel, { color: C.text }]}>Add Notes <Text style={{ fontSize: 10, fontWeight: '400' }}>(optional)</Text></Text>
+        <TextInput
+          style={[styles.notesInput, { backgroundColor: C.redBg, borderColor: C.redBorder, color: C.text }]}
+          placeholder="e.g. Felt dizzy before reading..."
+          placeholderTextColor={C.textXs}
+          multiline
+          value={notes}
+          onChangeText={setNotes}
+        />
+        <Text style={[styles.charCount, { color: C.textXs }]}>{notes.length}/200 characters</Text>
+      </View>
+
+      <View style={styles.confirmActions}>
         <TouchableOpacity 
-          onPress={() => { setPhoto(null); setState('camera'); }} 
-          style={[styles.actionBtn, { backgroundColor: C.white, borderColor: C.redBorder, borderWidth: 1 }]}
+          onPress={() => handleSave(scanResult)} 
+          style={[styles.mainConfirmBtn, { backgroundColor: C.red }]}
         >
-          <RotateCcw size={20} color={C.text} />
-          <Text style={[styles.actionBtnText, { color: C.text }]}>Retake</Text>
+          <Text style={styles.mainConfirmText}>Confirm</Text>
         </TouchableOpacity>
         <TouchableOpacity 
-          onPress={() => handleSave(scanResult!.value, scanResult!.unit)} 
-          style={[styles.actionBtn, { backgroundColor: C.red }]}
+          onPress={() => setIsEditing(!isEditing)} 
+          style={[styles.editBtn, { backgroundColor: C.redBg, borderColor: C.redBorder }, isEditing && { backgroundColor: C.red }]}
         >
-          <Check size={20} color="#FFF" />
-          <Text style={[styles.actionBtnText, { color: '#FFF' }]}>Confirm Reading</Text>
+          <Text style={[styles.editBtnText, { color: isEditing ? '#FFF' : C.red }]}>{isEditing ? 'Done' : 'Edit'}</Text>
         </TouchableOpacity>
       </View>
-      
-      <TouchableOpacity onPress={() => setState('manual')} style={styles.editLink}>
-        <Text style={{ color: C.textXs, fontWeight: '700' }}>Value is incorrect? Enter manually</Text>
-      </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 
   const renderManual = () => (
@@ -201,7 +381,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ onBack, onComplete }) => {
         </View>
         
         <TouchableOpacity 
-          onPress={() => handleSave(parseInt(manualValue), "mg/dL")}
+          onPress={() => handleSave({ value: parseInt(manualValue), unit: "mg/dL" })}
           disabled={!manualValue}
           style={[styles.saveBtn, { backgroundColor: manualValue ? C.red : C.redBorder }]}
         >
@@ -248,6 +428,8 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ onBack, onComplete }) => {
     </SafeAreaView>
   );
 };
+
+import { ScrollView } from 'react-native-gesture-handler';
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -335,39 +517,114 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  shimmerContainer: {
+    alignItems: 'center',
+    gap: 20,
+  },
+  shimmerBar: {
+    width: 200,
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  shimmerGradient: {
+    width: '100%',
+    height: '100%',
+  },
   scanningText: { color: '#FFF', marginTop: 16, fontSize: 16, fontWeight: '700' },
-  confirmContainer: { flex: 1, padding: 24, justifyContent: 'center' },
-  resultCard: {
-    padding: 40,
-    borderRadius: 32,
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  resultLabel: { fontSize: 14, fontWeight: '800', letterSpacing: 1, marginBottom: 12 },
-  resultRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 16 },
-  resultValue: { fontSize: 72, fontWeight: '900' },
-  resultUnit: { fontSize: 20, fontWeight: '600', marginLeft: 8 },
-  accuracyBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+  confirmContainer: { flex: 1 },
+  confirmContent: { padding: 24, paddingTop: 40 },
+  confirmTitle: { fontSize: 24, fontWeight: '900', marginBottom: 24 },
+  detectedCard: {
+    padding: 20,
     borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 24,
   },
-  accuracyText: { fontSize: 12, fontWeight: '800' },
-  actionButtons: { flexDirection: 'row', gap: 16 },
-  actionBtn: {
-    flex: 1,
-    height: 60,
-    borderRadius: 30,
+  detectedLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 8 },
+  detectedRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  detectedValue: { fontSize: 48, fontWeight: '900' },
+  detectedUnit: { fontSize: 16, fontWeight: '600' },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginLeft: 'auto',
+  },
+  statusText: { fontSize: 12, fontWeight: '800' },
+  mealPhoto: {
+    width: '100%',
+    height: 200,
+    borderRadius: 24,
+    marginBottom: 24,
+  },
+  subLabel: { fontSize: 16, fontWeight: '800', marginBottom: 12 },
+  tagsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  tagBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#F5F5F5',
+  },
+  tagText: { fontSize: 14, fontWeight: '700' },
+  foodItemRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  foodName: { fontSize: 14, fontWeight: '700' },
+  foodCarbs: { fontSize: 12, fontWeight: '600' },
+  nutrientsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  nutrientCard: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 16,
+    alignItems: 'center',
+    gap: 4,
+  },
+  nutrientVal: { fontSize: 14, fontWeight: '800' },
+  nutrientLabel: { fontSize: 10, fontWeight: '600' },
+  notesSection: { paddingHorizontal: 24, marginBottom: 32 },
+  notesInput: {
+    height: 100,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    fontSize: 14,
+    textAlignVertical: 'top',
+  },
+  charCount: { fontSize: 10, alignSelf: 'flex-end', marginTop: 4 },
+  confirmActions: { 
+    paddingHorizontal: 24, 
+    flexDirection: 'row', 
+    gap: 12, 
+    paddingBottom: 40 
+  },
+  mainConfirmBtn: {
+    flex: 2,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
   },
-  actionBtnText: { fontSize: 16, fontWeight: '800' },
-  editLink: { marginTop: 24, alignSelf: 'center' },
+  mainConfirmText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+  editBtn: {
+    flex: 1,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editBtnText: { fontSize: 16, fontWeight: '800' },
   manualContainer: { flex: 1, padding: 24, justifyContent: 'center' },
   manualForm: { alignItems: 'center' },
   formLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 20 },
@@ -402,6 +659,24 @@ const styles = StyleSheet.create({
   manualEntryBtn: { padding: 12 },
   button: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
   message: { fontSize: 16 },
+  editInput: {
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  nutrientInput: {
+    fontSize: 14,
+    fontWeight: '800',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+    textAlign: 'center',
+    padding: 0,
+    minWidth: 40,
+  }
 });
 
 export default ScanFlow;

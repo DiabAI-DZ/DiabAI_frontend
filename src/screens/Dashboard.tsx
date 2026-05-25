@@ -14,7 +14,7 @@ import Svg, { Path, Line, Circle, Defs, LinearGradient as SvgLinearGradient, Sto
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
 import { useUser } from '../context/UserContext';
-import { apiService } from '../services/apiService';
+import { apiService, mapStatus, mapTrend, formatTime } from '../services/apiService';
 import { 
   Bell, 
   TrendingUp, 
@@ -41,77 +41,67 @@ interface DashboardProps {
   onNavigateDetail: (entry: any) => void;
 }
 
-const foodItemsData = [
-  { id: 1, name: "Chicken Salad", tag: "Low impact", tagKey: "green" as const, image: "https://images.unsplash.com/photo-1685079230208-dcced9f55eab?auto=format&fit=crop&q=80&w=200", cal: "320 kcal" },
-  { id: 2, name: "Mixed Berries", tag: "Excellent", tagKey: "blue" as const, image: "https://images.unsplash.com/photo-1657999846716-9ce28c88132e?auto=format&fit=crop&q=80&w=200", cal: "85 kcal" },
-  { id: 3, name: "Avocado Toast", tag: "Good choice", tagKey: "green" as const, image: "https://images.unsplash.com/photo-1765177331837-5ae6e9bd2061?auto=format&fit=crop&q=80&w=200", cal: "210 kcal" },
-  { id: 4, name: "Grilled Salmon", tag: "Low impact", tagKey: "green" as const, image: "https://images.unsplash.com/photo-1759271082074-6cde09f86550?auto=format&fit=crop&q=80&w=200", cal: "380 kcal" },
-  { id: 5, name: "Greek Yogurt", tag: "Good choice", tagKey: "green" as const, image: "https://images.unsplash.com/photo-1663652851591-e3d9bfb6d8c9?auto=format&fit=crop&q=80&w=200", cal: "145 kcal" },
-];
-
+// --- MOCK DATA FALLBACKS (Will be rarely used now) ---
 const mock7Days = [
-  { day: "Mon", value: 118 },
-  { day: "Tue", value: 145 },
-  { day: "Wed", value: 132 },
-  { day: "Thu", value: 98 },
-  { day: "Fri", value: 162 },
-  { day: "Sat", value: 128 },
-  { day: "Sun", value: 125 },
-];
-
-const mock30Days = [
-  { day: "1", value: 112 }, { day: "3", value: 145 },
-  { day: "5", value: 128 }, { day: "7", value: 98 },
-  { day: "9", value: 162 }, { day: "11", value: 135 },
-  { day: "13", value: 118 }, { day: "15", value: 125 },
-  { day: "17", value: 142 }, { day: "19", value: 108 },
-  { day: "21", value: 155 }, { day: "23", value: 132 },
-  { day: "25", value: 119 }, { day: "27", value: 148 },
-  { day: "29", value: 125 },
+  { day: "Mon", value: 118 }, { day: "Tue", value: 145 }, { day: "Wed", value: 132 },
+  { day: "Thu", value: 98 }, { day: "Fri", value: 162 }, { day: "Sat", value: 128 }, { day: "Sun", value: 125 },
 ];
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetail }) => {
   const { C, isDark } = useTheme();
-  const { logs, alerts, loading } = useData();
+  const { logs, alerts, homeData, recommendations, loading, refreshData } = useData();
   const { profile } = useUser();
   const [activeTab, setActiveTab] = useState<'7d' | '30d'>('7d');
+
+  useEffect(() => {
+    refreshData();
+  }, [activeTab]);
 
   // --- STATS COMPUTATION ---
   const stats = useMemo(() => {
     const measurements = logs.filter(l => l.type === 'measurement') as MeasurementEntry[];
-    const latest = measurements[0] || null;
-    
-    // Average
+    const latestFromLogs = measurements[0] || null;
+
+    const latest = homeData?.latest_reading ? {
+      id: homeData.latest_reading.id,
+      type: 'measurement' as const,
+      value: homeData.latest_reading.value_mg_dl,
+      unit: 'mg/dL',
+      status: mapStatus(homeData.latest_reading.health_status),
+      time: formatTime(homeData.latest_reading.measured_at),
+      date: homeData.latest_reading.measured_at,
+      delta: homeData.latest_reading.delta_since_last,
+      trend: mapTrend(homeData.latest_reading.trend || undefined),
+    } : (latestFromLogs ? {
+      ...latestFromLogs,
+      delta: 0,
+      trend: 'stable' as const,
+    } : null);
+
     const sum = measurements.reduce((acc, curr) => acc + curr.value, 0);
-    const avg = measurements.length > 0 ? Math.round(sum / measurements.length) : 132;
+    const avg = measurements.length > 0 ? Math.round(sum / measurements.length) : (latest?.value || 0);
     
-    // Time in range
-    const minGoal = profile?.goals?.min || 70;
-    const maxGoal = profile?.goals?.max || 140;
+    const minGoal = homeData?.latest_reading?.target?.min || profile?.goals?.min || 70;
+    const maxGoal = homeData?.latest_reading?.target?.max || profile?.goals?.max || 140;
+    
     const inRangeCount = measurements.filter(m => m.value >= minGoal && m.value <= maxGoal).length;
-    const inRangePercent = measurements.length > 0 ? Math.round((inRangeCount / measurements.length) * 100) : 72;
+    const inRangePercent = measurements.length > 0 ? Math.round((inRangeCount / measurements.length) * 100) : 0;
     
-    // Total Carbs Today
     const todayStr = new Date().toISOString().split('T')[0];
     const mealsToday = logs.filter(l => l.type === 'meal' && l.date.split('T')[0] === todayStr) as MealEntry[];
     const totalCarbs = mealsToday.reduce((acc, curr) => acc + (curr.carbs || 0), 0);
-
-    // Status mapping
-    let status: GlucoseStatus = "Normal";
-    if (latest) {
-      if (latest.value > maxGoal) status = "High";
-      else if (latest.value < minGoal) status = "Low";
-    }
 
     return {
       latest,
       avg,
       inRangePercent,
       totalCarbs,
-      status,
-      unreadAlerts: alerts.filter(a => !a.read).length
+      status: latest?.status || 'Normal',
+      unreadAlerts: alerts.filter(a => !a.read).length,
+      targetMin: minGoal,
+      targetMax: maxGoal
     };
-  }, [logs, alerts, profile]);
+  }, [logs, alerts, profile, homeData]);
 
   const recentMeasurements = useMemo(() => {
     return logs.filter(l => l.type === 'measurement').slice(0, 4) as MeasurementEntry[];
@@ -119,20 +109,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
 
   // --- CUSTOM SVG GRAPH PATH GENERATION ---
   const chartData = useMemo(() => {
-    const measurements = logs
-      .filter(l => l.type === 'measurement')
-      .slice(0, activeTab === '7d' ? 7 : 30)
-      .reverse();
-
-    if (measurements.length >= 2) {
-      return measurements.map((m, i) => ({
-        label: activeTab === '7d' ? new Date(m.date).toLocaleDateString([], { weekday: 'short' }) : new Date(m.date).getDate().toString(),
-        value: m.value
+    if (homeData?.glucose_trend?.points && homeData.glucose_trend.points.length > 0) {
+      return homeData.glucose_trend.points.map(p => ({
+        label: p.label,
+        value: p.avg_value || 0
       }));
     }
-    // Fallback Mock data if user hasn't uploaded enough readings yet
-    return activeTab === '7d' ? mock7Days.map(m => ({ label: m.day, value: m.value })) : mock30Days.map(m => ({ label: m.day, value: m.value }));
-  }, [logs, activeTab]);
+    // If no real data, try to extract from logs of the last 7 days
+    const measurements = logs.filter(l => l.type === 'measurement') as MeasurementEntry[];
+    if (measurements.length > 0) {
+       // Just show last few measurements as points if no full trend from backend
+       return measurements.slice(0, 7).reverse().map((m, i) => ({
+         label: m.time,
+         value: m.value
+       }));
+    }
+    return [
+      { label: "Empty", value: 0 },
+      { label: "Empty", value: 0 },
+      { label: "Empty", value: 0 },
+      { label: "Empty", value: 0 }
+    ];
+  }, [homeData, logs]);
 
   const chartSVG = useMemo(() => {
     const minVal = 60;
@@ -157,8 +155,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
       : '';
 
     // Target Range Horizontal Guidelines
-    const targetMinY = paddingTop + graphHeight - ((70 - minVal) / (maxVal - minVal)) * graphHeight;
-    const targetMaxY = paddingTop + graphHeight - ((140 - minVal) / (maxVal - minVal)) * graphHeight;
+    const targetMinY = paddingTop + graphHeight - (((homeData?.glucose_trend?.target_min || 70) - minVal) / (maxVal - minVal)) * graphHeight;
+    const targetMaxY = paddingTop + graphHeight - (((homeData?.glucose_trend?.target_max || 140) - minVal) / (maxVal - minVal)) * graphHeight;
 
     return {
       points,
@@ -189,8 +187,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={[styles.greeting, { color: C.textSm }]}>Monday, March 30</Text>
-          <Text style={[styles.userName, { color: C.text }]}>Hello, {profile?.name?.split(' ')[0] || 'Sarah'} 👋</Text>
+          <Text style={[styles.greeting, { color: C.textSm }]}>{homeData?.greeting?.date || 'Today'}</Text>
+          <Text style={[styles.userName, { color: C.text }]}>Hello, {homeData?.greeting?.name || profile?.name?.split(' ')[0] || 'Sarah'} 👋</Text>
           <Text style={[styles.userGoal, { color: C.textMd }]}>Track your glucose with confidence</Text>
         </View>
         <TouchableOpacity style={styles.alertButton} onPress={onNavigateAlerts}>
@@ -231,14 +229,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
           
           <View style={styles.mainValueRow}>
             <View style={styles.valueWrap}>
-              <Text style={styles.mainValue}>{stats.latest?.value || '125'}</Text>
+              <Text style={styles.mainValue}>{stats.latest?.value || '--'}</Text>
               <View style={styles.unitCol}>
                 <Text style={styles.mainUnit}>mg/dL</Text>
-                <View style={styles.trendRow}>
+              <View style={styles.trendRow}>
                   {stats.latest?.trend === 'up' ? <TrendingUp size={12} color="#FCD34D" /> : 
                    stats.latest?.trend === 'down' ? <TrendingDown size={12} color="#FCD34D" /> :
                    <Minus size={12} color="#FCD34D" />}
-                  <Text style={styles.trendPercent}>+5 since last</Text>
+                  <Text style={styles.trendPercent}>
+                    {stats.latest?.delta ? `${stats.latest.delta > 0 ? '+' : ''}${stats.latest.delta} since last` : 'Stable'}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -262,7 +262,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
             <View style={styles.footerDivider} />
             <View style={styles.footerItem}>
                <Text style={styles.footerLabel}>Target Range</Text>
-               <Text style={styles.footerValue}>70-140</Text>
+               <Text style={styles.footerValue}>{stats.targetMin}-{stats.targetMax}</Text>
             </View>
           </View>
         </LinearGradient>
@@ -377,11 +377,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
         <View style={styles.legendContainer}>
           <View style={styles.legendItem}>
             <View style={[styles.legendDash, { backgroundColor: C.amber || '#F59E0B' }]} />
-            <Text style={[styles.legendText, { color: C.textSm }]}>High Target &gt;140</Text>
+            <Text style={[styles.legendText, { color: C.textSm }]}>High Target &gt;{stats.targetMax}</Text>
           </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendDash, { backgroundColor: C.red }]} />
-            <Text style={[styles.legendText, { color: C.textSm }]}>Low Target &lt;70</Text>
+            <Text style={[styles.legendText, { color: C.textSm }]}>Low Target &lt;{stats.targetMin}</Text>
           </View>
         </View>
       </View>
@@ -490,41 +490,54 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
           </TouchableOpacity>
         </View>
 
-        <FlatList
-          data={foodItemsData}
-          keyExtractor={(item) => item.id.toString()}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.foodListContainer}
-          renderItem={({ item }) => {
-            const isBlue = item.tagKey === "blue";
-            return (
-              <View style={[styles.foodCard, { backgroundColor: C.white, borderColor: C.redBorder }]}>
-                <View style={styles.foodImageContainer}>
-                  <Image source={{ uri: item.image }} style={styles.foodImage} />
-                  <View style={[
-                    styles.foodTag,
-                    { 
-                      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                      borderColor: isBlue ? C.blue : C.green
-                    }
-                  ]}>
-                    <Text style={[styles.foodTagText, { color: isBlue ? C.blue : C.green }]}>{item.tag}</Text>
+        {(recommendations.length > 0 || (homeData?.recommendations && homeData.recommendations.length > 0)) ? (
+          <FlatList
+            data={recommendations.length > 0 ? recommendations : homeData?.recommendations || []}
+            keyExtractor={(item) => item.id.toString()}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.foodListContainer}
+            renderItem={({ item }) => {
+              const isBlue = item.impact_level === "moderate";
+              return (
+                <View style={[styles.foodCard, { backgroundColor: C.white, borderColor: C.redBorder }]}>
+                  <View style={styles.foodImageContainer}>
+                    {item.image_url ? (
+                      <Image source={{ uri: item.image_url }} style={styles.foodImage} />
+                    ) : (
+                      <View style={[styles.foodImage, { backgroundColor: C.redBg, justifyContent: 'center', alignItems: 'center' }]}>
+                        <Utensils size={32} color={C.red} opacity={0.2} />
+                      </View>
+                    )}
+                    <View style={[
+                      styles.foodTag,
+                      { 
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                        borderColor: isBlue ? C.blue : C.green
+                      }
+                    ]}>
+                      <Text style={[styles.foodTagText, { color: isBlue ? C.blue : C.green }]}>{item.impact_label || 'Good choice'}</Text>
+                    </View>
                   </View>
-                </View>
-                <View style={styles.foodDetails}>
-                  <Text style={[styles.foodName, { color: C.text }]} numberOfLines={1}>{item.name}</Text>
-                  <View style={styles.foodMetaRow}>
-                    <Text style={[styles.foodCal, { color: C.textSm }]}>{item.cal}</Text>
-                    <View style={[styles.giBadge, { backgroundColor: C.greenBg }]}>
-                      <Text style={[styles.giText, { color: C.green }]}>Low GI</Text>
+                  <View style={styles.foodDetails}>
+                    <Text style={[styles.foodName, { color: C.text }]} numberOfLines={1}>{item.title}</Text>
+                    <View style={styles.foodMetaRow}>
+                      <Text style={[styles.foodCal, { color: C.textSm }]}>{item.calories} kcal</Text>
+                      <View style={[styles.giBadge, { backgroundColor: C.greenBg }]}>
+                        <Text style={[styles.giText, { color: C.green }]}>-{item.estimated_glucose_impact_mg_dl} mg/dL</Text>
+                      </View>
                     </View>
                   </View>
                 </View>
-              </View>
-            );
-          }}
-        />
+              );
+            }}
+          />
+        ) : (
+          <View style={[styles.emptyRecommendations, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
+             <Sparkles size={24} color={C.redMuted} />
+             <Text style={[styles.emptyRecText, { color: C.textSm }]}>Logging more meals will unlock AI recommendations</Text>
+          </View>
+        )}
       </View>
 
       {/* Weekly Health Score */}
@@ -541,15 +554,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
         <View style={styles.healthInfo}>
           <Text style={[styles.healthLabel, { color: C.textSm }]}>Weekly Health Score</Text>
           <View style={styles.healthScoreRow}>
-            <Text style={[styles.healthScore, { color: C.red }]}>82</Text>
+            <Text style={[styles.healthScore, { color: C.red }]}>{stats.inRangePercent || 0}</Text>
             <Text style={[styles.healthMax, { color: C.textSm }]}>/100</Text>
           </View>
           <View style={[styles.healthProgressBar, { backgroundColor: C.redBorder }]}>
-            <View style={[styles.healthProgress, { width: '82%', backgroundColor: C.red }]} />
+            <View style={[styles.healthProgress, { width: `${stats.inRangePercent || 0}%`, backgroundColor: C.red }]} />
           </View>
         </View>
-        <View style={[styles.healthRatingTag, { backgroundColor: C.greenBg, borderColor: C.greenBorder }]}>
-          <Text style={[styles.healthRatingText, { color: C.green }]}>Good control</Text>
+        <View style={[styles.healthRatingTag, { backgroundColor: stats.inRangePercent > 70 ? C.greenBg : C.amberBg, borderColor: stats.inRangePercent > 70 ? C.greenBorder : C.amberBorder }]}>
+          <Text style={[styles.healthRatingText, { color: stats.inRangePercent > 70 ? C.green : C.amber }]}>
+            {stats.inRangePercent > 70 ? 'Good control' : (stats.inRangePercent > 0 ? 'Getting there' : 'No data')}
+          </Text>
         </View>
       </View>
 
@@ -1035,6 +1050,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
+  emptyRecommendations: {
+    marginHorizontal: 0,
+    height: 120,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    padding: 20,
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  emptyRecText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  }
 });
 
 export default Dashboard;
