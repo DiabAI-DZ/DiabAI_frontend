@@ -14,6 +14,7 @@ interface DataContextType {
   addLog: (log: Omit<LogEntry, "id">) => Promise<void>;
   deleteLog: (id: number) => Promise<void>;
   markAlertRead: (id: number) => Promise<void>;
+  markAllAlertsRead: () => Promise<number>;
   getAIInsight: (query: string) => Promise<string>;
   getDailySummary: () => Promise<AISummary>;
   scanImage: (uri: string) => Promise<ScanResult>;
@@ -90,6 +91,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const markAllAlertsRead = useCallback(async (): Promise<number> => {
+    try {
+      const marked = await apiService.markAllAlertsRead();
+      // Optimistically mark all in-memory alerts as read so UI updates immediately
+      setAlerts((prev) => prev.map(a => ({ ...a, read: true })));
+      return marked;
+    } catch (error) {
+      console.error('DataContext: Failed to mark all alerts read:', error);
+      return 0;
+    }
+  }, []);
+
   const getAIInsight = useCallback(async (query: string) => {
     return await aiService.getAIInsights(logs, query);
   }, [logs]);
@@ -132,6 +145,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addLog, 
       deleteLog,
       markAlertRead, 
+      markAllAlertsRead,
       getAIInsight, 
       getDailySummary,
       scanImage 

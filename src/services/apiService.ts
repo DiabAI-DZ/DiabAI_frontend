@@ -414,6 +414,21 @@ export const apiService = {
     }
   },
 
+  async markAllAlertsRead(): Promise<number> {
+    console.log(`[API] Marking all alerts as read`);
+    try {
+      const response = await authenticatedFetch('/api/notifications/read-all', {
+        method: 'POST'
+      });
+      const result = await response.json();
+      // API returns { marked_count: N }
+      return result.marked_count || 0;
+    } catch (error) {
+      console.error("markAllAlertsRead failed:", error);
+      return 0;
+    }
+  },
+
   // Home & Insights
   async fetchHomeData(trend_period: "7d" | "30d" = "7d"): Promise<HomeData> {
     console.log(`[API] Fetching home data from ${authApi.baseUrl}/api/home?trend_period=${trend_period}`);

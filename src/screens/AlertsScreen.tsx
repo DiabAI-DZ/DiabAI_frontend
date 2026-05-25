@@ -36,7 +36,7 @@ type FilterTab = "all" | "critical" | "warning" | "info";
 
 const AlertsScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { C, isDark } = useTheme();
-  const { alerts, markAlertRead } = useData();
+  const { alerts, markAlertRead, markAllAlertsRead } = useData();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
 
   const filteredAlerts = useMemo(() => {
@@ -215,7 +215,17 @@ const AlertsScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <Text style={styles.summaryLabel}>Unread</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.markReadBtn}>
+          <TouchableOpacity
+            style={styles.markReadBtn}
+            onPress={async () => {
+              if (stats.unread <= 0) return;
+              try {
+                await markAllAlertsRead();
+              } catch (e) {
+                console.warn('Failed to mark all alerts read', e);
+              }
+            }}
+          >
             <CheckCircle2 size={12} color="rgba(255,255,255,0.85)" />
             <Text style={styles.markReadText}>Mark all read</Text>
           </TouchableOpacity>
