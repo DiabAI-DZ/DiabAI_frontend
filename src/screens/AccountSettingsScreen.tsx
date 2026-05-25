@@ -10,28 +10,99 @@ import {
   Image,
 } from 'react-native';
 import { 
-  User, Mail, Phone, MapPin, ChevronLeft, Camera 
+  User, Mail, Phone, MapPin, ChevronLeft, Camera, Lock 
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
+import { authApi } from '../services/authApi';
+import { apiService } from '../services/apiService';
+import { useUser } from '../context/UserContext';
 
 interface AccountSettingsScreenProps {
   onBack: () => void;
 }
 
-const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({ onBack }) => {
+  const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({ onBack }) => {
   const { C } = useTheme();
+  const { profile: userProfile } = useUser();
   const [form, setForm] = useState({
-    fullName: "Sarah Johnson",
-    email: "sarah.johnson@email.com",
-    phone: "+1 (555) 123-4567",
-    address: "123 Maple Street, Springfield",
+    fullName: userProfile?.name || "",
+    email: userProfile?.email || "",
+    phone: userProfile?.phone_number || "",
+    address: userProfile?.address || "",
   });
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwords, setPasswords] = useState({
+    current: '',
+    new: '',
+    confirm: ''
+  });
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%?&.])[A-Za-z\d@$!%?&.]{8,}$/;
+
+  const validatePassword = (pass: string) => {
+    if (pass.length < 8) return 'Password must be at least 8 characters long.';
+    if (!passwordRegex.test(pass)) {
+      return 'Password must include uppercase, lowercase, a number, and a special character (@$!%?&.).';
+    }
+    return null;
+  };
+
+  const handleSave = async () => {
+    setSaveError(null);
+    try {
+      await apiService.updateProfile({
+        name: form.fullName,
+        email: form.email,
+        phone_number: form.phone,
+        address: form.address,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      setSaveError(e.message || 'Failed to save settings');
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!passwords.current || !passwords.new || !passwords.confirm) {
+      setPasswordError('All password fields are required.');
+      return;
+    }
+    if (passwords.new !== passwords.confirm) {
+      setPasswordError('New passwords do not match.');
+      return;
+    }
+
+    const passwordValError = validatePassword(passwords.new);
+    if (passwordValError) {
+      setPasswordError(passwordValError);
+      return;
+    }
+
+    setIsChangingPassword(true);
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    try {
+      await authApi.changePassword(passwords.current, passwords.new, passwords.confirm);
+      setPasswordSuccess('Password changed successfully.');
+      setPasswords({ current: '', new: '', confirm: '' });
+      setTimeout(() => setPasswordSuccess(null), 3000);
+    } catch (e: any) {
+      if (e.errors) {
+        const firstError = Object.values(e.errors)[0] as string[];
+        setPasswordError(firstError[0] || e.message);
+      } else {
+        setPasswordError(e.message || 'Failed to change password.');
+      }
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const fields = [
@@ -65,14 +136,13 @@ const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({ onBack })
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: C.redBorder }]}>
           <TouchableOpacity
-            onClick={onBack} // using onPress
             onPress={onBack}
             activeOpacity={0.85}
             style={[styles.backButton, { backgroundColor: C.red }]}
           >
             <ChevronLeft size={20} color="#FFF" strokeWidth={2.5} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: C.accent }]}>Account Settings</Text>
+          <Text style={[styles.headerTitle, { color: C.redDark }]}>Account Settings</Text>
         </View>
 
         {/* Profile Avatar */}
@@ -104,7 +174,7 @@ const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({ onBack })
                 <View style={[
                   styles.inputWrapper,
                   { 
-                    backgroundColor: C.inputBg || '#F5DEDE',
+                    backgroundColor: C.redBg || '#F5DEDE',
                     borderColor: isFocused ? C.red : (C.redBorder || '#EAC5C5')
                   }
                 ]}>
@@ -130,6 +200,7 @@ const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({ onBack })
 
         {/* Save Button */}
         <View style={styles.buttonWrapper}>
+          {saveError && <Text style={[styles.errorText, { marginBottom: 12 }]}>{saveError}</Text>}
           <TouchableOpacity
             onPress={handleSave}
             activeOpacity={0.85}
@@ -139,8 +210,82 @@ const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({ onBack })
             ]}
           >
             <Text style={styles.saveButtonText}>
-              {saved ? "✓ Saved" : "Save"}
+              {saved ? "✓ Saved" : "Save Settings"}
             </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Change Password Section */}
+        <View style={[styles.sectionDivider, { backgroundColor: C.redBorder }]} />
+        
+        <View style={styles.form}>
+          <Text style={[styles.sectionTitle, { color: C.redDark }]}>Security</Text>
+          
+          <View style={styles.fieldContainer}>
+            <Text style={[styles.label, { color: C.textSm }]}>Current Password</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: C.redBg || '#F5DEDE', borderColor: C.redBorder }]}>
+              <View style={styles.iconWrapper}>
+                <Lock size={18} color={C.textXs} strokeWidth={1.8} />
+              </View>
+              <TextInput
+                style={[styles.input, { color: C.text }]}
+                value={passwords.current}
+                onChangeText={(val) => setPasswords({ ...passwords, current: val })}
+                secureTextEntry
+                placeholder="••••••••"
+                placeholderTextColor="#C88686"
+              />
+            </View>
+          </View>
+
+          <View style={styles.fieldContainer}>
+            <Text style={[styles.label, { color: C.textSm }]}>New Password</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: C.redBg || '#F5DEDE', borderColor: C.redBorder }]}>
+              <View style={styles.iconWrapper}>
+                <Lock size={18} color={C.textXs} strokeWidth={1.8} />
+              </View>
+              <TextInput
+                style={[styles.input, { color: C.text }]}
+                value={passwords.new}
+                onChangeText={(val) => setPasswords({ ...passwords, new: val })}
+                secureTextEntry
+                placeholder="••••••••"
+                placeholderTextColor="#C88686"
+              />
+            </View>
+          </View>
+
+          <View style={styles.fieldContainer}>
+            <Text style={[styles.label, { color: C.textSm }]}>Confirm New Password</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: C.redBg || '#F5DEDE', borderColor: C.redBorder }]}>
+              <View style={styles.iconWrapper}>
+                <Lock size={18} color={C.textXs} strokeWidth={1.8} />
+              </View>
+              <TextInput
+                style={[styles.input, { color: C.text }]}
+                value={passwords.confirm}
+                onChangeText={(val) => setPasswords({ ...passwords, confirm: val })}
+                secureTextEntry
+                placeholder="••••••••"
+                placeholderTextColor="#C88686"
+              />
+            </View>
+          </View>
+
+          {passwordError && <Text style={styles.errorText}>{passwordError}</Text>}
+          {passwordSuccess && <Text style={styles.successText}>{passwordSuccess}</Text>}
+
+          <TouchableOpacity
+            onPress={handleChangePassword}
+            disabled={isChangingPassword}
+            activeOpacity={0.85}
+            style={[styles.passwordButton, { borderColor: C.red }]}
+          >
+            {isChangingPassword ? (
+              <Text style={{ color: C.red }}>Updating...</Text>
+            ) : (
+              <Text style={{ color: C.red, fontWeight: 'bold' }}>Update Password</Text>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -252,6 +397,38 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  sectionDivider: {
+    height: 1,
+    marginHorizontal: 20,
+    marginVertical: 32,
+    opacity: 0.3,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  passwordButton: {
+    width: '100%',
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  errorText: {
+    color: '#D7181D',
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  successText: {
+    color: '#16A34A',
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '600',
   },
 });
 

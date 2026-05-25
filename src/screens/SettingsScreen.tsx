@@ -92,7 +92,7 @@ const SelectOption: React.FC<SelectOptionProps> = ({ label, selected, onSelect, 
         </View>
       )}
       <View style={styles.selectOptionMain}>
-        <Text style={[styles.selectOptionTitleText, { color: selected ? C.accent : C.text, fontWeight: selected ? '700' : '600' }]}>
+        <Text style={[styles.selectOptionTitleText, { color: selected ? C.red : C.text, fontWeight: selected ? '700' : '600' }]}>
           {label}
         </Text>
         {subtitle && (
@@ -184,7 +184,7 @@ const TargetGlucoseSlider: React.FC<{
           return (
             <TouchableOpacity
               key={p.label}
-              onClick={() => onChange(p.mn, p.mx)}
+              onPress={() => onChange(p.mn, p.mx)}
               style={[
                 styles.sliderPresetBtn,
                 {
@@ -213,7 +213,7 @@ const SectionCard: React.FC<SectionCardProps> = ({ title, icon, children }) => {
   const { C, isDark } = useTheme();
   return (
     <View style={styles.sectionContainer}>
-      <View style={[styles.sectionCardFrame, { backgroundColor: C.white, borderColor: isDark ? C.cardBorder : "rgba(196,30,38,0.18)" }]}>
+      <View style={[styles.sectionCardFrame, { backgroundColor: C.white, borderColor: isDark ? (C.redBorder || '#555') : "rgba(196,30,38,0.18)" }]}>
         <LinearGradient
           colors={[C.red, C.redDark]}
           style={styles.sectionHeaderBand}
@@ -294,7 +294,11 @@ const SettingRow: React.FC<SettingRowProps> = ({ icon, label, subtitle, toggle, 
   );
 };
 
-const SettingsScreen: React.FC = () => {
+interface SettingsScreenProps {
+  onNavigateAccountSettings?: () => void;
+}
+
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateAccountSettings }) => {
   const { C, isDark, mode, setMode } = useTheme();
   const { profile, updateProfile, signOut, apiBaseUrl } = useUser();
 
@@ -323,14 +327,24 @@ const SettingsScreen: React.FC = () => {
   const iconProps = { size: 18, color: C.redMuted, strokeWidth: 1.8 };
 
   const handleSignOut = () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Sign Out", style: "destructive", onPress: signOut }
-      ]
-    );
+    const performSignOut = () => {
+      signOut();
+    };
+
+    if (typeof window !== 'undefined' && window.confirm) {
+      if (window.confirm("Are you sure you want to sign out?")) {
+        performSignOut();
+      }
+    } else {
+      Alert.alert(
+        "Sign Out",
+        "Are you sure you want to sign out?",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Sign Out", style: "destructive", onPress: performSignOut }
+        ]
+      );
+    }
   };
 
   const handleThemeSelect = (themeLabel: string) => {
@@ -365,8 +379,17 @@ const SettingsScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         
         <SectionCard title="Account Settings" icon={<Settings size={11} color="#FFF" />}>
-          <SettingRow icon={<User {...iconProps} />} label="Profile Information" subtitle={profile?.name || profile?.email} />
-          <SettingRow icon={<Lock {...iconProps} />} label="Change Password" />
+          <SettingRow 
+            icon={<User {...iconProps} />} 
+            label="Profile Information" 
+            subtitle={profile?.name || profile?.email} 
+            onClick={onNavigateAccountSettings}
+          />
+          <SettingRow 
+            icon={<Lock {...iconProps} />} 
+            label="Change Password" 
+            onClick={onNavigateAccountSettings}
+          />
           <SettingRow icon={<LogOut {...iconProps} />} label="Sign Out" onClick={handleSignOut} />
         </SectionCard>
 
@@ -993,7 +1016,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   transactionRight: {
-    alignItems: 'end',
+    alignItems: 'flex-end',
     gap: 1,
   },
   transactionAmount: {

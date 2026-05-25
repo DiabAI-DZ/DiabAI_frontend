@@ -35,6 +35,15 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const emailRegex = /^[\w-\.]+@([\w-]+\.)+[\w-]{2,}$/;
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%?&.])[A-Za-z\d@$!%?&.]{8,}$/;
+
+  const validatePassword = (pass: string) => {
+    if (pass.length < 8) return 'Password must be at least 8 characters long.';
+    if (!passwordRegex.test(pass)) {
+      return 'Password must include uppercase, lowercase, a number, and a special character (@$!%?&.).';
+    }
+    return null;
+  };
 
   const handleSignUp = async () => {
     const trimmedName = fullName.trim();
@@ -50,6 +59,12 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({
       return;
     }
 
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      setErrorMessage(passwordError);
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -61,7 +76,13 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({
         onSuccess();
       }, 1500);
     } catch (e: any) {
-      setErrorMessage(e.message || 'An unexpected error occurred.');
+      if (e.errors) {
+        // Handle Laravel validation errors
+        const firstError = Object.values(e.errors)[0] as string[];
+        setErrorMessage(firstError[0] || e.message);
+      } else {
+        setErrorMessage(e.message || 'An unexpected error occurred.');
+      }
     } finally {
       setIsLoading(false);
     }

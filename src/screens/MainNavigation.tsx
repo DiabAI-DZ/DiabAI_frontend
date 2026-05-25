@@ -8,6 +8,7 @@ import ResetPasswordScreen from './ResetPasswordScreen';
 import GlucoVisionHome from './GlucoVisionHome';
 import AlertsScreen from './AlertsScreen';
 import DetailScreen from './DetailScreen';
+import AccountSettingsScreen from './AccountSettingsScreen';
 import { useUser } from '../context/UserContext';
 
 type Screen = 
@@ -19,7 +20,8 @@ type Screen =
   | 'resetPassword' 
   | 'home' 
   | 'alerts' 
-  | 'detail';
+  | 'detail'
+  | 'accountSettings';
 
 const MainNavigation: React.FC = () => {
   const { profile } = useUser();
@@ -37,11 +39,15 @@ const MainNavigation: React.FC = () => {
     setDetailEntry(null);
   };
 
-  // If authenticated and on an auth screen, auto-promote to home.
-  // Except when on splash or onboarding (user needs to click finish).
+  // Navigation sync based on auth state
   React.useEffect(() => {
-    if (profile && ['signIn', 'signUp', 'forgotPassword', 'resetPassword'].includes(currentScreen)) {
+    const isAuthScreen = ['signIn', 'signUp', 'forgotPassword', 'resetPassword'].includes(currentScreen);
+    const isPublicScreen = ['splash', 'onboarding'].includes(currentScreen);
+
+    if (profile && isAuthScreen) {
       setCurrentScreen('home');
+    } else if (!profile && !isAuthScreen && !isPublicScreen) {
+      setCurrentScreen('signIn');
     }
   }, [profile, currentScreen]);
 
@@ -80,6 +86,7 @@ const MainNavigation: React.FC = () => {
         <ResetPasswordScreen 
           email={resetEmail}
           onSuccess={() => setCurrentScreen('signIn')}
+          onBack={() => setCurrentScreen('signIn')}
         />
       );
     case 'home':
@@ -87,8 +94,11 @@ const MainNavigation: React.FC = () => {
         <GlucoVisionHome 
           onNavigateAlerts={() => setCurrentScreen('alerts')} 
           onNavigateDetail={navigateToDetail}
+          onNavigateAccountSettings={() => setCurrentScreen('accountSettings')}
         />
       );
+    case 'accountSettings':
+      return <AccountSettingsScreen onBack={() => setCurrentScreen('home')} />;
     case 'alerts':
       return <AlertsScreen onBack={() => setCurrentScreen('home')} />;
     case 'detail':

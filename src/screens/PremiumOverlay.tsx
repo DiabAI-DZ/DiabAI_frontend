@@ -31,12 +31,12 @@ const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
   return (
     <View style={styles.container}>
       {/* Blurred background content */}
-      <View style={styles.backgroundContent} pointerEvents="none">
+      <View style={[styles.backgroundContent, { pointerEvents: 'none' }]}>
         {children}
       </View>
 
       {/* Overlay Background */}
-      <View style={[styles.overlay, { backgroundColor: C.overlayBg || 'rgba(98, 46, 46, 0.45)' }]}>
+      <View style={[styles.overlay, { backgroundColor: (C as any).overlayBg || 'rgba(98, 46, 46, 0.45)' }]}>
         
         {/* Premium badge */}
         <View style={[styles.badge, { backgroundColor: C.redBg, borderColor: `${C.red}20` }]}>
@@ -45,7 +45,7 @@ const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
         </View>
 
         {/* Card */}
-        <View style={[styles.card, { backgroundColor: C.overlayCardBg || '#FCF0F0' }]}>
+        <View style={[styles.card, { backgroundColor: (C as any).overlayCardBg || '#FCF0F0' }]}>
           {/* Icon */}
           <View style={[styles.iconWrapper, { backgroundColor: C.red }]}>
             <Sparkles size={26} color="#fff" />

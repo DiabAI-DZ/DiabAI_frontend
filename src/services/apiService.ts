@@ -342,6 +342,8 @@ export const apiService = {
     
     if (updates.name !== undefined) profileUpdates.name = updates.name;
     if (updates.email !== undefined) profileUpdates.email = updates.email;
+    if (updates.phone_number !== undefined) profileUpdates.phone_number = updates.phone_number;
+    if (updates.address !== undefined) profileUpdates.address = updates.address;
     
     if (updates.diabetesType !== undefined) {
       healthUpdates.diabetes_type = unmapDiabetesType(updates.diabetesType);

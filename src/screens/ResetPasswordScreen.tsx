@@ -12,18 +12,20 @@ import {
   Platform,
 } from 'react-native';
 import { SvgXml } from 'react-native-svg';
-import { Eye, EyeOff } from 'lucide-react-native';
+import { Eye, EyeOff, ChevronLeft } from 'lucide-react-native';
 import { authApi } from '../services/authApi';
 import { LOGO_SVG } from '../assets/svgData';
 
 interface ResetPasswordScreenProps {
   email: string;
   onSuccess: () => void;
+  onBack: () => void;
 }
 
 const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
   email: initialEmail,
   onSuccess,
+  onBack,
 }) => {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
@@ -36,6 +38,15 @@ const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const emailRegex = /^[\w-\.]+@([\w-]+\.)+[\w-]{2,}$/;
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%?&.])[A-Za-z\d@$!%?&.]{8,}$/;
+
+  const validatePassword = (pass: string) => {
+    if (pass.length < 8) return 'Password must be at least 8 characters long.';
+    if (!passwordRegex.test(pass)) {
+      return 'Password must include uppercase, lowercase, a number, and a special character (@$!%?&.).';
+    }
+    return null;
+  };
 
   const handleResetPassword = async () => {
     const trimmedEmail = email.trim();
@@ -61,6 +72,12 @@ const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
       return;
     }
 
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      setErrorMessage(passwordError);
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -72,7 +89,12 @@ const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
         onSuccess();
       }, 1500);
     } catch (e: any) {
-      setErrorMessage(e.message || 'An unexpected error occurred.');
+      if (e.errors) {
+        const firstError = Object.values(e.errors)[0] as string[];
+        setErrorMessage(firstError[0] || e.message);
+      } else {
+        setErrorMessage(e.message || 'An unexpected error occurred.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -85,6 +107,15 @@ const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+          <TouchableOpacity 
+            onPress={onBack}
+            style={styles.backButton}
+            activeOpacity={0.7}
+          >
+            <ChevronLeft size={24} color="#622E2E" />
+            <Text style={styles.backText}>Back to Sign In</Text>
+          </TouchableOpacity>
+
           <View style={styles.logoWrapper}>
             <SvgXml xml={LOGO_SVG} width={100} height={100} />
           </View>
@@ -290,6 +321,20 @@ const styles = StyleSheet.create({
     color: '#FCF0F0',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 1,
+  },
+  backText: {
+    fontSize: 14,
+    color: '#622E2E',
+    fontWeight: '600',
+    marginLeft: 4,
   },
 });
 

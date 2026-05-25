@@ -58,6 +58,8 @@ export interface UserProfile {
     min: number;
     max: number;
   };
+  phone_number?: string;
+  address?: string;
   weight?: number;
   height?: number;
 }

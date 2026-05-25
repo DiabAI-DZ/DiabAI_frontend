@@ -206,4 +206,46 @@ export const authApi = {
     const message = body.error || body.message || `Password reset failed (status ${response.status}).`;
     throw new AuthApiException(message, response.status, body, rawText);
   },
+
+  async changePassword(currentPassword: string, password: string, passwordConfirmation: string) {
+    const url = `${this.baseUrl}/api/auth/change-password`;
+
+    let response: Response;
+    try {
+      response = await timeoutFetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${this.token}`,
+        },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          password,
+          password_confirmation: passwordConfirmation,
+        }),
+      });
+    } catch (e: any) {
+      if (e instanceof AuthApiException) {
+        throw e;
+      }
+      throw new AuthApiException(`Cannot reach server. Check API base URL: ${e.message}`);
+    }
+
+    const rawText = await response.text();
+    let body: any = {};
+    try {
+      body = JSON.parse(rawText);
+    } catch (_) {}
+
+    if (response.status >= 200 && response.status < 300) {
+      if (body.access_token) {
+        this.setToken(body.access_token);
+      }
+      return body;
+    }
+
+    const message = body.error || body.message || `Change password failed (status ${response.status}).`;
+    throw new AuthApiException(message, response.status, body, rawText);
+  },
 };

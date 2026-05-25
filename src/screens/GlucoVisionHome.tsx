@@ -11,9 +11,14 @@ import ScanFlow from './ScanFlow';
 interface GlucoVisionHomeProps {
   onNavigateAlerts: () => void;
   onNavigateDetail: (entry: any) => void;
+  onNavigateAccountSettings: () => void;
 }
 
-const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({ onNavigateAlerts, onNavigateDetail }) => {
+const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({ 
+  onNavigateAlerts, 
+  onNavigateDetail,
+  onNavigateAccountSettings 
+}) => {
   const { C } = useTheme();
   const [activeTab, setActiveTab] = useState<'home' | 'log' | 'ai' | 'settings'>('home');
   const [showScan, setShowScan] = useState(false);
@@ -27,7 +32,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({ onNavigateAlerts, onN
       case 'home': return <Dashboard onNavigateAlerts={onNavigateAlerts} onNavigateDetail={onNavigateDetail} />;
       case 'log': return <LogbookScreen onNavigateDetail={onNavigateDetail} />;
       case 'ai': return <AIInsightsScreen />;
-      case 'settings': return <SettingsScreen />;
+      case 'settings': return <SettingsScreen onNavigateAccountSettings={onNavigateAccountSettings} />;
       default: return <Dashboard onNavigateAlerts={onNavigateAlerts} onNavigateDetail={onNavigateDetail} />;
     }
   };
