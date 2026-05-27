@@ -19,6 +19,7 @@ import { useUser } from '../context/UserContext';
 import { X, Camera as CameraIcon, Zap, RotateCcw, Check, ChevronRight, AlertCircle, Plus, Image as ImageIcon } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import { ScrollView } from 'react-native-gesture-handler';
 
 interface ScanFlowProps {
   mode: 'glucose' | 'meal';
@@ -88,13 +89,18 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ImagePicker.MediaType.images,
         allowsEditing: true,
-        quality: 1,
+        // Force JPEG output so PIL on the server always gets a known format.
+        // Without this, gallery picks can be WebP / AVIF / HEIC which crash the model.
+        base64: false,
+        quality: 0.85,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const selectedUri = result.assets[0].uri;
+        const asset = result.assets[0];
+        // expo-image-picker re-encodes to JPEG when quality < 1 on Android/iOS
+        const selectedUri = asset.uri;
         setPhoto(selectedUri);
         handleAnalyze(selectedUri);
       }
@@ -453,7 +459,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   );
 };
 
-import { ScrollView } from 'react-native-gesture-handler';
+
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
