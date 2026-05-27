@@ -89,18 +89,16 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaType.images,
+        mediaTypes: ['images'],
         allowsEditing: true,
-        // Force JPEG output so PIL on the server always gets a known format.
-        // Without this, gallery picks can be WebP / AVIF / HEIC which crash the model.
+        // quality < 1 forces expo-image-picker to re-encode to JPEG on Android/iOS,
+        // which prevents WebP/HEIC/AVIF from reaching the server and crashing PIL.
         base64: false,
         quality: 0.85,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        // expo-image-picker re-encodes to JPEG when quality < 1 on Android/iOS
-        const selectedUri = asset.uri;
+        const selectedUri = result.assets[0].uri;
         setPhoto(selectedUri);
         handleAnalyze(selectedUri);
       }
