@@ -4,6 +4,7 @@ import {
   ActivityEntry, HomeData 
 } from './types';
 import { authApi } from './authApi';
+import { Platform } from 'react-native';
 
 // --- HELPERS ---
 
@@ -92,9 +93,9 @@ const authenticatedFetch = async (path: string, options: RequestInit = {}): Prom
   const baseUrl = authApi.baseUrl;
   const url = `${baseUrl}${path}`;
 
-  const headers = {
+  const headers: any = {
     'Accept': 'application/json',
-    'Content-Type': 'application/json',
+    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
@@ -207,7 +208,7 @@ export const apiService = {
     try {
       if (log.type === 'measurement') {
         const mLog = log as Omit<MeasurementEntry, "id">;
-        const payload = {
+        const payload: any = {
           title: mLog.tag ? `${mLog.tag} check` : "Glucose Measurement",
           value_mg_dl: mLog.value,
           measurement_type: unmapTag(mLog.tag),
@@ -215,6 +216,9 @@ export const apiService = {
           notes: mLog.notes || "",
           tags: []
         };
+        if (mLog.imagePath) {
+          payload.image_path = mLog.imagePath;
+        }
         console.log(`[API] Measurement payload:`, JSON.stringify(payload));
         const response = await authenticatedFetch('/api/measurements', {
           method: 'POST',
@@ -496,6 +500,20 @@ export const apiService = {
     return result;
   },
 
+  async fetchMeasurementDetail(id: number): Promise<any> {
+    console.log(`[API] Fetching measurement detail for ${id}`);
+    const response = await authenticatedFetch(`/api/measurements/${id}`);
+    const result = await response.json();
+    return result.data || result;
+  },
+
+  async fetchMealDetail(id: number): Promise<any> {
+    console.log(`[API] Fetching meal detail for ${id}`);
+    const response = await authenticatedFetch(`/api/meals/${id}`);
+    const result = await response.json();
+    return result.data || result;
+  },
+
   async fetchProfile(): Promise<UserProfile> {
     console.log(`[API] Fetching settings from ${authApi.baseUrl}/api/settings`);
     const response = await authenticatedFetch('/api/settings');
@@ -512,7 +530,13 @@ export const apiService = {
       goals: {
         min: h.glucose_target_min || 70,
         max: h.glucose_target_max || 140
-      }
+      },
+      phone_number: p.phone_number || undefined,
+      address: p.address || undefined,
+      weight: p.weight !== null && p.weight !== undefined ? parseFloat(p.weight) : undefined,
+      height: p.height !== null && p.height !== undefined ? parseInt(p.height) : undefined,
+      age: p.age !== null && p.age !== undefined ? parseInt(p.age) : undefined,
+      sex: p.sex || undefined,
     };
   },
 
@@ -525,6 +549,10 @@ export const apiService = {
     if (updates.email !== undefined) profileUpdates.email = updates.email;
     if (updates.phone_number !== undefined) profileUpdates.phone_number = updates.phone_number;
     if (updates.address !== undefined) profileUpdates.address = updates.address;
+    if (updates.weight !== undefined) profileUpdates.weight = updates.weight !== null ? parseFloat(updates.weight as any) : null;
+    if (updates.height !== undefined) profileUpdates.height = updates.height !== null ? parseInt(updates.height as any) : null;
+    if (updates.age !== undefined) profileUpdates.age = updates.age !== null ? parseInt(updates.age as any) : null;
+    if (updates.sex !== undefined) profileUpdates.sex = updates.sex || null;
     
     if (updates.diabetesType !== undefined) {
       healthUpdates.diabetes_type = unmapDiabetesType(updates.diabetesType);
@@ -557,5 +585,29 @@ export const apiService = {
       console.error("updateProfile failed:", error);
       throw error;
     }
+  },
+
+  async scanMeasurementImage(imageUri: string): Promise<{ detected_value: number; confidence: number; preliminary_health_status: string; image_path: string }> {
+    console.log(`[API] Uploading measurement image for scan:`, imageUri);
+    
+    const formData = new FormData();
+    const rawFilename = imageUri.split('/').pop() || 'scan.jpg';
+    const filename = /\.(jpg|jpeg|png)$/i.test(rawFilename) ? rawFilename : `${rawFilename}.jpg`;
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `image/${match[1]}` : `image/jpeg`;
+    
+    formData.append('image', {
+      uri: Platform.OS === 'android' ? imageUri : imageUri.replace('file://', ''),
+      name: filename,
+      type: type
+    } as any);
+
+    const response = await authenticatedFetch('/api/measurements/scan', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const result = await response.json();
+    return result;
   }
 };

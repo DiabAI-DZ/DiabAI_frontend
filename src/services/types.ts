@@ -17,6 +17,7 @@ export interface MeasurementEntry {
   previousValue?: number;
   dailyAvg?: number;
   notes?: string;
+  imagePath?: string;
 }
 
 export interface MealEntry {
@@ -92,6 +93,8 @@ export interface UserProfile {
   address?: string;
   weight?: number;
   height?: number;
+  age?: number;
+  sex?: 'male' | 'female';
 }
 
 export interface ScanResult {
@@ -100,6 +103,7 @@ export interface ScanResult {
   confidence: number;
   timestamp: string;
   imageUri: string;
+  imagePath?: string;
 }
 
 export interface AISummary {

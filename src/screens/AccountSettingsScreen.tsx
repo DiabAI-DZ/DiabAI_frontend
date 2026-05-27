@@ -10,7 +10,7 @@ import {
   Image,
 } from 'react-native';
 import { 
-  User, Mail, Phone, MapPin, ChevronLeft, Camera, Lock 
+  User, Mail, Phone, MapPin, ChevronLeft, Camera, Lock, Calendar, Scale, Ruler
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { authApi } from '../services/authApi';
@@ -23,12 +23,16 @@ interface AccountSettingsScreenProps {
 
   const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({ onBack }) => {
   const { C } = useTheme();
-  const { profile: userProfile } = useUser();
+  const { profile: userProfile, updateProfile } = useUser();
   const [form, setForm] = useState({
     fullName: userProfile?.name || "",
     email: userProfile?.email || "",
     phone: userProfile?.phone_number || "",
     address: userProfile?.address || "",
+    age: userProfile?.age ? userProfile.age.toString() : "",
+    weight: userProfile?.weight ? userProfile.weight.toString() : "",
+    height: userProfile?.height ? userProfile.height.toString() : "",
+    sex: userProfile?.sex || "male",
   });
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -55,11 +59,15 @@ interface AccountSettingsScreenProps {
   const handleSave = async () => {
     setSaveError(null);
     try {
-      await apiService.updateProfile({
+      await updateProfile({
         name: form.fullName,
         email: form.email,
         phone_number: form.phone,
         address: form.address,
+        age: form.age ? parseInt(form.age) : undefined,
+        weight: form.weight ? parseFloat(form.weight) : undefined,
+        height: form.height ? parseInt(form.height) : undefined,
+        sex: form.sex as any,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -127,6 +135,24 @@ interface AccountSettingsScreenProps {
       key: "address", 
       label: "Address", 
       icon: MapPin 
+    },
+    { 
+      key: "age", 
+      label: "Age (years)", 
+      icon: Calendar,
+      keyboardType: "numeric" as const 
+    },
+    { 
+      key: "weight", 
+      label: "Weight (kg)", 
+      icon: Scale,
+      keyboardType: "numeric" as const 
+    },
+    { 
+      key: "height", 
+      label: "Height (cm)", 
+      icon: Ruler,
+      keyboardType: "numeric" as const 
     },
   ];
 
@@ -196,6 +222,46 @@ interface AccountSettingsScreenProps {
               </View>
             );
           })}
+
+          {/* Sex Selection */}
+          <View style={styles.fieldContainer}>
+            <Text style={[styles.label, { color: C.textSm, marginBottom: 8 }]}>Gender</Text>
+            <View style={styles.genderRow}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setForm({ ...form, sex: 'male' })}
+                style={[
+                  styles.genderButton,
+                  {
+                    backgroundColor: form.sex === 'male' ? C.red : (C.redBg || '#F5DEDE'),
+                    borderColor: form.sex === 'male' ? C.red : (C.redBorder || '#EAC5C5'),
+                  }
+                ]}
+              >
+                <Text style={[
+                  styles.genderButtonText,
+                  { color: form.sex === 'male' ? '#FFF' : (C.text || '#000') }
+                ]}>Male</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setForm({ ...form, sex: 'female' })}
+                style={[
+                  styles.genderButton,
+                  {
+                    backgroundColor: form.sex === 'female' ? C.red : (C.redBg || '#F5DEDE'),
+                    borderColor: form.sex === 'female' ? C.red : (C.redBorder || '#EAC5C5'),
+                  }
+                ]}
+              >
+                <Text style={[
+                  styles.genderButtonText,
+                  { color: form.sex === 'female' ? '#FFF' : (C.text || '#000') }
+                ]}>Female</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
         {/* Save Button */}
@@ -429,6 +495,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     fontWeight: '600',
+  },
+  genderRow: {
+    flexDirection: 'row',
+    gap: 16,
+    width: '100%',
+  },
+  genderButton: {
+    flex: 1,
+    height: 56,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  genderButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

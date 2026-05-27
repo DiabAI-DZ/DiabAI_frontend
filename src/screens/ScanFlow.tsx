@@ -15,8 +15,10 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
-import { X, Camera as CameraIcon, Zap, RotateCcw, Check, ChevronRight, AlertCircle, Plus } from 'lucide-react-native';
+import { useUser } from '../context/UserContext';
+import { X, Camera as CameraIcon, Zap, RotateCcw, Check, ChevronRight, AlertCircle, Plus, Image as ImageIcon } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
 
 interface ScanFlowProps {
   mode: 'glucose' | 'meal';
@@ -29,7 +31,17 @@ type ScanState = 'camera' | 'analyzing' | 'confirm' | 'manual' | 'error';
 const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const { C, isDark } = useTheme();
   const { addLog, scanImage } = useData();
+  const { profile, refreshProfile } = useUser();
   const [permission, requestPermission] = useCameraPermissions();
+
+  const getStatus = (value: number, unit: string) => {
+    const isMmol = unit === 'mmol/L';
+    const lowLimit = isMmol ? 3.9 : 70;
+    const highLimit = isMmol ? 7.8 : 140;
+    if (value < lowLimit) return 'Low';
+    if (value > highLimit) return 'High';
+    return 'Normal';
+  };
   const [photo, setPhoto] = useState<string | null>(null);
   const [state, setState] = useState<ScanState>('camera');
   const [scanResult, setScanResult] = useState<any>(null);
@@ -73,14 +85,31 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
     }
   };
 
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const selectedUri = result.assets[0].uri;
+        setPhoto(selectedUri);
+        handleAnalyze(selectedUri);
+      }
+    } catch (err) {
+      setErrorMsg("Failed to pick image from gallery. Please try again.");
+      setState('error');
+    }
+  };
+
+
   const handleAnalyze = async (uri: string) => {
-    // setState('analyzing'); // Skip the analyzing state for now as requested
+    setState('analyzing');
     try {
       if (mode === 'glucose') {
-        // For now, use a default value if scanImage is not ready or just jump to confirm
-        // In a real scenario, scanImage would be called here.
-        // The user wants to jump directly to confirmation.
-        const result = { value: 105, unit: 'mg/dL' }; // Default placeholder
+        const result = await scanImage(uri);
         setScanResult(result);
       } else {
         setScanResult({
@@ -111,13 +140,15 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
           type: "measurement",
           value: data.value,
           unit: data.unit,
-          status: data.value > 140 ? "High" : (data.value < 70 ? "Low" : "Normal"),
+          status: getStatus(data.value, data.unit) as any,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           date: new Date().toISOString(),
           tag: data.tag || (state === 'manual' ? "Manual" : "Scan"),
           notes: notes,
           trend: "stable",
+          imagePath: data.imagePath,
         } as any);
+        await refreshProfile();
       } else {
         await addLog({
           type: "meal",
@@ -172,7 +203,10 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
         <TouchableOpacity style={styles.captureBtn} onPress={takePicture}>
           <View style={styles.captureBtnInner} />
         </TouchableOpacity>
-        <View style={{ width: 80 }} />
+        <TouchableOpacity style={styles.manualBtn} onPress={pickImage}>
+          <ImageIcon color="#FFF" size={24} />
+          <Text style={styles.manualText}>Gallery</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -209,23 +243,23 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
                 <TextInput
                   style={[styles.detectedValue, { color: C.text, borderBottomWidth: 2, borderBottomColor: C.red, minWidth: 80 }]}
                   value={scanResult?.value?.toString()}
-                  onChangeText={(val) => setScanResult({ ...scanResult, value: parseInt(val) || 0 })}
+                  onChangeText={(val) => setScanResult({ ...scanResult, value: parseFloat(val) || 0 })}
                   keyboardType="numeric"
                   autoFocus
                 />
               ) : (
                 <Text style={[styles.detectedValue, { color: C.text }]}>{scanResult?.value}</Text>
               )}
-              <Text style={[styles.detectedUnit, { color: C.textSm }]}>mg/dL</Text>
+              <Text style={[styles.detectedUnit, { color: C.textSm }]}>{scanResult?.unit || 'mg/dL'}</Text>
               <View style={[
                 styles.statusBadge, 
-                { backgroundColor: (scanResult?.value > 140 ? C.red : (scanResult?.value < 70 ? C.red : C.green)) + '15' }
+                { backgroundColor: (getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'High' || getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'Low' ? C.red : C.green) + '15' }
               ]}>
                 <Text style={[
                   styles.statusText, 
-                  { color: (scanResult?.value > 140 ? C.red : (scanResult?.value < 70 ? C.red : C.green)) }
+                  { color: (getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'High' || getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'Low' ? C.red : C.green) }
                 ]}>
-                  {scanResult?.value > 140 ? 'High' : (scanResult?.value < 70 ? 'Low' : 'Normal')}
+                  {getStatus(scanResult?.value, scanResult?.unit || 'mg/dL')}
                 </Text>
               </View>
             </View>
@@ -372,16 +406,16 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
             style={[styles.manualInput, { color: C.text, borderBottomColor: C.red }]}
             value={manualValue}
             onChangeText={setManualValue}
-            placeholder="000"
+            placeholder="0.0"
             placeholderTextColor={C.textXs}
             keyboardType="numeric"
             autoFocus
           />
-          <Text style={[styles.inputUnit, { color: C.textSm }]}>mg/dL</Text>
+          <Text style={[styles.inputUnit, { color: C.textSm }]}>{profile?.glucoseUnit || 'mg/dL'}</Text>
         </View>
         
         <TouchableOpacity 
-          onPress={() => handleSave({ value: parseInt(manualValue), unit: "mg/dL" })}
+          onPress={() => handleSave({ value: parseFloat(manualValue), unit: profile?.glucoseUnit || "mg/dL" })}
           disabled={!manualValue}
           style={[styles.saveBtn, { backgroundColor: manualValue ? C.red : C.redBorder }]}
         >

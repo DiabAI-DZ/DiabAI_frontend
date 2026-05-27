@@ -423,6 +423,14 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateAccountSettin
             value={profile?.glucoseUnit || "mg/dL"} 
             onClick={() => setUnitsPopup(true)} 
           />
+          {(profile?.age !== undefined || profile?.weight !== undefined || profile?.height !== undefined || profile?.sex !== undefined) && (
+            <SettingRow 
+              icon={<User {...iconProps} />} 
+              label="Demographics" 
+              value={`${profile.sex ? profile.sex.charAt(0).toUpperCase() + profile.sex.slice(1) : ''}${profile.age ? ', ' + profile.age + ' yrs' : ''}${profile.weight ? ', ' + profile.weight + ' kg' : ''}${profile.height ? ', ' + profile.height + ' cm' : ''}`.replace(/^,\s*/, '')}
+              onClick={onNavigateAccountSettings} 
+            />
+          )}
         </SectionCard>
 
         <SectionCard title="Data & Reports" icon={<BarChart3 size={11} color="#FFF" />}>

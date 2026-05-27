@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 import Svg, { Circle, Line } from 'react-native-svg';
 import { useTheme } from '../context/ThemeContext';
 import { useUser } from '../context/UserContext';
+import { apiService } from '../services/apiService';
 import { 
   AlertTriangle,
   Zap, 
@@ -97,6 +98,60 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
   const { profile } = useUser();
 
   const isMeasurement = entry.type === 'measurement';
+
+  const [details, setDetails] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    const loadDetails = async () => {
+      try {
+        setLoading(true);
+        let res;
+        if (isMeasurement) {
+          res = await apiService.fetchMeasurementDetail(entry.id);
+        } else if (entry.type === 'meal') {
+          res = await apiService.fetchMealDetail(entry.id);
+        }
+        if (active && res) {
+          setDetails(res);
+        }
+      } catch (err) {
+        console.error("Failed to load details:", err);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+    loadDetails();
+    return () => {
+      active = false;
+    };
+  }, [entry.id, entry.type]);
+
+  const mapIconComponent = (iconName: string) => {
+    const name = iconName ? iconName.toLowerCase() : '';
+    if (name.includes('heart')) return Heart;
+    if (name.includes('target')) return Target;
+    if (name.includes('alert') || name.includes('triangle') || name.includes('warn')) return AlertTriangle;
+    if (name.includes('zap') || name.includes('bolt') || name.includes('flash')) return Zap;
+    if (name.includes('activity') || name.includes('chart')) return Activity;
+    if (name.includes('flame') || name.includes('fire') || name.includes('burn')) return Flame;
+    if (name.includes('brain') || name.includes('intel') || name.includes('mind')) return Brain;
+    if (name.includes('spark') || name.includes('star') || name.includes('magic')) return Sparkles;
+    return Sparkles; // fallback
+  };
+
+  const mapIconColor = (iconName: string, themeColors: any) => {
+    const name = iconName ? iconName.toLowerCase() : '';
+    if (name.includes('heart') || name.includes('green') || name.includes('recommend')) return { color: themeColors.green || '#16A34A', bg: themeColors.greenBg || '#F0FDF4' };
+    if (name.includes('target') || name.includes('blue') || name.includes('globe')) return { color: themeColors.blue || '#2563EB', bg: themeColors.blueBg || '#EFF6FF' };
+    if (name.includes('alert') || name.includes('red') || name.includes('low') || name.includes('high')) return { color: themeColors.red || '#DC2626', bg: themeColors.redBg || '#FEF2F2' };
+    if (name.includes('zap') || name.includes('amber') || name.includes('orange') || name.includes('warn')) return { color: themeColors.amber || '#D97706', bg: themeColors.amberBg || '#FFFBEB' };
+    if (name.includes('brain') || name.includes('purple') || name.includes('intel') || name.includes('pattern')) return { color: themeColors.purple || '#7C3AED', bg: themeColors.purpleBg || '#F5F3FF' };
+    return { color: themeColors.purple || '#7C3AED', bg: themeColors.purpleBg || '#F5F3FF' }; // default
+  };
 
   const statusCfg = (s: GlucoseStatus) => {
     switch (s) {
@@ -239,12 +294,12 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
         </View>
 
         {/* Comparison card (vs previous / daily average) */}
-        {(entry.previousValue || entry.dailyAvg) && (
+        {(entry.previousValue || entry.dailyAvg || details?.comparison) && (
           <View style={styles.sectionWrap}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[styles.sectionTitle, { color: C.text }]}>Comparison</Text>
               <View style={[styles.compareBadge, { backgroundColor: C.amberBg, borderColor: C.amberBorder }]}>
-                <Text style={[styles.compareBadgeText, { color: C.amber }]}>vs previous</Text>
+                <Text style={[styles.compareBadgeText, { color: C.amber }]}>vs average</Text>
               </View>
             </View>
 
@@ -272,24 +327,24 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
                 </View>
               )}
 
-              {entry.dailyAvg && (
+              {(details?.comparison?.daily_average_mg_dl !== undefined || entry.dailyAvg) && (
                 <View style={[styles.compareBarCard, { backgroundColor: C.white, borderColor: C.divider }]}>
                   <View>
                     <Text style={[styles.compareBarLabel, { color: C.textSm }]}>Daily Average</Text>
                     <Text style={[styles.compareBarValue, { color: C.text }]}>
-                      {entry.dailyAvg} <Text style={styles.compareBarUnit}>mg/dL</Text>
+                      {details?.comparison?.daily_average_mg_dl ?? entry.dailyAvg} <Text style={styles.compareBarUnit}>mg/dL</Text>
                     </Text>
                   </View>
                   <View style={[
                     styles.compareDeltaBox, 
                     { 
-                      backgroundColor: entry.value >= entry.dailyAvg ? C.amberBg : C.greenBg, 
-                      borderColor: entry.value >= entry.dailyAvg ? C.amberBorder : C.greenBorder 
+                      backgroundColor: (details?.comparison?.delta_mg_dl ?? (entry.value - entry.dailyAvg)) >= 0 ? C.amberBg : C.greenBg, 
+                      borderColor: (details?.comparison?.delta_mg_dl ?? (entry.value - entry.dailyAvg)) >= 0 ? C.amberBorder : C.greenBorder 
                     }
                   ]}>
-                    {entry.value >= entry.dailyAvg ? <ArrowUpRight size={14} color={C.amber} /> : <ArrowDownRight size={14} color={C.green} />}
-                    <Text style={[styles.compareDeltaText, { color: entry.value >= entry.dailyAvg ? C.amber : C.green }]}>
-                      {entry.value >= entry.dailyAvg ? '+' : ''}{entry.value - entry.dailyAvg} mg/dL
+                    {(details?.comparison?.delta_mg_dl ?? (entry.value - entry.dailyAvg)) >= 0 ? <ArrowUpRight size={14} color={C.amber} /> : <ArrowDownRight size={14} color={C.green} />}
+                    <Text style={[styles.compareDeltaText, { color: (details?.comparison?.delta_mg_dl ?? (entry.value - entry.dailyAvg)) >= 0 ? C.amber : C.green }]}>
+                      {(details?.comparison?.delta_mg_dl ?? (entry.value - entry.dailyAvg)) >= 0 ? '+' : ''}{details?.comparison?.delta_mg_dl ?? (entry.value - entry.dailyAvg)} mg/dL
                     </Text>
                   </View>
                 </View>
@@ -308,7 +363,16 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
           </View>
 
           <View style={styles.insightWrapperList}>
-            {insights.map((ins, idx) => {
+            {(details?.health_insights ? details.health_insights.map((ins: any) => {
+              const colors = mapIconColor(ins.icon, C);
+              return {
+                icon: mapIconComponent(ins.icon),
+                iconBg: colors.bg,
+                iconColor: colors.color,
+                title: ins.title,
+                desc: ins.body
+              };
+            }) : insights).map((ins: any, idx: number) => {
               const InsIcon = ins.icon;
               return (
                 <View key={idx} style={[styles.insightRowCard, { backgroundColor: C.white, borderColor: C.divider }]}>
@@ -378,10 +442,34 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
           <Text style={[styles.sectionTitle, { color: C.text, marginBottom: 12 }]}>Nutrition Breakdown</Text>
           <View style={[styles.nutritionRingsCard, { backgroundColor: C.white, borderColor: C.divider }]}>
             <View style={styles.ringsRow}>
-              <NutritionRingDetail label="Carbs" value={entry.carbs} unit="g" color={C.amber} percent={Math.min(100, (entry.carbs / 80) * 100)} />
-              <NutritionRingDetail label="Protein" value={entry.protein || 0} unit="g" color={C.blue} percent={Math.min(100, ((entry.protein || 0) / 60) * 100)} />
-              <NutritionRingDetail label="Fat" value={entry.fat || 0} unit="g" color={C.purple} percent={Math.min(100, ((entry.fat || 0) / 50) * 100)} />
-              <NutritionRingDetail label="Fiber" value={entry.fiber || 0} unit="g" color={C.green} percent={Math.min(100, ((entry.fiber || 0) / 30) * 100)} />
+              <NutritionRingDetail 
+                label="Carbs" 
+                value={details?.nutrition?.carbohydrates_g !== undefined && details?.nutrition?.carbohydrates_g !== null ? details.nutrition.carbohydrates_g : entry.carbs} 
+                unit="g" 
+                color={C.amber} 
+                percent={Math.min(100, ((details?.nutrition?.carbohydrates_g !== undefined && details?.nutrition?.carbohydrates_g !== null ? details.nutrition.carbohydrates_g : entry.carbs) / 80) * 100)} 
+              />
+              <NutritionRingDetail 
+                label="Protein" 
+                value={details?.nutrition?.protein_g !== undefined && details?.nutrition?.protein_g !== null ? details.nutrition.protein_g : (entry.protein || 0)} 
+                unit="g" 
+                color={C.blue} 
+                percent={Math.min(100, ((details?.nutrition?.protein_g !== undefined && details?.nutrition?.protein_g !== null ? details.nutrition.protein_g : (entry.protein || 0)) / 60) * 100)} 
+              />
+              <NutritionRingDetail 
+                label="Fat" 
+                value={details?.nutrition?.fat_g !== undefined && details?.nutrition?.fat_g !== null ? details.nutrition.fat_g : (entry.fat || 0)} 
+                unit="g" 
+                color={C.purple} 
+                percent={Math.min(100, ((details?.nutrition?.fat_g !== undefined && details?.nutrition?.fat_g !== null ? details.nutrition.fat_g : (entry.fat || 0)) / 50) * 100)} 
+              />
+              <NutritionRingDetail 
+                label="Fiber" 
+                value={details?.nutrition?.fiber_g !== undefined && details?.nutrition?.fiber_g !== null ? details.nutrition.fiber_g : (entry.fiber || 0)} 
+                unit="g" 
+                color={C.green} 
+                percent={Math.min(100, ((details?.nutrition?.fiber_g !== undefined && details?.nutrition?.fiber_g !== null ? details.nutrition.fiber_g : (entry.fiber || 0)) / 30) * 100)} 
+              />
             </View>
 
             <View style={[styles.calorieBarRow, { backgroundColor: '#FAFAFA', borderColor: C.divider }]}>
@@ -414,7 +502,7 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
           </View>
           <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
             <Text style={[styles.infoLabel, { color: C.text }]}>Carbohydrates</Text>
-            <Text style={[styles.infoValue, { color: C.textSm }]}>{entry.carbs}g</Text>
+            <Text style={[styles.infoValue, { color: C.textSm }]}>{details?.nutrition?.carbohydrates_g !== undefined && details?.nutrition?.carbohydrates_g !== null ? details.nutrition.carbohydrates_g : entry.carbs}g</Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={[styles.infoLabel, { color: C.text }]}>Impact Level</Text>
@@ -446,29 +534,44 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
           </View>
 
           <View style={styles.insightWrapperList}>
-            <View style={[styles.insightRowCard, { backgroundColor: C.white, borderColor: C.divider }]}>
-              <View style={[styles.insightIconWrapper, { backgroundColor: C.amberBg }]}>
-                <Brain size={16} color={C.amber} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.insightRowTitle, { color: C.text }]}>Moderate Glucose Impact</Text>
-                <Text style={[styles.insightRowDesc, { color: C.textSm }]}>
-                  This meal is estimated to raise your glucose by {entry.glucoseImpact || entry.impact}. The {entry.carbs}g of carbs are the primary contributor.
-                </Text>
-              </View>
-            </View>
-
-            <View style={[styles.insightRowCard, { backgroundColor: C.white, borderColor: C.divider }]}>
-              <View style={[styles.insightIconWrapper, { backgroundColor: C.greenBg }]}>
-                <Sparkles size={16} color={C.green} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.insightRowTitle, { color: C.text }]}>Recommendation</Text>
-                <Text style={[styles.insightRowDesc, { color: C.textSm }]}>
-                  Pairing high-carb meals with a 15-minute walk can reduce post-meal glucose spikes by up to 30%.
-                </Text>
-              </View>
-            </View>
+            {(details?.health_insights ? details.health_insights.map((ins: any) => {
+              const colors = mapIconColor(ins.icon, C);
+              return {
+                icon: mapIconComponent(ins.icon),
+                iconBg: colors.bg,
+                iconColor: colors.color,
+                title: ins.title,
+                desc: ins.body
+              };
+            }) : [
+              {
+                icon: Brain,
+                iconBg: C.amberBg,
+                iconColor: C.amber,
+                title: `${entry.impactLevel ? entry.impactLevel.charAt(0).toUpperCase() + entry.impactLevel.slice(1) : 'Moderate'} Glucose Impact`,
+                desc: `This meal is estimated to raise your glucose by ${entry.glucoseImpact || entry.impact || 'moderate amount'}. The ${entry.carbs}g of carbs are the primary contributor.`
+              },
+              {
+                icon: Sparkles,
+                iconBg: C.greenBg,
+                iconColor: C.green,
+                title: "Recommendation",
+                desc: "Pairing high-carb meals with a 15-minute walk can reduce post-meal glucose spikes by up to 30%."
+              }
+            ]).map((ins: any, idx: number) => {
+              const InsIcon = ins.icon;
+              return (
+                <View key={idx} style={[styles.insightRowCard, { backgroundColor: C.white, borderColor: C.divider }]}>
+                  <View style={[styles.insightIconWrapper, { backgroundColor: ins.iconBg }]}>
+                    <InsIcon size={16} color={ins.iconColor} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.insightRowTitle, { color: C.text }]}>{ins.title}</Text>
+                    <Text style={[styles.insightRowDesc, { color: C.textSm }]}>{ins.desc}</Text>
+                  </View>
+                </View>
+              );
+            })}
           </View>
         </View>
 

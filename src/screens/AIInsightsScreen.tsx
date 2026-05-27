@@ -840,7 +840,8 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
         </ScrollView>
       )}
 
-      {/* Segment Selector Tab */}
+      {/* Segment Selector Tab - Quarantined (Hidden) */}
+      {/*
       <View style={styles.tabSelectorContainer}>
         <View style={[styles.tabSelectorBg, { backgroundColor: C.redBg }]}>
           <TouchableOpacity
@@ -861,6 +862,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
           </TouchableOpacity>
         </View>
       </View>
+      */}
 
       {activeSegment === 'dashboard' ? (
         <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

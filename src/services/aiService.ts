@@ -7,30 +7,22 @@ export const AI_BASE_URL = "http://your-ai-service.com";
 // --- SERVICE FUNCTIONS ---
 
 export const aiService = {
-  /**
-   * Simulates an image-to-text vision model extracting blood sugar from a photo.
-   */
   async processGlucometerImage(imageUri: string): Promise<ScanResult> {
-    console.log(`[AI] Processing image at ${AI_BASE_URL}/vision`, imageUri);
-    
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        // Simulating a random failure for UX testing (e.g. 10% chance)
-        if (Math.random() < 0.1) {
-          reject(new Error("Focus error: Could not read glucometer display. Please try again."));
-          return;
-        }
-
-        // Return a realistic mock result
-        resolve({
-          value: Math.floor(Math.random() * (160 - 80) + 80), // Random value between 80 and 160
-          unit: "mg/dL",
-          confidence: 0.94,
-          timestamp: new Date().toISOString(),
-          imageUri: imageUri
-        });
-      }, 2500); // Realistic AI processing delay
-    });
+    console.log(`[AI] Processing image via apiService.scanMeasurementImage`, imageUri);
+    try {
+      const response = await apiService.scanMeasurementImage(imageUri);
+      return {
+        value: response.detected_value,
+        unit: response.detected_unit || 'mg/dL',
+        confidence: response.confidence,
+        timestamp: new Date().toISOString(),
+        imageUri: imageUri,
+        imagePath: response.image_path
+      };
+    } catch (e: any) {
+      console.error("[AI] processGlucometerImage failed:", e);
+      throw new Error(e.message || "Failed to scan glucometer image. Please ensure the screen is clear and try again.");
+    }
   },
 
   /**
