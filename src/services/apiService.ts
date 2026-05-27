@@ -301,7 +301,7 @@ export const apiService = {
           notes: row.notes
         };
       } else {
-        const mLog = log as Omit<MealEntry, "id">;
+        const mLog = log as any;
         const payload = {
           title: mLog.name,
           meal_type: mLog.mealType,
@@ -311,9 +311,13 @@ export const apiService = {
           protein_g: mLog.protein || 0,
           fat_g: mLog.fat || 0,
           fiber_g: mLog.fiber || 0,
-          food_items: [],
-          notes: "",
-          tags: mLog.tags || []
+          glucose_impact_mg_dl: typeof mLog.impact === 'number' ? mLog.impact : (mLog.impact ? parseInt(mLog.impact.replace(/[^0-9-]/g, '')) : 15),
+          food_items: mLog.food_items || [
+            { name: mLog.name, carbs_g: mLog.carbs, calories: mLog.calories }
+          ],
+          notes: mLog.notes || "",
+          tags: mLog.tags || [],
+          image_path: mLog.imagePath || null
         };
         const response = await authenticatedFetch('/api/meals', {
           method: 'POST',
@@ -603,6 +607,41 @@ export const apiService = {
     } as any);
 
     const response = await authenticatedFetch('/api/measurements/scan', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const result = await response.json();
+    return result;
+  },
+
+  async scanMealImage(imageUri: string): Promise<{
+    image_path: string;
+    food_items: Array<{ name: string; carbs_g: number; calories: number }>;
+    totals: {
+      calories: number;
+      carbohydrates_g: number;
+      protein_g: number;
+      fat_g: number;
+      fiber_g: number;
+      estimated_glucose_impact_mg_dl: number;
+    };
+  }> {
+    console.log(`[API] Uploading meal image for food classification scan:`, imageUri);
+    
+    const formData = new FormData();
+    const rawFilename = imageUri.split('/').pop() || 'scan.jpg';
+    const filename = /\.(jpg|jpeg|png)$/i.test(rawFilename) ? rawFilename : `${rawFilename}.jpg`;
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `image/${match[1]}` : `image/jpeg`;
+    
+    formData.append('image', {
+      uri: Platform.OS === 'android' ? imageUri : imageUri.replace('file://', ''),
+      name: filename,
+      type: type
+    } as any);
+
+    const response = await authenticatedFetch('/api/meals/scan', {
       method: 'POST',
       body: formData,
     });

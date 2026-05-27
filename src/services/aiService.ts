@@ -1,4 +1,4 @@
-import { LogEntry, ScanResult, AISummary } from './types';
+import { LogEntry, ScanResult, AISummary, MealScanResult } from './types';
 import { apiService } from './apiService';
 
 // --- CONFIGURATION ---
@@ -22,6 +22,32 @@ export const aiService = {
     } catch (e: any) {
       console.error("[AI] processGlucometerImage failed:", e);
       throw new Error(e.message || "Failed to scan glucometer image. Please ensure the screen is clear and try again.");
+    }
+  },
+
+  async processMealImage(imageUri: string): Promise<MealScanResult> {
+    console.log(`[AI] Processing meal image via apiService.scanMealImage`, imageUri);
+    try {
+      const response = await apiService.scanMealImage(imageUri);
+      return {
+        title: response.food_items[0]?.name || "Meal Detected",
+        meal_type: response.totals.estimated_glucose_impact_mg_dl > 20 ? "lunch" : "snack", // default fallbacks
+        calories: response.totals.calories,
+        carbs: response.totals.carbohydrates_g,
+        protein: response.totals.protein_g,
+        fat: response.totals.fat_g,
+        impact: response.totals.estimated_glucose_impact_mg_dl,
+        confidence: 0.95,
+        imageUri: imageUri,
+        imagePath: response.image_path,
+        food_items: response.food_items.map((item: any) => ({
+          name: item.name,
+          carbs: item.carbs_g
+        }))
+      };
+    } catch (e: any) {
+      console.error("[AI] processMealImage failed:", e);
+      throw new Error(e.message || "Failed to classify meal image. Please try again.");
     }
   },
 

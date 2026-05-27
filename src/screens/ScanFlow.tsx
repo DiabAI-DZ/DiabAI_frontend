@@ -30,7 +30,7 @@ type ScanState = 'camera' | 'analyzing' | 'confirm' | 'manual' | 'error';
 
 const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const { C, isDark } = useTheme();
-  const { addLog, scanImage } = useData();
+  const { addLog, scanImage, scanMeal } = useData();
   const { profile, refreshProfile } = useUser();
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -112,19 +112,8 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
         const result = await scanImage(uri);
         setScanResult(result);
       } else {
-        setScanResult({
-          title: "Meal detected",
-          meal_type: "lunch",
-          calories: 450,
-          carbs: 60,
-          protein: 20,
-          fat: 15,
-          impact: 25,
-          food_items: [
-            { name: "Main Dish", carbs: 40 },
-            { name: "Side Dish", carbs: 20 }
-          ]
-        });
+        const result = await scanMeal(uri);
+        setScanResult(result);
       }
       setState('confirm');
     } catch (err: any) {
@@ -160,9 +149,10 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
           calories: data.calories,
           protein: data.protein,
           fat: data.fat,
-          impact: `+${data.impact} mg/dL`,
-          impactLevel: data.impact > 30 ? "high" : (data.impact > 15 ? "moderate" : "low"),
+          impact: data.impact,
           image: photo || "",
+          imagePath: data.imagePath,
+          food_items: data.food_items || [],
           notes: notes,
           tags: []
         } as any);

@@ -106,6 +106,20 @@ export interface ScanResult {
   imagePath?: string;
 }
 
+export interface MealScanResult {
+  title: string;
+  meal_type: MealType;
+  calories: number;
+  carbs: number;
+  protein?: number;
+  fat?: number;
+  impact: number;
+  confidence: number;
+  imageUri?: string;
+  imagePath?: string;
+  food_items?: Array<{ name: string; carbs: number }>;
+}
+
 export interface AISummary {
   summary: string;
   recommendation: string;

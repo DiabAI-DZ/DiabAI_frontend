@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { apiService } from '../services/apiService';
 import { aiService } from '../services/aiService';
 import { useUser } from './UserContext';
-import { LogEntry, AlertItem, ScanResult, AISummary, HomeData } from '../services/types';
+import { LogEntry, AlertItem, ScanResult, AISummary, HomeData, MealScanResult } from '../services/types';
 
 interface DataContextType {
   logs: LogEntry[];
@@ -20,6 +20,7 @@ interface DataContextType {
   getAIInsight: (query: string) => Promise<string>;
   getDailySummary: () => Promise<AISummary>;
   scanImage: (uri: string) => Promise<ScanResult>;
+  scanMeal: (uri: string) => Promise<MealScanResult>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -130,6 +131,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return await aiService.processGlucometerImage(uri);
   }, []);
 
+  const scanMeal = useCallback(async (uri: string) => {
+    return await aiService.processMealImage(uri);
+  }, []);
+
   const { profile } = useUser();
   const [lastRefreshedUser, setLastRefreshedUser] = useState<string | null>(null);
 
@@ -165,7 +170,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSelectedDate,
       getAIInsight, 
       getDailySummary,
-      scanImage 
+      scanImage,
+      scanMeal
     }}>
       {children}
     </DataContext.Provider>
