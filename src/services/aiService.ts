@@ -37,9 +37,11 @@ export const aiService = {
         protein: response.totals.protein_g,
         fat: response.totals.fat_g,
         impact: response.totals.estimated_glucose_impact_mg_dl,
-        confidence: 0.95,
+        confidence: response.confidence !== undefined && response.confidence !== null ? response.confidence : 0.95,
         imageUri: imageUri,
         imagePath: response.image_path,
+        predicted_label: response.predicted_label,
+        model_version: response.model_version,
         food_items: response.food_items.map((item: any) => ({
           name: item.name,
           carbs: item.carbs_g

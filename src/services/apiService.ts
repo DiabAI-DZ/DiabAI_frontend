@@ -317,7 +317,11 @@ export const apiService = {
           ],
           notes: mLog.notes || "",
           tags: mLog.tags || [],
-          image_path: mLog.imagePath || null
+          image_path: mLog.imagePath || null,
+          predicted_label: mLog.predicted_label || null,
+          corrected_label: mLog.corrected_label || null,
+          model_version: mLog.model_version || null,
+          confidence: mLog.confidence !== undefined ? mLog.confidence : null
         };
         const response = await authenticatedFetch('/api/meals', {
           method: 'POST',
@@ -591,7 +595,7 @@ export const apiService = {
     }
   },
 
-  async scanMeasurementImage(imageUri: string): Promise<{ detected_value: number; confidence: number; preliminary_health_status: string; image_path: string }> {
+  async scanMeasurementImage(imageUri: string): Promise<{ detected_value: number; confidence: number; preliminary_health_status: string; image_path: string; detected_unit?: string }> {
     console.log(`[API] Uploading measurement image for scan:`, imageUri);
     
     const formData = new FormData();
@@ -617,6 +621,9 @@ export const apiService = {
 
   async scanMealImage(imageUri: string): Promise<{
     image_path: string;
+    predicted_label?: string;
+    confidence?: number | null;
+    model_version?: string;
     food_items: Array<{ name: string; carbs_g: number; calories: number }>;
     totals: {
       calories: number;

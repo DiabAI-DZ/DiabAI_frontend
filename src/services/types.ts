@@ -37,6 +37,10 @@ export interface MealEntry {
   image: string;
   tags?: string[];
   notes?: string;
+  predicted_label?: string;
+  corrected_label?: string;
+  model_version?: string;
+  confidence?: number | null;
 }
 
 export interface AlertItem {
@@ -114,10 +118,12 @@ export interface MealScanResult {
   protein?: number;
   fat?: number;
   impact: number;
-  confidence: number;
+  confidence: number | null;
   imageUri?: string;
   imagePath?: string;
   food_items?: Array<{ name: string; carbs: number }>;
+  predicted_label?: string;
+  model_version?: string;
 }
 
 export interface AISummary {

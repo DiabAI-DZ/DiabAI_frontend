@@ -158,7 +158,11 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
           imagePath: data.imagePath,
           food_items: data.food_items || [],
           notes: notes,
-          tags: []
+          tags: [],
+          predicted_label: data.predicted_label,
+          corrected_label: data.title,
+          model_version: data.model_version,
+          confidence: data.confidence
         } as any);
       }
       onComplete();
@@ -287,6 +291,25 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
               />
             ) : (
               <Text style={[styles.foodName, { color: C.text, fontSize: 18 }]}>{scanResult?.title}</Text>
+            )}
+            {isEditing && scanResult?.predicted_label && (
+              <View style={[
+                styles.correctionHint, 
+                { 
+                  backgroundColor: scanResult.title.toLowerCase().trim() !== scanResult.predicted_label.toLowerCase().trim() ? C.redBg : C.green + '15',
+                  borderColor: scanResult.title.toLowerCase().trim() !== scanResult.predicted_label.toLowerCase().trim() ? C.redBorder : C.green + '30'
+                }
+              ]}>
+                <Text style={[
+                  styles.correctionHintText, 
+                  { color: scanResult.title.toLowerCase().trim() !== scanResult.predicted_label.toLowerCase().trim() ? C.red : C.green }
+                ]}>
+                  {scanResult.title.toLowerCase().trim() !== scanResult.predicted_label.toLowerCase().trim() 
+                    ? "✏️ Correction detected! Saving will help retrain our AI model."
+                    : "✨ Scanned label matches! Saving will help confirm the model's accuracy."
+                  }
+                </Text>
+              </View>
             )}
           </View>
 
@@ -704,6 +727,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: 0,
     minWidth: 40,
+  },
+  correctionHint: {
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  correctionHintText: {
+    fontSize: 11,
+    fontWeight: '700',
+    flex: 1,
   }
 });
 
