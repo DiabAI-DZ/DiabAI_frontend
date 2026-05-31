@@ -33,16 +33,16 @@ const preprocessImage = async (uri: string) => {
     return await ImageManipulator.manipulateAsync(
       uri,
       [
-        { 
-          crop: { 
-            originX, 
-            originY, 
-            width: cropSize, 
-            height: cropSize 
-          } 
+        {
+          crop: {
+            originX,
+            originY,
+            width: cropSize,
+            height: cropSize
+          }
         },
         // Upscale and try to normalize brightness (limited in Expo, but we can try to resize to a smaller size then larger to blur noise, or just high res)
-        { resize: { width: 1500 } } 
+        { resize: { width: 1500 } }
       ],
       { compress: 1.0, format: ImageManipulator.SaveFormat.JPEG }
     );
@@ -61,22 +61,20 @@ const validateReading = (value: number, unit: string): boolean => {
 
 // --- SERVICE FUNCTIONS ---
 
-import { tfliteService } from './tfliteService';
-
 export const aiService = {
   async processGlucometerImage(imageUri: string): Promise<ScanResult> {
     console.log(`[AI] Processing image (Hybrid-Backend):`, imageUri);
-    
+
     try {
       // Direct call to Gemini/Backend Hybrid Pipeline
       console.log(`[AI] Sending image to Backend for analysis...`);
-      
+
       const response = await apiService.scanMeasurementImage(imageUri);
-      
+
       console.log(`[AI] Backend Response:`, response);
 
       if (response.detected_value <= 0) {
-          throw new Error("AI couldn't read the image. Please ensure the screen is clear.");
+        throw new Error("AI couldn't read the image. Please ensure the screen is clear.");
       }
 
       return {

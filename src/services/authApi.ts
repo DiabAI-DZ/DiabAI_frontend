@@ -12,8 +12,8 @@ const getDevHostIp = (): string => {
   return hostUri.split(':')[0];
 };
 
-// Fixed IP address discovered on your hotspot network (10.64.129.160)
-export const AUTH_BASE_URL = `http://10.64.129.160:8000`;
+// Public ngrok URL for mobile access to local backend
+export const AUTH_BASE_URL = `https://plank-anthill-attitude.ngrok-free.dev`;
 
 export class AuthApiException extends Error {
   statusCode?: number;
