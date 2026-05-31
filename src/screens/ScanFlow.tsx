@@ -10,13 +10,16 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  PanResponder,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
 import { useUser } from '../context/UserContext';
-import { X, Camera as CameraIcon, Zap, RotateCcw, Check, ChevronRight, AlertCircle, Plus, Image as ImageIcon, FileText } from 'lucide-react-native';
+import { X, Camera as CameraIcon, Zap, RotateCcw, Check, ChevronRight, AlertCircle, Plus, Image as ImageIcon, FileText, Flame, TrendingUp } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { ScrollView } from 'react-native-gesture-handler';
@@ -52,9 +55,177 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [notes, setNotes] = useState('');
   const [isEditing, setIsEditing] = useState(false);
-  const [sheetHeight, setSheetHeight] = useState<'stock' | 'full'>('stock');
+  const [sheetHeight, setSheetHeightState] = useState<'stock' | 'full'>('stock');
+  const sheetHeightRef = useRef<'stock' | 'full'>('stock');
+  const setSheetHeight = (h: 'stock' | 'full') => {
+    sheetHeightRef.current = h;
+    setSheetHeightState(h);
+  };
   const [flash, setFlash] = useState<'off' | 'on'>('off');
   const cameraRef = useRef<CameraView>(null);
+
+  const { height: screenHeight } = Dimensions.get('window');
+  const TOP_MARGIN = 60;
+  const SHEET_HEIGHT = screenHeight - TOP_MARGIN;
+  const posFull = 0;
+
+  const translateY = useRef(new Animated.Value(SHEET_HEIGHT)).current;
+  const backdropAnim = useRef(new Animated.Value(1)).current;
+  const lastTranslateY = useRef(SHEET_HEIGHT);
+  const dragStartY = useRef(SHEET_HEIGHT);
+
+  useEffect(() => {
+    const id = translateY.addListener(({ value }) => {
+      lastTranslateY.current = value;
+    });
+    return () => {
+      translateY.removeListener(id);
+    };
+  }, [translateY]);
+
+  // Slide the sheet + backdrop out together, then call callback
+  const slideOutSheet = (callback: () => void) => {
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: SHEET_HEIGHT,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(backdropAnim, {
+        toValue: 0,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+    ]).start(() => callback());
+  };
+
+  // Animated Multi-toast System
+  interface ToastItem {
+    id: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+    anim: Animated.Value;
+  }
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    const id = Math.random().toString();
+    const anim = new Animated.Value(0);
+    const newToast: ToastItem = { id, message, type, anim };
+
+    setToasts(prev => [...prev, newToast]);
+
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 350,
+      useNativeDriver: true,
+    }).start();
+
+    setTimeout(() => {
+      Animated.timing(anim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+      });
+    }, 3000);
+  };
+
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  const handleDiscard = () => {
+    setShowDiscardConfirm(true);
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        // Capture the current position at the moment the finger lands
+        dragStartY.current = lastTranslateY.current;
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        // Map finger movement directly — sheet follows the finger
+        const newY = dragStartY.current + gestureState.dy;
+        translateY.setValue(newY);
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        const targetPosStock = SHEET_HEIGHT * (mode === 'meal' ? 0.2 : 0.3);
+
+        const isTap = Math.abs(gestureState.dx) < 5 && Math.abs(gestureState.dy) < 5;
+        if (isTap) {
+          const nextState = sheetHeightRef.current === 'stock' ? 'full' : 'stock';
+          setSheetHeight(nextState);
+          const targetPos = nextState === 'full' ? posFull : targetPosStock;
+          Animated.spring(translateY, {
+            toValue: targetPos,
+            useNativeDriver: true,
+            tension: 40,
+            friction: 8,
+          }).start();
+          return;
+        }
+
+        let targetPos = targetPosStock;
+        let nextState: 'stock' | 'full' = 'stock';
+
+        if (sheetHeightRef.current === 'stock') {
+          if (gestureState.dy < -60) {
+            targetPos = posFull;
+            nextState = 'full';
+          } else if (gestureState.dy > 80) {
+            setShowDiscardConfirm(true);
+            targetPos = targetPosStock;
+            nextState = 'stock';
+          } else {
+            targetPos = targetPosStock;
+            nextState = 'stock';
+          }
+        } else {
+          if (gestureState.dy > 60) {
+            targetPos = targetPosStock;
+            nextState = 'stock';
+          } else {
+            targetPos = posFull;
+            nextState = 'full';
+          }
+        }
+
+        setSheetHeight(nextState);
+        Animated.spring(translateY, {
+          toValue: targetPos,
+          useNativeDriver: true,
+          tension: 40,
+          friction: 8,
+        }).start();
+      },
+    })
+  ).current;
+
+  // Sync sheet entry animation when state is 'confirm'
+  useEffect(() => {
+    if (state === 'confirm') {
+      const targetPosStock = SHEET_HEIGHT * (mode === 'meal' ? 0.2 : 0.3);
+      setSheetHeight('stock');
+      backdropAnim.setValue(0);
+      translateY.setValue(SHEET_HEIGHT);
+      Animated.parallel([
+        Animated.spring(translateY, {
+          toValue: targetPosStock,
+          useNativeDriver: true,
+          tension: 40,
+          friction: 8,
+        }),
+        Animated.timing(backdropAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [state, mode]);
 
   useEffect(() => {
     (async () => {
@@ -202,7 +373,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
           imagePath: scanResult.imagePath,
         } as any);
         await refreshProfile();
-        Alert.alert("Success", "Glucose reading logged successfully!");
+        showToast("Glucose reading logged successfully!", "success");
       } else {
         await addLog({
           type: "meal",
@@ -225,11 +396,12 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
           model_version: scanResult.model_version,
           confidence: scanResult.confidence
         } as any);
-        Alert.alert("Success", "Meal scan logged successfully!");
+        showToast("Meal scan logged successfully!", "success");
       }
-      onComplete();
+      // Delay briefly so toast appears before sheet slides away
+      setTimeout(() => slideOutSheet(onComplete), 600);
     } catch (err) {
-      Alert.alert("Error", "Failed to save the entry.");
+      showToast("Failed to save the entry.", "error");
     }
   };
 
@@ -388,82 +560,83 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
     const filteredSuggestions = query
       ? mealNames.filter(name => name.toLowerCase().includes(query) && name.toLowerCase().trim() !== query).slice(0, 5)
       : [];
-    
+
     const isValidMeal = mealNames.some(name => name.toLowerCase().trim() === searchVal.toLowerCase().trim());
     const canSaveEdit = isValidMeal;
 
-    const handleDiscard = () => {
-      Alert.alert(
-        "Discard Scan?",
-        "Are you sure you want to discard this meal scan? All nutrition data and predictions will be lost.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { 
-            text: "Discard", 
-            style: "destructive", 
-            onPress: () => {
-              Alert.alert("Scan Discarded", "The meal scan has been successfully discarded.");
-              onBack();
-            } 
-          }
-        ]
-      );
-    };
-
     return (
       <View style={styles.sheetContainer}>
-        {/* Clickable dark backdrop tint for the top 20% area */}
-        <TouchableOpacity 
-          style={[styles.backdrop, { backgroundColor: 'rgba(0, 0, 0, 0.45)' }]} 
-          activeOpacity={1} 
+        {/* Dark backdrop — tap to discard (animated opacity for smooth entry/exit) */}
+        <Animated.View style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.52)', opacity: backdropAnim }]} pointerEvents="none" />
+        <TouchableOpacity
+          style={StyleSheet.absoluteFillObject}
+          activeOpacity={1}
           onPress={handleDiscard}
+          disabled={showDiscardConfirm}
         />
-        
-        <View style={[
-          styles.sheetContent, 
-          { backgroundColor: C.bg },
-          sheetHeight === 'full' ? { height: '100%', borderTopLeftRadius: 0, borderTopRightRadius: 0 } : { height: '80%' }
+
+        <Animated.View style={[
+          styles.sheetContent,
+          {
+            backgroundColor: C.bg,
+            height: SHEET_HEIGHT,
+            transform: [{ translateY }],
+          },
         ]}>
-          <ScrollView 
-            style={styles.sheetScroll} 
-            contentContainerStyle={styles.sheetScrollContent}
+          {/* ── Draggable Red Pill Handle (PanResponder) ── */}
+          <View style={styles.sheetHeader}>
+            <View
+              {...panResponder.panHandlers}
+              style={{ paddingVertical: 12, alignItems: 'center', width: '100%' }}
+            >
+              <View style={[styles.sheetHandle, { backgroundColor: C.red }]} />
+            </View>
+
+            {/* Header row: title + top-right checkmark shortcut */}
+            <View style={styles.headerTop}>
+              <Text style={[styles.sheetTitle, { color: C.text }]}>Confirm Meal</Text>
+              <TouchableOpacity
+                onPress={() => handleSave()}
+                disabled={!canSaveEdit}
+                style={[styles.headerCheckBtn, {
+                  backgroundColor: canSaveEdit ? C.red : C.redBg,
+                  borderColor: C.red,
+                  opacity: canSaveEdit ? 1 : 0.4,
+                }]}
+              >
+                <Check size={18} color={canSaveEdit ? '#FFF' : C.red} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <ScrollView
+            style={styles.sheetScroll}
+            contentContainerStyle={[styles.sheetScrollContent, { paddingBottom: SHEET_HEIGHT * 0.22 + 40 }]}
             showsVerticalScrollIndicator={false}
           >
-            {/* Clickable Header Handle (Red Pill) to extend / toggle stock and full view */}
-            <View style={styles.sheetHeader}>
-              <TouchableOpacity 
-                activeOpacity={0.7}
-                onPress={() => setSheetHeight(sheetHeight === 'stock' ? 'full' : 'stock')}
-                style={{ paddingVertical: 10, alignItems: 'center', width: '100%' }}
-              >
-                <View style={[styles.sheetHandle, { backgroundColor: C.red, width: 50, height: 6, borderRadius: 3 }]} />
-              </TouchableOpacity>
-              <View style={styles.headerTop}>
-                <Text style={[styles.sheetTitle, { color: C.text }]}>Meal Found</Text>
-                <TouchableOpacity onPress={() => setIsEditing(!isEditing)}>
-                  <Text style={{ color: C.red, fontWeight: '700' }}>{isEditing ? 'Done' : 'Edit'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
 
+            {/* Food photo */}
             <View style={styles.foodImageContainer}>
               <Image source={{ uri: photo || '' }} style={styles.foodImageLarge} />
-              <LinearGradient 
-                colors={['transparent', 'rgba(0,0,0,0.5)']} 
-                style={styles.foodImageOverlay} 
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.55)']}
+                style={styles.foodImageOverlay}
               />
               <View style={styles.confidenceBadge}>
-                <Text style={styles.confidenceText}>{Math.round((scanResult?.confidence || 0.85) * 100)}% Match</Text>
+                <Text style={styles.confidenceText}>
+                  {Math.round((scanResult?.confidence || 0.85) * 100)}% Match
+                </Text>
               </View>
             </View>
 
+            {/* Meal name / editable title */}
             <View style={styles.mealTitleSection}>
               {isEditing ? (
                 <View style={{ width: '100%' }}>
                   <TextInput
                     style={[styles.mealTitleInput, { color: C.text, borderBottomColor: C.redBorder }]}
                     value={scanResult?.title}
-                    onChangeText={(val) => {
+                    onChangeText={(val: string) => {
                       const dbFood = lookupMealNutrients(val);
                       if (dbFood) {
                         setScanResult({
@@ -500,137 +673,73 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
               )}
             </View>
 
-            {/* Premium Nutrient and Macro Cards Grid */}
-            <View style={{
-              flexDirection: 'row',
-              flexWrap: 'wrap',
-              gap: 8,
-              marginBottom: 16,
-              width: '100%'
-            }}>
-              <View style={{
-                flex: 1,
-                minWidth: '45%',
-                backgroundColor: C.redBg,
-                borderColor: C.redBorder,
-                borderWidth: 1.5,
-                borderRadius: 16,
-                padding: 12,
-                alignItems: 'center'
-              }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', color: C.red }}>{scanResult?.calories || 0}</Text>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: C.textSm, marginTop: 4 }}>Calories (kcal)</Text>
+            {/* ── 3-Column Macro Cards: Calories | Carbs | Glycemic Impact ── */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              <View style={[styles.macroCard, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
+                <Flame size={20} color={C.red} />
+                <Text style={[styles.macroValue, { color: C.red }]}>{scanResult?.calories || 0}</Text>
+                <Text style={[styles.macroLabel, { color: C.textSm }]}>Calories</Text>
               </View>
-
-              <View style={{
-                flex: 1,
-                minWidth: '45%',
-                backgroundColor: C.redBg,
-                borderColor: C.redBorder,
-                borderWidth: 1.5,
-                borderRadius: 16,
-                padding: 12,
-                alignItems: 'center'
-              }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', color: C.red }}>{scanResult?.carbs || 0}g</Text>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: C.textSm, marginTop: 4 }}>Carbs</Text>
+              <View style={[styles.macroCard, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
+                <Zap size={20} color={C.red} />
+                <Text style={[styles.macroValue, { color: C.red }]}>{scanResult?.carbs || 0}g</Text>
+                <Text style={[styles.macroLabel, { color: C.textSm }]}>Carbs</Text>
               </View>
-
-              <View style={{
-                flex: 1,
-                minWidth: '45%',
-                backgroundColor: C.redBg,
-                borderColor: C.redBorder,
-                borderWidth: 1.5,
-                borderRadius: 16,
-                padding: 12,
-                alignItems: 'center'
-              }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', color: C.red }}>{scanResult?.protein || 0}g</Text>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: C.textSm, marginTop: 4 }}>Protein</Text>
-              </View>
-
-              <View style={{
-                flex: 1,
-                minWidth: '45%',
-                backgroundColor: C.redBg,
-                borderColor: C.redBorder,
-                borderWidth: 1.5,
-                borderRadius: 16,
-                padding: 12,
-                alignItems: 'center'
-              }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', color: C.red }}>{scanResult?.fat || 0}g</Text>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: C.textSm, marginTop: 4 }}>Fat</Text>
+              <View style={[styles.macroCard, {
+                backgroundColor: ((scanResult?.impact || 0) > 20 ? C.red : C.green) + '18',
+                borderColor: (scanResult?.impact || 0) > 20 ? C.red : C.green,
+              }]}>
+                <TrendingUp size={20} color={(scanResult?.impact || 0) > 20 ? C.red : C.green} />
+                <Text style={[styles.macroValue, { color: (scanResult?.impact || 0) > 20 ? C.red : C.green }]}>
+                  +{scanResult?.impact || 0}
+                </Text>
+                <Text style={[styles.macroLabel, { color: C.textSm }]}>mg/dL</Text>
               </View>
             </View>
 
-            {/* Premium Dynamic Glycemic Impact Banner */}
+            {/* Validation notice */}
             <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: ((scanResult?.impact || 0) > 20 ? C.red : C.green) + '15',
-              borderColor: (scanResult?.impact || 0) > 20 ? C.red : C.green,
-              borderWidth: 1.5,
-              borderRadius: 16,
-              padding: 14,
-              gap: 10,
-              marginBottom: 20
-            }}>
-              <Zap size={18} color={(scanResult?.impact || 0) > 20 ? C.red : C.green} />
-              <Text style={{
-                fontSize: 12,
-                fontWeight: '800',
-                color: (scanResult?.impact || 0) > 20 ? C.red : C.green,
-                flex: 1
-              }}>
-                Glycemic Impact: +{scanResult?.impact || 0} mg/dL ({(scanResult?.impact || 0) > 20 ? 'High Spike Risk' : 'Diabetic Friendly'})
-              </Text>
-            </View>
-
-            {/* Validation Notice Box */}
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
+              flexDirection: 'row', alignItems: 'center',
               backgroundColor: (isValidMeal ? C.green : C.red) + '15',
               borderColor: isValidMeal ? C.green : C.red,
-              borderWidth: 1.5,
-              borderRadius: 16,
-              padding: 12,
-              gap: 10,
-              marginBottom: 20
+              borderWidth: 1.5, borderRadius: 16,
+              padding: 12, gap: 10, marginBottom: 12,
             }}>
               <AlertCircle size={18} color={isValidMeal ? C.green : C.red} />
-              <Text style={{
-                fontSize: 11,
-                fontWeight: '800',
-                color: isValidMeal ? C.green : C.red,
-                flex: 1
-              }}>
-                {isValidMeal 
-                  ? "✓ Meal matches database entry. Macros loaded." 
-                  : "✗ Invalid meal name. Type to select from list or use exact name to commit."}
+              <Text style={{ fontSize: 11, fontWeight: '800', color: isValidMeal ? C.green : C.red, flex: 1 }}>
+                {isValidMeal
+                  ? '✓ Meal matches database entry. Macros loaded.'
+                  : '✗ Invalid meal name. Type to select from list or use exact name to commit.'}
               </Text>
             </View>
 
-            <View style={{ marginTop: 8, marginBottom: 20 }}>
+            {/* Data collection notice */}
+            <View style={{
+              flexDirection: 'row', alignItems: 'flex-start',
+              backgroundColor: C.redBg,
+              borderColor: C.redBorder,
+              borderWidth: 1.5, borderRadius: 16,
+              padding: 12, gap: 10, marginBottom: 20,
+            }}>
+              <TrendingUp size={16} color={C.textSm} />
+              <Text style={{ fontSize: 11, color: C.textSm, flex: 1, lineHeight: 17 }}>
+                By confirming or correcting this prediction, you help train and improve the DiabAI image recognition model.
+              </Text>
+            </View>
+
+            {/* Meal type selector */}
+            <View style={{ marginBottom: 20 }}>
               <Text style={[styles.subLabel, { color: C.text }]}>Meal Type</Text>
               <View style={styles.tagsRowCompact}>
                 {['breakfast', 'lunch', 'dinner', 'snack'].map(t => {
                   const isSelected = scanResult?.meal_type === t;
                   return (
-                    <TouchableOpacity 
-                      key={t} 
+                    <TouchableOpacity
+                      key={t}
                       onPress={() => setScanResult({ ...scanResult, meal_type: t })}
-                      style={[
-                        styles.tagBtnCompact, 
-                        isSelected && { backgroundColor: C.red, borderColor: C.red }
-                      ]}
+                      style={[styles.tagBtnCompact, isSelected && { backgroundColor: C.red, borderColor: C.red }]}
                     >
-                      <Text style={[
-                        styles.tagTextCompact, 
-                        isSelected ? { color: '#FFF' } : { color: C.textSm }
-                      ]}>
+                      <Text style={[styles.tagTextCompact, isSelected ? { color: '#FFF' } : { color: C.textSm }]}>
                         {t.charAt(0).toUpperCase() + t.slice(1)}
                       </Text>
                     </TouchableOpacity>
@@ -639,14 +748,15 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
               </View>
             </View>
 
-            <View style={{ marginTop: 8, marginBottom: 20 }}>
+            {/* Notes */}
+            <View style={{ marginBottom: 20 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                 <FileText size={16} color={C.textSm} />
                 <Text style={[styles.subLabel, { color: C.text, marginBottom: 0 }]}>
-                  Add Notes <Text style={{ fontSize: 11, fontWeight: '400', color: C.red + 'AA' }}>(optional)</Text>
+                  Add Notes{' '}
+                  <Text style={{ fontSize: 11, fontWeight: '400', color: C.red + 'AA' }}>(optional)</Text>
                 </Text>
               </View>
-              
               <TextInput
                 style={[styles.notesInputCompact, { color: C.text, backgroundColor: C.white, borderColor: C.redBorder }]}
                 placeholder="How are you feeling? Any specific details about this meal?"
@@ -660,123 +770,168 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
               </View>
             </View>
 
-            <View style={styles.confirmActions}>
-              <TouchableOpacity 
-                onPress={() => handleSave()} 
+            {/* ── Bottom Actions: Confirm (75%) + Edit (25%) ── */}
+            <View style={[styles.confirmActions, { paddingHorizontal: 0 }]}>
+              <TouchableOpacity
+                onPress={() => handleSave()}
                 disabled={!canSaveEdit}
-                style={[styles.mainConfirmBtn, { backgroundColor: C.red, opacity: canSaveEdit ? 1 : 0.6 }]}
+                style={[styles.mainConfirmBtn, { flex: 3, backgroundColor: C.red, opacity: canSaveEdit ? 1 : 0.6 }]}
               >
-                <Text style={styles.mainConfirmText}>Log Meal</Text>
+                <Check size={17} color="#FFF" />
+                <Text style={styles.mainConfirmText}>Confirm Meal</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={handleDiscard}
-                style={[styles.editBtn, { backgroundColor: C.redBg, borderColor: C.redBorder }]}
+              <TouchableOpacity
+                onPress={() => setIsEditing(!isEditing)}
+                style={[styles.editBtn, { flex: 1, backgroundColor: C.redBg, borderColor: C.redBorder }]}
               >
-                <Text style={[styles.editBtnText, { color: C.red }]}>Discard Scan</Text>
+                <Text style={[styles.editBtnText, { color: C.red, fontSize: 13 }]}>{isEditing ? 'Done' : 'Edit'}</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
-        </View>
+        </Animated.View>
       </View>
     );
   };
 
-  const renderConfirm = () => (
-    <ScrollView style={[styles.confirmContainer, { backgroundColor: C.bg }]}>
-      {mode === 'glucose' ? (
-        <View style={styles.confirmContent}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={[styles.confirmTitle, { color: C.text }]}>Confirm Measurement</Text>
-            <TouchableOpacity onPress={() => setIsEditing(!isEditing)}>
-              <Text style={{ color: C.red, fontWeight: '700', fontSize: 15 }}>{isEditing ? 'Done' : 'Edit'}</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <View style={[styles.detectedCard, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
-            <Text style={[styles.detectedLabel, { color: C.textSm }]}>DETECTED VALUE</Text>
-            <View style={styles.detectedRow}>
-              {isEditing ? (
-                <TextInput
-                  style={[styles.detectedValue, { color: C.text, borderBottomWidth: 2, borderBottomColor: C.red, minWidth: 80 }]}
-                  value={scanResult?.value?.toString()}
-                  onChangeText={(val) => setScanResult({ ...scanResult, value: parseFloat(val) || 0 })}
-                  keyboardType="numeric"
-                  autoFocus
-                />
-              ) : (
-                <Text style={[styles.detectedValue, { color: C.text }]}>{scanResult?.unit === 'mmol/L' ? scanResult?.value.toFixed(2) : scanResult?.value}</Text>
-              )}
-              
-              {isEditing ? (
-                <TouchableOpacity 
-                  onPress={() => setScanResult({ ...scanResult, unit: scanResult?.unit === 'mg/dL' ? 'mmol/L' : 'mg/dL' })}
-                  style={[styles.unitToggle, { backgroundColor: C.redBg, borderColor: C.redBorder }]}
-                >
-                  <Text style={[styles.detectedUnit, { color: C.red, fontWeight: 'bold' }]}>{scanResult?.unit || 'mg/dL'}</Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={[styles.detectedUnit, { color: C.textSm }]}>{scanResult?.unit || 'mg/dL'}</Text>
-              )}
+  const renderConfirm = () => {
+    if (mode === 'meal') return renderMealConfirmSheet();
 
-              <View style={[
-                styles.statusBadge, 
-                { backgroundColor: (getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'High' || getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'Low' ? C.red : C.green) + '15' }
-              ]}>
-                <Text style={[
-                  styles.statusText, 
-                  { color: (getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'High' || getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'Low' ? C.red : C.green) }
-                ]}>
-                  {getStatus(scanResult?.value, scanResult?.unit || 'mg/dL')}
-                </Text>
-              </View>
+    // ── Glucose confirm — bottom sheet, 30% backdrop / 70% sheet ──
+    return (
+      <View style={styles.sheetContainer}>
+        {/* Dark backdrop — tap to discard (animated opacity for smooth entry/exit) */}
+        <Animated.View style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.52)', opacity: backdropAnim }]} pointerEvents="none" />
+        <TouchableOpacity
+          style={StyleSheet.absoluteFillObject}
+          activeOpacity={1}
+          onPress={handleDiscard}
+          disabled={showDiscardConfirm}
+        />
+
+        <Animated.View style={[
+          styles.sheetContent,
+          {
+            backgroundColor: C.bg,
+            height: SHEET_HEIGHT,
+            transform: [{ translateY }],
+          },
+        ]}>
+          {/* ── Draggable Red Pill Handle (PanResponder) ── */}
+          <View style={styles.sheetHeader}>
+            <View
+              {...panResponder.panHandlers}
+              style={{ paddingVertical: 12, alignItems: 'center', width: '100%' }}
+            >
+              <View style={[styles.sheetHandle, { backgroundColor: C.red }]} />
+            </View>
+
+            {/* Header row: title + top-right checkmark shortcut */}
+            <View style={styles.headerTop}>
+              <Text style={[styles.sheetTitle, { color: C.text }]}>Confirm Measurement</Text>
+              <TouchableOpacity
+                onPress={handleSave}
+                style={[styles.headerCheckBtn, { backgroundColor: C.red, borderColor: C.red }]}
+              >
+                <Check size={18} color="#FFF" />
+              </TouchableOpacity>
             </View>
           </View>
 
-          <Text style={[styles.subLabel, { color: C.text }]}>Measurement Type</Text>
-          <View style={styles.tagsRow}>
-            {['Fasting', 'Before meal', 'After meal'].map(t => (
-              <TouchableOpacity 
-                key={t} 
-                onPress={() => setScanResult({ ...scanResult, tag: t })}
-                style={[styles.tagBtn, scanResult?.tag === t && { backgroundColor: C.red }]}
+          <ScrollView
+            style={styles.sheetScroll}
+            contentContainerStyle={[styles.sheetScrollContent, { paddingBottom: SHEET_HEIGHT * 0.32 + 40 }]}
+            showsVerticalScrollIndicator={false}
+          >
+
+            {/* Detected value card */}
+            <View style={[styles.detectedCard, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
+              <Text style={[styles.detectedLabel, { color: C.textSm }]}>DETECTED VALUE</Text>
+              <View style={styles.detectedRow}>
+                {isEditing ? (
+                  <TextInput
+                    style={[styles.detectedValue, { color: C.text, borderBottomWidth: 2, borderBottomColor: C.red, minWidth: 80 }]}
+                    value={scanResult?.value?.toString()}
+                    onChangeText={(val: string) => setScanResult({ ...scanResult, value: parseFloat(val) || 0 })}
+                    keyboardType="numeric"
+                    autoFocus
+                  />
+                ) : (
+                  <Text style={[styles.detectedValue, { color: C.text }]}>
+                    {scanResult?.unit === 'mmol/L' ? scanResult?.value.toFixed(2) : scanResult?.value}
+                  </Text>
+                )}
+
+                {isEditing ? (
+                  <TouchableOpacity
+                    onPress={() => setScanResult({ ...scanResult, unit: scanResult?.unit === 'mg/dL' ? 'mmol/L' : 'mg/dL' })}
+                    style={[styles.unitToggle, { backgroundColor: C.redBg, borderColor: C.redBorder }]}
+                  >
+                    <Text style={[styles.detectedUnit, { color: C.red, fontWeight: 'bold' }]}>{scanResult?.unit || 'mg/dL'}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={[styles.detectedUnit, { color: C.textSm }]}>{scanResult?.unit || 'mg/dL'}</Text>
+                )}
+
+                <View style={[
+                  styles.statusBadge,
+                  { backgroundColor: (getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'High' || getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'Low' ? C.red : C.green) + '15' },
+                ]}>
+                  <Text style={[
+                    styles.statusText,
+                    { color: getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'High' || getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'Low' ? C.red : C.green },
+                  ]}>
+                    {getStatus(scanResult?.value, scanResult?.unit || 'mg/dL')}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <Text style={[styles.subLabel, { color: C.text }]}>Measurement Type</Text>
+            <View style={styles.tagsRow}>
+              {['Fasting', 'Before meal', 'After meal'].map(t => (
+                <TouchableOpacity
+                  key={t}
+                  onPress={() => setScanResult({ ...scanResult, tag: t })}
+                  style={[styles.tagBtn, scanResult?.tag === t && { backgroundColor: C.red }]}
+                >
+                  <Text style={[styles.tagText, scanResult?.tag === t ? { color: '#FFF' } : { color: C.textSm }]}>{t}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[styles.subLabel, { color: C.text, marginTop: 16 }]}>Notes</Text>
+            <TextInput
+              style={[styles.notesInput, { color: C.text, backgroundColor: C.redBg, borderColor: C.redBorder }]}
+              placeholder="Add a note about this reading..."
+              placeholderTextColor={C.textXs}
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              maxLength={200}
+            />
+            <Text style={[styles.charCount, { color: C.textXs }]}>{notes.length}/200</Text>
+
+            {/* ── Bottom Actions: Confirm (75%) + Edit (25%) ── */}
+            <View style={[styles.confirmActions, { paddingHorizontal: 0, marginTop: 16 }]}>
+              <TouchableOpacity
+                onPress={handleSave}
+                style={[styles.mainConfirmBtn, { flex: 3, backgroundColor: C.red }]}
               >
-                <Text style={[styles.tagText, scanResult?.tag === t ? { color: '#FFF' } : { color: C.textSm }]}>{t}</Text>
+                <Check size={17} color="#FFF" />
+                <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 16 }}>Confirm & Save</Text>
               </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Notes Field */}
-          <Text style={[styles.subLabel, { color: C.text, marginTop: 16 }]}>Notes</Text>
-          <TextInput
-            style={[styles.notesInput, { color: C.text, backgroundColor: C.redBg, borderColor: C.redBorder }]}
-            placeholder="Add a note about this reading..."
-            placeholderTextColor={C.textXs}
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            maxLength={200}
-          />
-          <Text style={[styles.charCount, { color: C.textXs }]}>{notes.length}/200</Text>
-
-          {/* Confirm Button */}
-          <View style={styles.confirmActions}>
-            <TouchableOpacity 
-              onPress={onBack}
-              style={[styles.tagBtn, { flex: 1, height: 56, alignItems: 'center', justifyContent: 'center', borderColor: C.redBorder }]}
-            >
-              <Text style={{ color: C.textSm, fontWeight: '600' }}>Discard</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={handleSave}
-              style={[styles.mainConfirmBtn, { backgroundColor: C.red }]}
-            >
-              <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 16 }}>Confirm & Save</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : renderMealConfirmSheet()}
-    </ScrollView>
-  );
+              <TouchableOpacity
+                onPress={() => setIsEditing(!isEditing)}
+                style={[styles.editBtn, { flex: 1, backgroundColor: C.redBg, borderColor: C.redBorder }]}
+              >
+                <Text style={[styles.editBtnText, { color: C.red, fontSize: 13 }]}>{isEditing ? 'Done' : 'Edit'}</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </Animated.View>
+      </View>
+    );
+  };
 
   const renderError = () => (
     <View style={[styles.errorContainer, { backgroundColor: C.bg }]}>
@@ -798,12 +953,125 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
     </View>
   );
 
-  const isMealConfirm = state === 'confirm' && mode === 'meal';
-
-  if (isMealConfirm) {
+  // ── Premium Discard Confirmation Modal (no nested RN Modal — absolute overlay) ──
+  const renderDiscardModal = () => {
+    if (!showDiscardConfirm) return null;
     return (
-      <View style={[styles.container, { backgroundColor: 'transparent' }]}>
-        {renderMealConfirmSheet()}
+      <View style={[StyleSheet.absoluteFillObject, {
+        backgroundColor: '#000',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 28,
+        zIndex: 9999,
+        elevation: 50,
+      }]}>
+        {/* Tap outside to cancel */}
+        <TouchableOpacity
+          style={StyleSheet.absoluteFillObject}
+          activeOpacity={1}
+          onPress={() => setShowDiscardConfirm(false)}
+        />
+        <View style={[styles.modalContent, { backgroundColor: C.bg }]}>
+          {/* Red X icon badge */}
+          <View style={{
+            width: 64, height: 64, borderRadius: 32,
+            backgroundColor: C.red + '18',
+            borderWidth: 1.5, borderColor: C.red,
+            alignItems: 'center', justifyContent: 'center',
+            marginBottom: 16,
+          }}>
+            <X size={28} color={C.red} />
+          </View>
+          <Text style={[styles.modalTitle, { color: C.text }]}>Discard Scan?</Text>
+          <Text style={[styles.modalMessage, { color: C.textSm }]}>
+            Are you sure? All {mode === 'meal' ? 'nutrition data and predictions' : 'measurement data'} will be permanently lost.
+          </Text>
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              onPress={() => setShowDiscardConfirm(false)}
+              style={[styles.modalBtnCancel, { borderColor: C.redBorder, backgroundColor: C.redBg }]}
+            >
+              <Text style={{ color: C.red, fontWeight: '700', fontSize: 15 }}>Keep It</Text>
+            </TouchableOpacity>
+             <TouchableOpacity
+              onPress={() => {
+                setShowDiscardConfirm(false);
+                showToast('Scan discarded.', 'info');
+                slideOutSheet(onBack);
+              }}
+              style={[styles.modalBtnConfirm, { backgroundColor: C.red }]}
+            >
+              <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 15 }}>Discard</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  // ── Premium Stacking Auto-dismiss Toasts ──
+  const renderToasts = () => {
+    if (toasts.length === 0) return null;
+    return (
+      <View style={styles.toastAreaContainer} pointerEvents="none">
+        {toasts.map((t, index) => {
+          const isSuccess = t.type === 'success';
+          const isError   = t.type === 'error';
+          const bgColor   = isSuccess ? C.green : isError ? C.red : '#6B7280';
+          
+          const translateY = t.anim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-25, 0],
+          });
+          const scale = t.anim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.85, 1],
+          });
+          const opacity = t.anim;
+
+          return (
+            <Animated.View
+              key={t.id}
+              style={[
+                styles.toastContainerRelative,
+                {
+                  backgroundColor: bgColor,
+                  borderColor: bgColor + '50',
+                  opacity,
+                  transform: [{ translateY }, { scale }],
+                  marginTop: index > 0 ? 8 : 0,
+                }
+              ]}
+            >
+              {isSuccess
+                ? <Check size={18} color="#FFF" />
+                : isError
+                  ? <X size={18} color="#FFF" />
+                  : <AlertCircle size={18} color="#FFF" />}
+              <Text style={[styles.toastText, { color: '#FFF' }]}>{t.message}</Text>
+            </Animated.View>
+          );
+        })}
+      </View>
+    );
+  };
+
+  // Both meal-confirm and glucose-confirm use bottom-sheet overlay
+  if (state === 'confirm') {
+    return (
+      <View style={[styles.container, { backgroundColor: '#000' }]}>
+        {/* Show captured photo behind the sheet so backdrop tints naturally */}
+        {photo ? (
+          <Image
+            source={{ uri: photo }}
+            style={StyleSheet.absoluteFillObject}
+            blurRadius={8}
+            resizeMode="cover"
+          />
+        ) : null}
+        {renderConfirm()}
+        {renderDiscardModal()}
+        {renderToasts()}
       </View>
     );
   }
@@ -814,8 +1082,9 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
       {state === 'camera' && renderCamera()}
       {state === 'analyzing' && renderAnalyzing()}
       {state === 'adjustment' && renderAdjustment()}
-      {state === 'confirm' && renderConfirm()}
       {state === 'error' && renderError()}
+      {renderDiscardModal()}
+      {renderToasts()}
     </SafeAreaView>
   );
 };
@@ -990,8 +1259,10 @@ const styles = StyleSheet.create({
     flex: 2,
     height: 56,
     borderRadius: 28,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
   },
   mainConfirmText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
   editBtn: {
@@ -1163,7 +1434,110 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     marginLeft: 4,
-  }
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  modalBtnCancel: {
+    flex: 1,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnConfirm: {
+    flex: 1,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toastAreaContainer: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    right: 20,
+    zIndex: 9999,
+  },
+  toastContainerRelative: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1.5,
+    borderRadius: 16,
+    padding: 14,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+  },
+  toastText: {
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+  // Circular checkmark shortcut in sheet header top-right
+  headerCheckBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // 3-column macro card
+  macroCard: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderRadius: 16,
+    padding: 12,
+    alignItems: 'center',
+    gap: 4,
+  },
+  macroValue: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  macroLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
 });
 
 export default ScanFlow;
