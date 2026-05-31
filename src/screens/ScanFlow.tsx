@@ -56,6 +56,14 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const [flash, setFlash] = useState<'off' | 'on'>('off');
   const cameraRef = useRef<CameraView>(null);
 
+  useEffect(() => {
+    (async () => {
+      if (permission && !permission.granted && permission.canAskAgain) {
+        await requestPermission();
+      }
+    })();
+  }, [permission]);
+
   const lookupMealNutrients = (mealName: string) => {
     if (!mealName) return null;
     const key = mealName.toLowerCase().trim();
@@ -289,44 +297,70 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
     ) : null
   );
 
-  const renderCamera = () => (
-    <View style={styles.cameraContainer}>
-      <CameraView 
-        style={styles.camera} 
-        ref={cameraRef} 
-        enableTorch={flash === 'on'}
-      />
-      <View style={styles.overlay}>
-        <TouchableOpacity 
-          style={styles.flashBtn} 
-          onPress={() => setFlash(flash === 'off' ? 'on' : 'off')}
-        >
-          <Zap color={flash === 'on' ? '#FFD700' : '#FFF'} size={24} />
-        </TouchableOpacity>
-
-        <View style={styles.scannerFrameContainer}>
-          <View style={[styles.scannerFrame, mode === 'meal' && { width: 300, height: 300, borderRadius: 32 }]} />
+  const renderCamera = () => {
+    if (!permission) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
+          <ActivityIndicator size="large" color={C.red} />
         </View>
+      );
+    }
 
-        <Text style={styles.scanHint}>
-          {mode === 'glucose' ? 'Align glucometer screen within the box' : 'Position your meal within the frame'}
-        </Text>
+    if (!permission.granted) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000', padding: 24 }}>
+          <AlertCircle size={48} color={C.red} style={{ marginBottom: 16 }} />
+          <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 8 }}>Camera Permission Required</Text>
+          <Text style={{ color: '#AAA', fontSize: 14, textAlign: 'center', marginBottom: 24 }}>We need camera access to scan your glucometer and meals.</Text>
+          <TouchableOpacity 
+            onPress={requestPermission}
+            style={{ backgroundColor: C.red, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24 }}
+          >
+            <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>Grant Permission</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.cameraContainer}>
+        <CameraView 
+          style={styles.camera} 
+          ref={cameraRef} 
+          enableTorch={flash === 'on'}
+        />
+        <View style={styles.overlay}>
+          <TouchableOpacity 
+            style={styles.flashBtn} 
+            onPress={() => setFlash(flash === 'off' ? 'on' : 'off')}
+          >
+            <Zap color={flash === 'on' ? '#FFD700' : '#FFF'} size={24} />
+          </TouchableOpacity>
+
+          <View style={styles.scannerFrameContainer}>
+            <View style={[styles.scannerFrame, mode === 'meal' && { width: 300, height: 300, borderRadius: 32 }]} />
+          </View>
+
+          <Text style={styles.scanHint}>
+            {mode === 'glucose' ? 'Align glucometer screen within the box' : 'Position your meal within the frame'}
+          </Text>
+        </View>
+        <View style={styles.controls}>
+          <TouchableOpacity style={styles.manualBtn} onPress={enterManualMode}>
+            <Plus color="#FFF" size={24} />
+            <Text style={styles.manualText}>Manual</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.captureBtn} onPress={takePicture}>
+            <View style={styles.captureBtnInner} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.manualBtn} onPress={pickImage}>
+            <ImageIcon color="#FFF" size={24} />
+            <Text style={styles.manualText}>Gallery</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={styles.controls}>
-        <TouchableOpacity style={styles.manualBtn} onPress={enterManualMode}>
-          <Plus color="#FFF" size={24} />
-          <Text style={styles.manualText}>Manual</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.captureBtn} onPress={takePicture}>
-          <View style={styles.captureBtnInner} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.manualBtn} onPress={pickImage}>
-          <ImageIcon color="#FFF" size={24} />
-          <Text style={styles.manualText}>Gallery</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderAnalyzing = () => (
     <View style={styles.previewContainer}>
