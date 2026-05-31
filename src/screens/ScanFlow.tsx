@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { ScrollView } from 'react-native-gesture-handler';
 import mealNames from '../assets/meal_names.json';
+import foodDatabaseMin from '../assets/food_database_min.json';
 
 interface ScanFlowProps {
   mode: 'glucose' | 'meal';
@@ -51,6 +52,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [notes, setNotes] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [sheetHeight, setSheetHeight] = useState<'stock' | 'full'>('stock');
   const cameraRef = useRef<CameraView>(null);
 
   if (!permission) return <View />;
@@ -143,6 +145,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
           imagePath: data.imagePath,
         } as any);
         await refreshProfile();
+        Alert.alert("Success", "Glucose reading logged successfully!");
       } else {
         await addLog({
           type: "meal",
@@ -165,6 +168,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
           model_version: data.model_version,
           confidence: data.confidence
         } as any);
+        Alert.alert("Success", "Meal scan logged successfully!");
       }
       onComplete();
     } catch (err) {
@@ -241,21 +245,47 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
     const isValidMeal = mealNames.some(name => name.toLowerCase().trim() === searchVal.toLowerCase().trim());
     const canSaveEdit = isValidMeal;
 
+    const handleDiscard = () => {
+      Alert.alert(
+        "Discard Scan?",
+        "Are you sure you want to discard this meal scan? All nutrition data and predictions will be lost.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { 
+            text: "Discard", 
+            style: "destructive", 
+            onPress: () => {
+              Alert.alert("Scan Discarded", "The meal scan has been successfully discarded.");
+              onBack();
+            } 
+          }
+        ]
+      );
+    };
+
     return (
       <View style={styles.sheetContainer}>
-        {/* Semi-transparent backdrop to close/go back */}
+        {/* Semi-transparent backdrop to close/discard */}
         <TouchableOpacity 
           style={styles.backdrop} 
           activeOpacity={1} 
-          onPress={onBack}
+          onPress={handleDiscard}
         />
         
-        {/* Sheet Content container occupying ~78% height */}
-        <View style={[styles.sheetContent, { backgroundColor: C.bg }]}>
-          {/* Rounded indicator pill handle at the top center */}
-          <View style={styles.sheetHandleRow}>
-            <View style={[styles.sheetHandle, { backgroundColor: C.red + '25' }]} />
-          </View>
+        {/* Sheet Content container with dynamic height (stock 80% or full 100%) */}
+        <View style={[
+          styles.sheetContent, 
+          { backgroundColor: C.bg },
+          sheetHeight === 'full' ? { height: '100%', borderTopLeftRadius: 0, borderTopRightRadius: 0 } : { height: '80%' }
+        ]}>
+          {/* Rounded indicator pill handle at the top center - TAP TO TOGGLE FULLSCREEN */}
+          <TouchableOpacity 
+            style={styles.sheetHandleRow}
+            activeOpacity={0.8}
+            onPress={() => setSheetHeight(sheetHeight === 'stock' ? 'full' : 'stock')}
+          >
+            <View style={[styles.sheetHandle, { backgroundColor: C.red }]} />
+          </TouchableOpacity>
           
           {/* Custom Header Row inside the sheet */}
           <View style={styles.sheetHeader}>
@@ -332,7 +362,24 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
                       }
                     ]}
                     value={scanResult?.title}
-                    onChangeText={(val) => setScanResult({ ...scanResult, title: val })}
+                    onChangeText={(val) => {
+                      const valKey = val.toLowerCase().trim();
+                      const matchedFood = (foodDatabaseMin as any)[valKey];
+                      if (matchedFood) {
+                        setScanResult({
+                          ...scanResult,
+                          title: val,
+                          calories: matchedFood.calories,
+                          carbs: matchedFood.carbs,
+                          protein: matchedFood.protein,
+                          fat: matchedFood.fat,
+                          impact: matchedFood.impact,
+                          food_items: [{ name: matchedFood.name, carbs: matchedFood.carbs }]
+                        });
+                      } else {
+                        setScanResult({ ...scanResult, title: val });
+                      }
+                    }}
                     placeholder="Type meal name..."
                     placeholderTextColor={C.textXs}
                     autoFocus
@@ -346,7 +393,22 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
                           key={index}
                           style={[styles.dropdownItem, { borderBottomColor: C.redBg }]}
                           onPress={() => {
-                            setScanResult({ ...scanResult, title: suggestion });
+                            const suggestionKey = suggestion.toLowerCase().trim();
+                            const matchedFood = (foodDatabaseMin as any)[suggestionKey];
+                            if (matchedFood) {
+                              setScanResult({
+                                ...scanResult,
+                                title: suggestion,
+                                calories: matchedFood.calories,
+                                carbs: matchedFood.carbs,
+                                protein: matchedFood.protein,
+                                fat: matchedFood.fat,
+                                impact: matchedFood.impact,
+                                food_items: [{ name: matchedFood.name, carbs: matchedFood.carbs }]
+                              });
+                            } else {
+                              setScanResult({ ...scanResult, title: suggestion });
+                            }
                           }}
                         >
                           <Text style={[styles.dropdownText, { color: C.text }]}>{suggestion}</Text>
