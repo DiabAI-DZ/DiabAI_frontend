@@ -37,9 +37,6 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
 
   const [logbookFilter, setLogbookFilter] = useState<'all' | 'measurements' | 'meals' | 'injections' | 'activities'>('all');
 
-  if (showScan) {
-    return <ScanFlow mode={scanMode} onBack={() => setShowScan(false)} onComplete={() => setShowScan(false)} />;
-  }
 
   const renderContent = () => {
     switch (activeTab) {
@@ -121,6 +118,20 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
         type={actionType}
         onSave={addLog}
       />
+
+      {/* Scan Flow Modal */}
+      <Modal
+        visible={showScan}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowScan(false)}
+      >
+        <ScanFlow 
+          mode={scanMode} 
+          onBack={() => setShowScan(false)} 
+          onComplete={() => setShowScan(false)} 
+        />
+      </Modal>
 
       {/* Add Menu Modal */}
       <Modal
