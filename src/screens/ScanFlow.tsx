@@ -49,6 +49,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
 
   const [photo, setPhoto] = useState<string | null>(null);
   const [state, setState] = useState<ScanState>('camera');
+  const [ocrModel, setOcrModel] = useState<'tflite' | 'backend'>('backend');
   const [scanResult, setScanResult] = useState<any>(null);
   const [detectedRect, setDetectedRect] = useState<Rectangle | null>(null);
   const [manualValue, setManualValue] = useState('');
@@ -338,12 +339,71 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
         );
         finalUri = manipulated.uri;
       }
-      const result = await aiService.processGlucometerImage(finalUri);
-      console.log(`[ScanFlow] Gemini Result:`, result);
+
+      let rawText = "";
+      let configConfidence = 0.0;
+      
+      if (ocrModel === 'tflite') {
+        const ocrResult = await tfliteService.recognize(finalUri);
+        rawText = ocrResult.value.trim();
+        configConfidence = ocrResult.confidence;
+        console.log(`[ScanFlow] TFLite OCR Result:`, ocrResult);
+      } else {
+        console.log(`[ScanFlow] Using backend OCR pipeline...`);
+        const backendResult = await scanImage(finalUri);
+        rawText = String(backendResult.value).trim();
+        configConfidence = backendResult.confidence;
+        console.log(`[ScanFlow] Backend OCR Result:`, backendResult);
+      }
+
+      // Handle special glucometer readings
+      if (/^(Hi|HI|HIGH)$/i.test(rawText)) {
+        setScanResult({
+          value: 500,
+          unit: 'mg/dL',
+          confidence: configConfidence,
+          tag: 'Fasting',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toISOString().split('T')[0],
+          imageUri: finalUri,
+        });
+        setState('confirm');
+        return;
+      }
+      if (/^(Lo|LO|LOW)$/i.test(rawText)) {
+        setScanResult({
+          value: 20,
+          unit: 'mg/dL',
+          confidence: configConfidence,
+          tag: 'Fasting',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toISOString().split('T')[0],
+          imageUri: finalUri,
+        });
+        setState('confirm');
+        return;
+      }
+      if (/^(Er|ERR|ERROR)$/i.test(rawText)) {
+        throw new Error("Glucometer shows an error code. Please retry with a valid reading.");
+      }
+
+      // Parse the numeric value
+      const numericValue = parseFloat(rawText.replace(/[^0-9.]/g, ''));
+      if (isNaN(numericValue) || numericValue <= 0) {
+        throw new Error(`Could not read a valid glucose value from the image. OCR detected: "${rawText}"`);
+      }
+
+      // Heuristic unit detection: mmol/L values are typically 1.1–33.3, mg/dL values are 20–600
+      const unit = numericValue <= 33.3 && rawText.includes('.') ? 'mmol/L' : 'mg/dL';
+
       setScanResult({
-        ...result,
+        value: numericValue,
+        unit,
+        confidence: configConfidence,
+        tag: 'Fasting',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         date: new Date().toISOString().split('T')[0],
+        imageUri: finalUri,
       });
       setState('confirm');
     } catch (err: any) {
@@ -419,9 +479,26 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
       <TouchableOpacity onPress={onBack} style={styles.closeBtn}>
         <X color="#FFF" size={24} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>
-        {mode === 'glucose' ? 'Glucose Measurement' : 'Meal Scan'}
-      </Text>
+      <View style={{ alignItems: 'center' }}>
+        <Text style={styles.headerTitle}>
+          {mode === 'glucose' ? 'Glucose Measurement' : 'Meal Scan'}
+        </Text>
+        {mode === 'glucose' && (
+          <TouchableOpacity 
+            style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}
+            onPress={() => {
+              const nextMode = ocrModel === 'tflite' ? 'backend' : 'tflite';
+              setOcrModel(nextMode);
+              showToast(`Switched to ${nextMode === 'tflite' ? 'Local TFLite' : 'Cloud YOLO+TrOCR'} model`, 'info');
+            }}
+          >
+            <Zap color={ocrModel === 'tflite' ? '#FFD700' : '#4DB8FF'} size={12} style={{ marginRight: 4 }} />
+            <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>
+              {ocrModel === 'tflite' ? 'Model: TFLite (Local)' : 'Model: YOLO+TrOCR (Cloud)'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
       <View style={{ width: 40 }} />
     </View>
   );
@@ -845,7 +922,14 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
 
             {/* Detected value card */}
             <View style={[styles.detectedCard, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
-              <Text style={[styles.detectedLabel, { color: C.textSm }]}>DETECTED VALUE</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Text style={[styles.detectedLabel, { color: C.textSm }]}>DETECTED VALUE</Text>
+                {scanResult?.confidence !== undefined && (
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: scanResult.confidence > 0.8 ? C.green : C.red }}>
+                    Model Confidence: {(scanResult.confidence * 100).toFixed(1)}%
+                  </Text>
+                )}
+              </View>
               <View style={styles.detectedRow}>
                 {isEditing ? (
                   <TextInput

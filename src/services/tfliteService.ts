@@ -51,7 +51,7 @@ export const tfliteService = {
       // A. Resize to 128x32
       const resized = OpenCV.createObject(ObjectType.Mat, 32, 128, DataTypes.CV_8U);
       const sizeObj = OpenCV.createObject(ObjectType.Size, 128, 32);
-      (OpenCV.invoke as any)('resize', mat, resized, sizeObj);
+      (OpenCV.invoke as any)('resize', mat, resized, sizeObj, 0, 0, 1);
 
       // B. Convert to Grayscale
       const gray = OpenCV.createObject(ObjectType.Mat, 32, 128, DataTypes.CV_8U);
