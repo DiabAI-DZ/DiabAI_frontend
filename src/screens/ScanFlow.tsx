@@ -484,7 +484,12 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
     <ScrollView style={[styles.confirmContainer, { backgroundColor: C.bg }]}>
       {mode === 'glucose' ? (
         <View style={styles.confirmContent}>
-          <Text style={[styles.confirmTitle, { color: C.text }]}>Confirm Measurement</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={[styles.confirmTitle, { color: C.text }]}>Confirm Measurement</Text>
+            <TouchableOpacity onPress={() => setIsEditing(!isEditing)}>
+              <Text style={{ color: C.red, fontWeight: '700', fontSize: 15 }}>{isEditing ? 'Done' : 'Edit'}</Text>
+            </TouchableOpacity>
+          </View>
           
           <View style={[styles.detectedCard, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
             <Text style={[styles.detectedLabel, { color: C.textSm }]}>DETECTED VALUE</Text>
@@ -537,6 +542,35 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
                 <Text style={[styles.tagText, scanResult?.tag === t ? { color: '#FFF' } : { color: C.textSm }]}>{t}</Text>
               </TouchableOpacity>
             ))}
+          </View>
+
+          {/* Notes Field */}
+          <Text style={[styles.subLabel, { color: C.text, marginTop: 16 }]}>Notes</Text>
+          <TextInput
+            style={[styles.notesInput, { color: C.text, backgroundColor: C.redBg, borderColor: C.redBorder }]}
+            placeholder="Add a note about this reading..."
+            placeholderTextColor={C.textXs}
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+            maxLength={200}
+          />
+          <Text style={[styles.charCount, { color: C.textXs }]}>{notes.length}/200</Text>
+
+          {/* Confirm Button */}
+          <View style={styles.confirmActions}>
+            <TouchableOpacity 
+              onPress={onBack}
+              style={[styles.tagBtn, { flex: 1, height: 56, alignItems: 'center', justifyContent: 'center', borderColor: C.redBorder }]}
+            >
+              <Text style={{ color: C.textSm, fontWeight: '600' }}>Discard</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={handleSave}
+              style={[styles.mainConfirmBtn, { backgroundColor: C.red }]}
+            >
+              <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 16 }}>Confirm & Save</Text>
+            </TouchableOpacity>
           </View>
         </View>
       ) : renderMealConfirmSheet()}
