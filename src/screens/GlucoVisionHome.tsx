@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, SafeAreaView } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { 
@@ -47,8 +47,8 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
 
   const [logbookFilter, setLogbookFilter] = useState<'all' | 'measurements' | 'meals' | 'injections' | 'activities'>('all');
 
-
-  const renderContent = () => {
+  // Memoize rendered content to prevent unmounting/remounting on tab switches
+  const renderedContent = useMemo(() => {
     switch (activeTab) {
       case 'home': 
         return (
@@ -79,7 +79,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
           />
         );
     }
-  };
+  }, [activeTab, logbookFilter, onNavigateAlerts, onNavigateDetail, onNavigateAccountSettings]);
 
   const TabItem = ({ name, icon: Icon, label }: { name: any, icon: any, label: string }) => {
     const isActive = activeTab === name;
@@ -151,7 +151,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   return (
     <View style={[styles.container, { backgroundColor: C.bg }]}>
       <View style={styles.content}>
-        {renderContent()}
+        {renderedContent}
       </View>
 
       <ActionForms 
