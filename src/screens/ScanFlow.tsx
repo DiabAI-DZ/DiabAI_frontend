@@ -56,6 +56,48 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const [flash, setFlash] = useState<'off' | 'on'>('off');
   const cameraRef = useRef<CameraView>(null);
 
+  useEffect(() => {
+    (async () => {
+      if (permission && !permission.granted && permission.canAskAgain) {
+        await requestPermission();
+      }
+    })();
+  }, [permission]);
+
+  const lookupMealNutrients = (mealName: string) => {
+    if (!mealName) return null;
+    const key = mealName.toLowerCase().trim();
+    let dbFood = (foodDatabaseMin as any)[key];
+    if (!dbFood) {
+      const foundKey = Object.keys(foodDatabaseMin).find(k => k.includes(key) || key.includes(k));
+      if (foundKey) {
+        dbFood = (foodDatabaseMin as any)[foundKey];
+      }
+    }
+    return dbFood;
+  };
+
+  const selectMeal = (name: string) => {
+    const dbFood = lookupMealNutrients(name);
+    if (dbFood) {
+      setScanResult({
+        ...scanResult,
+        title: name,
+        calories: dbFood.calories,
+        carbs: dbFood.carbs,
+        protein: dbFood.protein || 0,
+        fat: dbFood.fat || 0,
+        impact: dbFood.impact,
+      });
+    } else {
+      setScanResult({
+        ...scanResult,
+        title: name,
+      });
+    }
+    setIsEditing(false);
+  };
+
   const takePicture = async () => {
     if (cameraRef.current) {
       try {
@@ -255,44 +297,70 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
     ) : null
   );
 
-  const renderCamera = () => (
-    <View style={styles.cameraContainer}>
-      <CameraView 
-        style={styles.camera} 
-        ref={cameraRef} 
-        enableTorch={flash === 'on'}
-      />
-      <View style={styles.overlay}>
-        <TouchableOpacity 
-          style={styles.flashBtn} 
-          onPress={() => setFlash(flash === 'off' ? 'on' : 'off')}
-        >
-          <Zap color={flash === 'on' ? '#FFD700' : '#FFF'} size={24} />
-        </TouchableOpacity>
-
-        <View style={styles.scannerFrameContainer}>
-          <View style={[styles.scannerFrame, mode === 'meal' && { width: 300, height: 300, borderRadius: 32 }]} />
+  const renderCamera = () => {
+    if (!permission) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
+          <ActivityIndicator size="large" color={C.red} />
         </View>
+      );
+    }
 
-        <Text style={styles.scanHint}>
-          {mode === 'glucose' ? 'Align glucometer screen within the box' : 'Position your meal within the frame'}
-        </Text>
+    if (!permission.granted) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000', padding: 24 }}>
+          <AlertCircle size={48} color={C.red} style={{ marginBottom: 16 }} />
+          <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 8 }}>Camera Permission Required</Text>
+          <Text style={{ color: '#AAA', fontSize: 14, textAlign: 'center', marginBottom: 24 }}>We need camera access to scan your glucometer and meals.</Text>
+          <TouchableOpacity 
+            onPress={requestPermission}
+            style={{ backgroundColor: C.red, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24 }}
+          >
+            <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>Grant Permission</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.cameraContainer}>
+        <CameraView 
+          style={styles.camera} 
+          ref={cameraRef} 
+          enableTorch={flash === 'on'}
+        />
+        <View style={styles.overlay}>
+          <TouchableOpacity 
+            style={styles.flashBtn} 
+            onPress={() => setFlash(flash === 'off' ? 'on' : 'off')}
+          >
+            <Zap color={flash === 'on' ? '#FFD700' : '#FFF'} size={24} />
+          </TouchableOpacity>
+
+          <View style={styles.scannerFrameContainer}>
+            <View style={[styles.scannerFrame, mode === 'meal' && { width: 300, height: 300, borderRadius: 32 }]} />
+          </View>
+
+          <Text style={styles.scanHint}>
+            {mode === 'glucose' ? 'Align glucometer screen within the box' : 'Position your meal within the frame'}
+          </Text>
+        </View>
+        <View style={styles.controls}>
+          <TouchableOpacity style={styles.manualBtn} onPress={enterManualMode}>
+            <Plus color="#FFF" size={24} />
+            <Text style={styles.manualText}>Manual</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.captureBtn} onPress={takePicture}>
+            <View style={styles.captureBtnInner} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.manualBtn} onPress={pickImage}>
+            <ImageIcon color="#FFF" size={24} />
+            <Text style={styles.manualText}>Gallery</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={styles.controls}>
-        <TouchableOpacity style={styles.manualBtn} onPress={enterManualMode}>
-          <Plus color="#FFF" size={24} />
-          <Text style={styles.manualText}>Manual</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.captureBtn} onPress={takePicture}>
-          <View style={styles.captureBtnInner} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.manualBtn} onPress={pickImage}>
-          <ImageIcon color="#FFF" size={24} />
-          <Text style={styles.manualText}>Gallery</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderAnalyzing = () => (
     <View style={styles.previewContainer}>
@@ -344,8 +412,9 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
 
     return (
       <View style={styles.sheetContainer}>
+        {/* Clickable dark backdrop tint for the top 20% area */}
         <TouchableOpacity 
-          style={styles.backdrop} 
+          style={[styles.backdrop, { backgroundColor: 'rgba(0, 0, 0, 0.45)' }]} 
           activeOpacity={1} 
           onPress={handleDiscard}
         />
@@ -360,8 +429,15 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
             contentContainerStyle={styles.sheetScrollContent}
             showsVerticalScrollIndicator={false}
           >
+            {/* Clickable Header Handle (Red Pill) to extend / toggle stock and full view */}
             <View style={styles.sheetHeader}>
-              <View style={[styles.sheetHandle, { backgroundColor: C.redBorder }]} />
+              <TouchableOpacity 
+                activeOpacity={0.7}
+                onPress={() => setSheetHeight(sheetHeight === 'stock' ? 'full' : 'stock')}
+                style={{ paddingVertical: 10, alignItems: 'center', width: '100%' }}
+              >
+                <View style={[styles.sheetHandle, { backgroundColor: C.red, width: 50, height: 6, borderRadius: 3 }]} />
+              </TouchableOpacity>
               <View style={styles.headerTop}>
                 <Text style={[styles.sheetTitle, { color: C.text }]}>Meal Found</Text>
                 <TouchableOpacity onPress={() => setIsEditing(!isEditing)}>
@@ -387,7 +463,22 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
                   <TextInput
                     style={[styles.mealTitleInput, { color: C.text, borderBottomColor: C.redBorder }]}
                     value={scanResult?.title}
-                    onChangeText={(val) => setScanResult({ ...scanResult, title: val })}
+                    onChangeText={(val) => {
+                      const dbFood = lookupMealNutrients(val);
+                      if (dbFood) {
+                        setScanResult({
+                          ...scanResult,
+                          title: val,
+                          calories: dbFood.calories,
+                          carbs: dbFood.carbs,
+                          protein: dbFood.protein || 0,
+                          fat: dbFood.fat || 0,
+                          impact: dbFood.impact,
+                        });
+                      } else {
+                        setScanResult({ ...scanResult, title: val });
+                      }
+                    }}
                     autoFocus
                   />
                   {filteredSuggestions.length > 0 && (
@@ -396,10 +487,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
                         <TouchableOpacity
                           key={item}
                           style={[styles.dropdownItem, { borderBottomColor: C.redBg }]}
-                          onPress={() => {
-                            setScanResult({ ...scanResult, title: item });
-                            setIsEditing(false);
-                          }}
+                          onPress={() => selectMeal(item)}
                         >
                           <Text style={[styles.dropdownText, { color: C.text }]}>{item}</Text>
                         </TouchableOpacity>
@@ -410,6 +498,119 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
               ) : (
                 <Text style={[styles.mealTitleMain, { color: C.text }]}>{scanResult?.title}</Text>
               )}
+            </View>
+
+            {/* Premium Nutrient and Macro Cards Grid */}
+            <View style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              gap: 8,
+              marginBottom: 16,
+              width: '100%'
+            }}>
+              <View style={{
+                flex: 1,
+                minWidth: '45%',
+                backgroundColor: C.redBg,
+                borderColor: C.redBorder,
+                borderWidth: 1.5,
+                borderRadius: 16,
+                padding: 12,
+                alignItems: 'center'
+              }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', color: C.red }}>{scanResult?.calories || 0}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: C.textSm, marginTop: 4 }}>Calories (kcal)</Text>
+              </View>
+
+              <View style={{
+                flex: 1,
+                minWidth: '45%',
+                backgroundColor: C.redBg,
+                borderColor: C.redBorder,
+                borderWidth: 1.5,
+                borderRadius: 16,
+                padding: 12,
+                alignItems: 'center'
+              }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', color: C.red }}>{scanResult?.carbs || 0}g</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: C.textSm, marginTop: 4 }}>Carbs</Text>
+              </View>
+
+              <View style={{
+                flex: 1,
+                minWidth: '45%',
+                backgroundColor: C.redBg,
+                borderColor: C.redBorder,
+                borderWidth: 1.5,
+                borderRadius: 16,
+                padding: 12,
+                alignItems: 'center'
+              }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', color: C.red }}>{scanResult?.protein || 0}g</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: C.textSm, marginTop: 4 }}>Protein</Text>
+              </View>
+
+              <View style={{
+                flex: 1,
+                minWidth: '45%',
+                backgroundColor: C.redBg,
+                borderColor: C.redBorder,
+                borderWidth: 1.5,
+                borderRadius: 16,
+                padding: 12,
+                alignItems: 'center'
+              }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', color: C.red }}>{scanResult?.fat || 0}g</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: C.textSm, marginTop: 4 }}>Fat</Text>
+              </View>
+            </View>
+
+            {/* Premium Dynamic Glycemic Impact Banner */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: ((scanResult?.impact || 0) > 20 ? C.red : C.green) + '15',
+              borderColor: (scanResult?.impact || 0) > 20 ? C.red : C.green,
+              borderWidth: 1.5,
+              borderRadius: 16,
+              padding: 14,
+              gap: 10,
+              marginBottom: 20
+            }}>
+              <Zap size={18} color={(scanResult?.impact || 0) > 20 ? C.red : C.green} />
+              <Text style={{
+                fontSize: 12,
+                fontWeight: '800',
+                color: (scanResult?.impact || 0) > 20 ? C.red : C.green,
+                flex: 1
+              }}>
+                Glycemic Impact: +{scanResult?.impact || 0} mg/dL ({(scanResult?.impact || 0) > 20 ? 'High Spike Risk' : 'Diabetic Friendly'})
+              </Text>
+            </View>
+
+            {/* Validation Notice Box */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: (isValidMeal ? C.green : C.red) + '15',
+              borderColor: isValidMeal ? C.green : C.red,
+              borderWidth: 1.5,
+              borderRadius: 16,
+              padding: 12,
+              gap: 10,
+              marginBottom: 20
+            }}>
+              <AlertCircle size={18} color={isValidMeal ? C.green : C.red} />
+              <Text style={{
+                fontSize: 11,
+                fontWeight: '800',
+                color: isValidMeal ? C.green : C.red,
+                flex: 1
+              }}>
+                {isValidMeal 
+                  ? "✓ Meal matches database entry. Macros loaded." 
+                  : "✗ Invalid meal name. Type to select from list or use exact name to commit."}
+              </Text>
             </View>
 
             <View style={{ marginTop: 8, marginBottom: 20 }}>
