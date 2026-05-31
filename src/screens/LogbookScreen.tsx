@@ -38,6 +38,8 @@ import {
   Syringe
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { convertGlucose } from '../services/apiService';
+import { MeasurementEntry, MealEntry } from '../services/types';
 import { format, isSameDay, isAfter, isBefore, subDays, parseISO } from 'date-fns';
 
 const { width, height } = Dimensions.get('window');
@@ -185,13 +187,13 @@ const GlucoseTrackSlider: React.FC<{
     <View style={styles.sliderWrap}>
       <View style={styles.sliderValuesRow}>
         <View style={styles.sliderValBox}>
-          <Text style={[styles.sliderValText, { color: C.red }]}>{valueMin}</Text>
-          <Text style={[styles.sliderValSub, { color: C.textXs }]}>mg/dL</Text>
+          <Text style={[styles.sliderValText, { color: C.red }]}>{convertGlucose(valueMin, profile?.glucoseUnit || 'mg/dL', 'mg/dL').toFixed(profile?.glucoseUnit === 'mmol/L' ? 2 : 0)}</Text>
+          <Text style={[styles.sliderValSub, { color: C.textXs }]}>{profile?.glucoseUnit || 'mg/dL'}</Text>
         </View>
         <Text style={[styles.sliderValDivider, { color: C.textXs }]}>—</Text>
         <View style={styles.sliderValBox}>
-          <Text style={[styles.sliderValText, { color: C.red }]}>{valueMax}</Text>
-          <Text style={[styles.sliderValSub, { color: C.textXs }]}>mg/dL</Text>
+          <Text style={[styles.sliderValText, { color: C.red }]}>{convertGlucose(valueMax, profile?.glucoseUnit || 'mg/dL', 'mg/dL').toFixed(profile?.glucoseUnit === 'mmol/L' ? 2 : 0)}</Text>
+          <Text style={[styles.sliderValSub, { color: C.textXs }]}>{profile?.glucoseUnit || 'mg/dL'}</Text>
         </View>
       </View>
 
@@ -218,9 +220,9 @@ const GlucoseTrackSlider: React.FC<{
       </View>
 
       <View style={styles.sliderLabelsRow}>
-        <Text style={[styles.sliderLabelText, { color: C.red }]}>Low &lt;{profile?.goals?.min || 70}</Text>
-        <Text style={[styles.sliderLabelText, { color: C.green }]}>Normal {profile?.goals?.min || 70}-{profile?.goals?.max || 140}</Text>
-        <Text style={[styles.sliderLabelText, { color: C.amber }]}>High &gt;{profile?.goals?.max || 140}</Text>
+        <Text style={[styles.sliderLabelText, { color: C.red }]}>Low &lt;{convertGlucose(profile?.goals?.min || 70, profile?.glucoseUnit || 'mg/dL', 'mg/dL').toFixed(profile?.glucoseUnit === 'mmol/L' ? 2 : 0)}</Text>
+        <Text style={[styles.sliderLabelText, { color: C.green }]}>Normal {convertGlucose(profile?.goals?.min || 70, profile?.glucoseUnit || 'mg/dL', 'mg/dL').toFixed(profile?.glucoseUnit === 'mmol/L' ? 2 : 0)}-{convertGlucose(profile?.goals?.max || 140, profile?.glucoseUnit || 'mg/dL', 'mg/dL').toFixed(profile?.glucoseUnit === 'mmol/L' ? 2 : 0)}</Text>
+        <Text style={[styles.sliderLabelText, { color: C.amber }]}>High &gt;{convertGlucose(profile?.goals?.max || 140, profile?.glucoseUnit || 'mg/dL', 'mg/dL').toFixed(profile?.glucoseUnit === 'mmol/L' ? 2 : 0)}</Text>
       </View>
     </View>
   );
@@ -271,6 +273,7 @@ const SummaryStats: React.FC<{ entries: any[]; profile: any }> = ({ entries, pro
 // Sub-Component: Measurement Grid Card
 const MeasurementCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, onSelect }) => {
   const { C } = useTheme();
+  const { profile } = useUser();
   
   const sc = useMemo(() => {
     switch (entry.status) {
@@ -305,8 +308,8 @@ const MeasurementCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry
       >
         <Text style={styles.cardHeaderCategoryText}>Glucose Scan</Text>
         <View style={styles.cardHeaderMainValueRow}>
-          <Text style={styles.cardHeaderValueText}>{entry.value}</Text>
-          <Text style={styles.cardHeaderUnitText}>{entry.unit}</Text>
+          <Text style={styles.cardHeaderValueText}>{entry.unit === (profile?.glucoseUnit || 'mg/dL') ? entry.value : convertGlucose(entry.value, profile?.glucoseUnit || 'mg/dL', entry.unit || 'mg/dL').toFixed(profile?.glucoseUnit === 'mmol/L' ? 2 : 0)}</Text>
+          <Text style={styles.cardHeaderUnitText}>{profile?.glucoseUnit || 'mg/dL'}</Text>
         </View>
       </LinearGradient>
 

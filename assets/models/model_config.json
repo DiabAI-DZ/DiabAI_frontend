@@ -1,0 +1,17 @@
+{
+  "charset": "0123456789.-HiLoEr ",
+  "blank_idx": 19,
+  "num_classes": 20,
+  "img_width": 128,
+  "img_height": 32,
+  "seq_len": 32,
+  "model_file": "glucometer_ocr.tflite",
+  "description": "Glucometer OCR - MicroCRNN FP16 TFLite, synthetic 7-segment",
+  "app_usage": {
+    "1": "User crops LCD region from photo using drag-box in app UI",
+    "2": "Resize crop to 128x32 grayscale, normalize to [0,1]",
+    "3": "Run TFLite inference -> softmax output (32, NUM_CLASSES)",
+    "4": "Greedy CTC decode -> value string + mean confidence score",
+    "5": "Unit (mg/dL or mmol/L) stored per-device by user on first use"
+  }
+}

@@ -99,6 +99,7 @@ export interface UserProfile {
   height?: number;
   age?: number;
   sex?: 'male' | 'female';
+  isPremium?: boolean;
 }
 
 export interface ScanResult {

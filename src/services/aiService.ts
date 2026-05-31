@@ -1,27 +1,94 @@
 import { LogEntry, ScanResult, AISummary, MealScanResult } from './types';
 import { apiService } from './apiService';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { Platform } from 'react-native';
 
-// --- CONFIGURATION ---
-export const AI_BASE_URL = "http://your-ai-service.com";
+// Safely attempt to import TextRecognition only if not on web and potentially available 
+// In a real environment, we'd use a dynamic import or a check, but for Expo Go 
+// compatibility, we'll try-catch the usage.
+let TextRecognition: any = null;
+try {
+  TextRecognition = require('@react-native-ml-kit/text-recognition').default;
+} catch (e) {
+  // Module not found or native linking missing (Expo Go)
+}
+
+import { authApi } from './authApi';
+
+// Use the same base URL as the Auth/API service
+export const AI_BASE_URL = authApi.baseUrl;
+
+// --- HELPERS ---
+
+const preprocessImage = async (uri: string) => {
+  try {
+    const result = await ImageManipulator.manipulateAsync(uri, [], { compress: 1 });
+    const { width, height } = result;
+
+    // Use a tighter center crop (70%) as glucometers usually have screens in the middle
+    const cropSize = Math.min(width, height) * 0.7;
+    const originX = (width - cropSize) / 2;
+    const originY = (height - cropSize) / 2;
+
+    return await ImageManipulator.manipulateAsync(
+      uri,
+      [
+        { 
+          crop: { 
+            originX, 
+            originY, 
+            width: cropSize, 
+            height: cropSize 
+          } 
+        },
+        // Upscale and try to normalize brightness (limited in Expo, but we can try to resize to a smaller size then larger to blur noise, or just high res)
+        { resize: { width: 1500 } } 
+      ],
+      { compress: 1.0, format: ImageManipulator.SaveFormat.JPEG }
+    );
+  } catch (err) {
+    console.warn("[AI] Preprocessing failed:", err);
+    return { uri };
+  }
+};
+
+const validateReading = (value: number, unit: string): boolean => {
+  if (unit.toLowerCase().includes('mmol')) {
+    return value >= 1.1 && value <= 33.3;
+  }
+  return value >= 20 && value <= 600;
+};
 
 // --- SERVICE FUNCTIONS ---
 
+import { tfliteService } from './tfliteService';
+
 export const aiService = {
   async processGlucometerImage(imageUri: string): Promise<ScanResult> {
-    console.log(`[AI] Processing image via apiService.scanMeasurementImage`, imageUri);
+    console.log(`[AI] Processing image (Hybrid-Backend):`, imageUri);
+    
     try {
+      // Direct call to Gemini/Backend Hybrid Pipeline
+      console.log(`[AI] Sending image to Backend for analysis...`);
+      
       const response = await apiService.scanMeasurementImage(imageUri);
+      
+      console.log(`[AI] Backend Response:`, response);
+
+      if (response.detected_value <= 0) {
+          throw new Error("AI couldn't read the image. Please ensure the screen is clear.");
+      }
+
       return {
         value: response.detected_value,
-        unit: response.detected_unit || 'mg/dL',
-        confidence: response.confidence,
+        unit: (response.detected_unit || 'mg/dL') as any,
+        confidence: response.confidence || 0.9,
         timestamp: new Date().toISOString(),
         imageUri: imageUri,
-        imagePath: response.image_path
       };
-    } catch (e: any) {
-      console.error("[AI] processGlucometerImage failed:", e);
-      throw new Error(e.message || "Failed to scan glucometer image. Please ensure the screen is clear and try again.");
+    } catch (apiErr: any) {
+      console.error("[AI] Backend scan failed:", apiErr.message);
+      throw new Error(apiErr.message || "Failed to connect to AI service.");
     }
   },
 

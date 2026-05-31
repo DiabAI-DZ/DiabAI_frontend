@@ -12,9 +12,8 @@ const getDevHostIp = (): string => {
   return hostUri.split(':')[0];
 };
 
-// Auto-discovers your computer's local IP address during development.
-// This allows physical devices (using Expo Go) to connect to the backend without manual configuration.
-export const AUTH_BASE_URL = `http://${getDevHostIp()}:8000`;
+// Fixed IP address discovered on your hotspot network (10.64.129.160)
+export const AUTH_BASE_URL = `http://10.64.129.160:8000`;
 
 export class AuthApiException extends Error {
   statusCode?: number;

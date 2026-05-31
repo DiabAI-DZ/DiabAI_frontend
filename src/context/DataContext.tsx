@@ -21,6 +21,8 @@ interface DataContextType {
   getDailySummary: () => Promise<AISummary>;
   scanImage: (uri: string) => Promise<ScanResult>;
   scanMeal: (uri: string) => Promise<MealScanResult>;
+  premiumRecommendations: any[];
+  glucoseForecast: any[];
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -30,6 +32,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [homeData, setHomeData] = useState<HomeData | null>(null);
   const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [premiumRecommendations, setPremiumRecommendations] = useState<any[]>([]);
+  const [glucoseForecast, setGlucoseForecast] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
 
@@ -58,6 +62,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAlerts(alertsData);
       setHomeData(homeDataObj);
       setRecommendations(recsData);
+
+      // Fetch Premium Heavy AI data if applicable (Checkpoint 4)
+      const userProfile = await apiService.fetchProfile().catch(() => null);
+      if (userProfile?.isPremium) {
+        console.log("[DataContext] Fetching heavy AI content for premium member");
+        const [pRecs, gForecast] = await Promise.all([
+          apiService.fetchPremiumRecommendations().catch(() => []),
+          apiService.fetchGlucoseForecast().catch(() => []),
+        ]);
+        setPremiumRecommendations(pRecs);
+        setGlucoseForecast(gForecast);
+      }
     } catch (error) {
       console.error("DataContext: Failed to fetch data:", error);
     } finally {
@@ -81,6 +97,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         date: logDate
       });
       setLogs((prev) => [newLog, ...prev]);
+
+      // Trigger Heavy AI Analyzer (Checkpoint 4)
+      try {
+        console.log(`[DataContext] Triggering AI analyzer for new log ${newLog.id}`);
+        await apiService.runEntryAnalyzer(newLog.id, newLog.type);
+        // Refresh alerts as the analyzer might have generated new ones
+        const newAlerts = await apiService.fetchAlerts();
+        setAlerts(newAlerts);
+      } catch (ae) {
+        console.warn("[DataContext] AI Analyzer failed:", ae);
+      }
     } catch (error) {
       console.error("DataContext: Failed to add log:", error);
       throw error;
@@ -171,7 +198,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       getAIInsight, 
       getDailySummary,
       scanImage,
-      scanMeal
+      scanMeal,
+      premiumRecommendations,
+      glucoseForecast
     }}>
       {children}
     </DataContext.Provider>

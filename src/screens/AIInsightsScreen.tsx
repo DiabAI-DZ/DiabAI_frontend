@@ -42,6 +42,7 @@ import {
   Minus,
   Bell,
 } from 'lucide-react-native';
+import { MeasurementEntry } from '../services/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiService } from '../services/apiService';
 
@@ -133,7 +134,7 @@ const formatDateStr = (d: Date): string => {
 
 const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts }) => {
   const { C, isDark } = useTheme();
-  const { logs, alerts, getAIInsight, selectedDate, setSelectedDate, loading: dataLoading } = useData();
+  const { logs, alerts, getAIInsight, glucoseForecast, selectedDate, setSelectedDate, loading: dataLoading } = useData();
   const { profile } = useUser();
   const [activeSegment, setActiveSegment] = useState<'dashboard' | 'chat'>('dashboard');
 
@@ -208,7 +209,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
       }
 
       // Calculate selectedDayStats locally (used as fallback for all sections below)
-      const dayLogs = logs.filter(l =>
+      const dayLogs = logs.filter((l): l is MeasurementEntry =>
         l.type === 'measurement' &&
         formatDateStr(new Date(l.date)) === selDateStr
       );
@@ -265,7 +266,9 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
       }
 
       // ── PREDICTIONS ──────────────────────────────────────────────────────
-      if (predsResult?.prediction) {
+      if (glucoseForecast && glucoseForecast.length > 0) {
+        setPredictions(glucoseForecast);
+      } else if (predsResult?.prediction) {
         setPredictions([predsResult.prediction]);
       } else {
         let expectedMgDl = 135;
@@ -388,7 +391,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
   // --- DERIVED METRICS FOR SELECTED DAY ---
   const selectedDayStats = useMemo(() => {
     const selectedDateStr = formatDateStr(selectedDate);
-    const dayLogs = logs.filter(l => 
+    const dayLogs = logs.filter((l): l is MeasurementEntry => 
       l.type === 'measurement' && 
       formatDateStr(new Date(l.date)) === selectedDateStr
     );
@@ -433,7 +436,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
       d.setDate(selectedDate.getDate() - i);
       const dateStr = formatDateStr(d);
       
-      const dayLogs = logs.filter(l => 
+      const dayLogs = logs.filter((l): l is MeasurementEntry => 
         l.type === 'measurement' && 
         formatDateStr(new Date(l.date)) === dateStr
       );

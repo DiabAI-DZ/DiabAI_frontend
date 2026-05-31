@@ -87,6 +87,17 @@ const unmapGlucoseUnit = (unit?: string): string => {
   return 'mg_dl';
 };
 
+export const convertGlucose = (value: number, toUnit: string, fromUnit: string): number => {
+  if (!value || toUnit === fromUnit) return value;
+  let converted: number;
+  if (toUnit === 'mmol/L') {
+    converted = value / 18.0182;
+  } else {
+    converted = value * 18.0182;
+  }
+  return parseFloat(converted.toFixed(2));
+};
+
 // A helper for doing authenticated requests
 const authenticatedFetch = async (path: string, options: RequestInit = {}): Promise<Response> => {
   const token = authApi.getToken();
@@ -107,6 +118,11 @@ const authenticatedFetch = async (path: string, options: RequestInit = {}): Prom
 
   if (response.status === 401) {
     console.warn("[API] Request unauthorized (401).");
+  }
+
+  if (response.status === 403) {
+    console.warn("[API] Premium feature required (403).");
+    throw new Error("PREMIUM_REQUIRED");
   }
 
   if (!response.ok) {
@@ -545,6 +561,7 @@ export const apiService = {
       height: p.height !== null && p.height !== undefined ? parseInt(p.height) : undefined,
       age: p.age !== null && p.age !== undefined ? parseInt(p.age) : undefined,
       sex: p.sex || undefined,
+      isPremium: !!settings.subscription?.is_premium || !!settings.user?.is_premium || !!p.is_premium,
     };
   },
 
@@ -592,6 +609,65 @@ export const apiService = {
     } catch (error) {
       console.error("updateProfile failed:", error);
       throw error;
+    }
+  },
+
+  async upgradeAccount(): Promise<UserProfile> {
+    console.log(`[API] Upgrading account to premium`);
+    try {
+      await authenticatedFetch('/api/subscription/change-plan', {
+        method: 'POST',
+        body: JSON.stringify({ plan: 'premium_monthly' })
+      });
+      return await this.fetchProfile();
+    } catch (error) {
+      console.error("upgradeAccount failed:", error);
+      throw error;
+    }
+  },
+
+  // Heavy AI Models (Checkpoint 4)
+  async runEntryAnalyzer(logId: number, logType: string): Promise<any> {
+    console.log(`[API] Running entry analyzer for ${logType} ${logId}`);
+    try {
+      const response = await authenticatedFetch('/api/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ entry_id: logId, entry_type: logType })
+      });
+      return await response.json();
+    } catch (error) {
+      console.warn("Entry analyzer failed:", error);
+      return null;
+    }
+  },
+
+  async fetchPremiumRecommendations(): Promise<any[]> {
+    console.log(`[API] Fetching premium home recommendations`);
+    try {
+      const response = await authenticatedFetch('/api/recommendations', {
+        method: 'POST',
+        body: JSON.stringify({ count: 3 })
+      });
+      const result = await response.json();
+      return result.recommendations || [];
+    } catch (error) {
+      console.warn("Premium recommendations failed:", error);
+      return [];
+    }
+  },
+
+  async fetchGlucoseForecast(): Promise<any[]> {
+    console.log(`[API] Fetching heavy glucose forecast`);
+    try {
+      const response = await authenticatedFetch('/api/predict/glucose', {
+        method: 'POST',
+        body: JSON.stringify({ hours: 24 })
+      });
+      const result = await response.json();
+      return result.forecast || [];
+    } catch (error) {
+      console.warn("Glucose forecast failed:", error);
+      return [];
     }
   },
 

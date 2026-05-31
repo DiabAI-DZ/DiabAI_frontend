@@ -7,14 +7,15 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { SvgXml } from 'react-native-svg';
-import { Eye, EyeOff } from 'lucide-react-native';
+import { Eye, EyeOff, CheckSquare, Square } from 'lucide-react-native';
 import { useUser } from '../context/UserContext';
 import { LOGO_SVG } from '../assets/svgData';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface SignInScreenProps {
   onNavigateToSignUp: () => void;
@@ -30,9 +31,21 @@ const SignInScreen: React.FC<SignInScreenProps> = ({
   const { signIn } = useUser();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [obscurePassword, setObscurePassword] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    const loadCredentials = async () => {
+      const savedEmail = await AsyncStorage.getItem('rememberedEmail');
+      if (savedEmail) {
+        setEmail(savedEmail);
+        setRememberMe(true);
+      }
+    };
+    loadCredentials();
+  }, []);
 
   const handleSignIn = async () => {
     const trimmedEmail = email.trim();
@@ -46,6 +59,13 @@ const SignInScreen: React.FC<SignInScreenProps> = ({
 
     try {
       await signIn(trimmedEmail, password);
+      
+      if (rememberMe) {
+        await AsyncStorage.setItem('rememberedEmail', trimmedEmail);
+      } else {
+        await AsyncStorage.removeItem('rememberedEmail');
+      }
+      
       onSuccess();
     } catch (e: any) {
       setErrorMessage(e.message || 'An unexpected error occurred.');
@@ -107,13 +127,27 @@ const SignInScreen: React.FC<SignInScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Forgot Password */}
-            <TouchableOpacity
-              onPress={onNavigateToForgotPassword}
-              style={styles.forgotPasswordWrapper}
-            >
-              <Text style={styles.forgotPasswordText}>Forgot password</Text>
-            </TouchableOpacity>
+            {/* Remember Me & Forgot Password Row */}
+            <View style={styles.optionsRow}>
+              <TouchableOpacity 
+                style={styles.rememberMeWrapper} 
+                onPress={() => setRememberMe(!rememberMe)}
+                activeOpacity={0.7}
+              >
+                {rememberMe ? (
+                  <CheckSquare size={20} color="#9A1115" />
+                ) : (
+                  <Square size={20} color="#C88686" />
+                )}
+                <Text style={[styles.rememberMeText, { color: rememberMe ? '#9A1115' : '#C88686' }]}>Remember me</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={onNavigateToForgotPassword}
+              >
+                <Text style={styles.forgotPasswordText}>Forgot password</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Error Message */}
             {errorMessage && (
@@ -206,9 +240,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  forgotPasswordWrapper: {
-    alignSelf: 'flex-end',
+  optionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 32,
+  },
+  rememberMeWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rememberMeText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   forgotPasswordText: {
     color: '#9A1115',

@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Image,
   TextInput,
@@ -12,6 +11,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
@@ -20,6 +20,7 @@ import { X, Camera as CameraIcon, Zap, RotateCcw, Check, ChevronRight, AlertCirc
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { ScrollView } from 'react-native-gesture-handler';
+import { convertGlucose } from '../services/apiService';
 import mealNames from '../assets/meal_names.json';
 import foodDatabaseMin from '../assets/food_database_min.json';
 
@@ -29,7 +30,13 @@ interface ScanFlowProps {
   onComplete: () => void;
 }
 
-type ScanState = 'camera' | 'analyzing' | 'confirm' | 'manual' | 'error';
+import { CVService, Rectangle } from '../services/CVService';
+import { ScreenDetectionOverlay } from '../components/ScreenDetectionOverlay';
+import { aiService } from '../services/aiService';
+import { tfliteService } from '../services/tfliteService';
+import * as ImageManipulator from 'expo-image-manipulator';
+
+type ScanState = 'camera' | 'analyzing' | 'adjustment' | 'confirm' | 'manual' | 'error';
 
 const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const { C, isDark } = useTheme();
@@ -37,42 +44,17 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const { profile, refreshProfile } = useUser();
   const [permission, requestPermission] = useCameraPermissions();
 
-  const getStatus = (value: number, unit: string) => {
-    const isMmol = unit === 'mmol/L';
-    const lowLimit = isMmol ? 3.9 : 70;
-    const highLimit = isMmol ? 7.8 : 140;
-    if (value < lowLimit) return 'Low';
-    if (value > highLimit) return 'High';
-    return 'Normal';
-  };
   const [photo, setPhoto] = useState<string | null>(null);
   const [state, setState] = useState<ScanState>('camera');
   const [scanResult, setScanResult] = useState<any>(null);
+  const [detectedRect, setDetectedRect] = useState<Rectangle | null>(null);
   const [manualValue, setManualValue] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [notes, setNotes] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [sheetHeight, setSheetHeight] = useState<'stock' | 'full'>('stock');
+  const [flash, setFlash] = useState<'off' | 'on'>('off');
   const cameraRef = useRef<CameraView>(null);
-
-  if (!permission) return <View />;
-
-  if (!permission.granted) {
-    return (
-      <View style={[styles.container, { backgroundColor: C.bg, justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
-        <AlertCircle size={64} color={C.red} style={{ marginBottom: 20 }} />
-        <Text style={[styles.message, { color: C.text, textAlign: 'center', marginBottom: 20 }]}>
-          We need your permission to show the camera
-        </Text>
-        <TouchableOpacity 
-          onPress={requestPermission} 
-          style={[styles.button, { backgroundColor: C.red }]}
-        >
-          <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Grant Permission</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
 
   const takePicture = async () => {
     if (cameraRef.current) {
@@ -94,8 +76,6 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        // quality < 1 forces expo-image-picker to re-encode to JPEG on Android/iOS,
-        // which prevents WebP/HEIC/AVIF from reaching the server and crashing PIL.
         base64: false,
         quality: 0.85,
       });
@@ -111,62 +91,97 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
     }
   };
 
-
   const handleAnalyze = async (uri: string) => {
+    if (mode === 'meal') {
+      setState('analyzing');
+      try {
+        const result = await scanMeal(uri);
+        setScanResult({
+          ...result,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toISOString().split('T')[0],
+        });
+        setState('confirm');
+      } catch (err: any) {
+        setErrorMsg(err.message || "Failed to process the meal image.");
+        setState('error');
+      }
+      return;
+    }
+
+    setState('analyzing');
+    processFinalOCR(uri);
+  };
+
+  const processFinalOCR = async (uri: string, cropRect?: Rectangle) => {
     setState('analyzing');
     try {
-      if (mode === 'glucose') {
-        const result = await scanImage(uri);
-        setScanResult(result);
-      } else {
-        const result = await scanMeal(uri);
-        setScanResult(result);
+      let finalUri = uri;
+      if (cropRect) {
+        const manipulated = await ImageManipulator.manipulateAsync(
+          uri,
+          [{ crop: { originX: cropRect.x, originY: cropRect.y, width: cropRect.width, height: cropRect.height } }],
+          { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        finalUri = manipulated.uri;
       }
+      const result = await aiService.processGlucometerImage(finalUri);
+      console.log(`[ScanFlow] Gemini Result:`, result);
+      setScanResult({
+        ...result,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        date: new Date().toISOString().split('T')[0],
+      });
       setState('confirm');
     } catch (err: any) {
-      setErrorMsg(err.message || "Failed to process the image.");
+      setErrorMsg(err.message || "Failed to read the glucometer screen.");
       setState('error');
     }
   };
 
-  const handleSave = async (data: any) => {
+  const handleSave = async () => {
+    if (!scanResult) return;
+    
     try {
+      const now = new Date().toISOString();
+      const formatTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
       if (mode === 'glucose') {
         await addLog({
           type: "measurement",
-          value: data.value,
-          unit: data.unit,
-          status: getStatus(data.value, data.unit) as any,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          date: new Date().toISOString(),
-          tag: data.tag || (state === 'manual' ? "Manual" : "Scan"),
+          value: scanResult.value,
+          unit: scanResult.unit || "mg/dL",
+          status: getStatus(scanResult.value, scanResult.unit || "mg/dL"),
+          time: formatTime(now),
+          date: now,
+          tag: scanResult.tag || (state === 'manual' || isEditing ? "Manual" : "Scan"),
           notes: notes,
           trend: "stable",
-          imagePath: data.imagePath,
+          imagePath: scanResult.imagePath,
         } as any);
         await refreshProfile();
         Alert.alert("Success", "Glucose reading logged successfully!");
       } else {
         await addLog({
           type: "meal",
-          name: data.title,
-          mealType: data.meal_type,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          date: new Date().toISOString(),
-          carbs: data.carbs,
-          calories: data.calories,
-          protein: data.protein,
-          fat: data.fat,
-          impact: data.impact,
+          name: scanResult.title,
+          mealType: scanResult.meal_type,
+          time: formatTime(now),
+          date: now,
+          carbs: scanResult.carbs,
+          calories: scanResult.calories,
+          protein: scanResult.protein || 0,
+          fat: scanResult.fat || 0,
+          impact: scanResult.impact,
           image: photo || "",
-          imagePath: data.imagePath,
-          food_items: data.food_items || [],
+          imagePath: scanResult.imagePath,
+          food_items: scanResult.food_items || [],
           notes: notes,
           tags: [],
-          predicted_label: data.predicted_label,
-          corrected_label: data.title,
-          model_version: data.model_version,
-          confidence: data.confidence
+          predicted_label: scanResult.predicted_label,
+          corrected_label: scanResult.title,
+          model_version: scanResult.model_version,
+          confidence: scanResult.confidence
         } as any);
         Alert.alert("Success", "Meal scan logged successfully!");
       }
@@ -176,30 +191,95 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
     }
   };
 
+  const getStatus = (value: number, unit: string) => {
+    const isMmol = unit === 'mmol/L';
+    const lowLimit = isMmol ? convertGlucose(profile?.goals?.min || 70, 'mmol/L', 'mg/dL') : (profile?.goals?.min || 70);
+    const highLimit = isMmol ? convertGlucose(profile?.goals?.max || 140, 'mmol/L', 'mg/dL') : (profile?.goals?.max || 140);
+    if (value < lowLimit) return 'Low';
+    if (value > highLimit) return 'High';
+    return 'Normal';
+  };
+
   const renderHeader = () => (
     <View style={styles.header}>
       <TouchableOpacity onPress={onBack} style={styles.closeBtn}>
         <X color="#FFF" size={24} />
       </TouchableOpacity>
       <Text style={styles.headerTitle}>
-        {state === 'manual' ? 'Manual Entry' : (mode === 'glucose' ? 'Glucometer Scan' : 'Meal Scan')}
+        {mode === 'glucose' ? 'Glucose Measurement' : 'Meal Scan'}
       </Text>
       <View style={{ width: 40 }} />
     </View>
   );
 
+  const enterManualMode = () => {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const dateStr = now.toISOString().split('T')[0];
+
+    if (mode === 'glucose') {
+      setScanResult({
+        value: 0,
+        unit: profile?.glucoseUnit || 'mg/dL',
+        tag: 'Fasting',
+        time: timeStr,
+        date: dateStr,
+      });
+      setIsEditing(true);
+      setState('confirm');
+    } else {
+      setScanResult({
+        title: 'New Meal',
+        meal_type: 'snack',
+        calories: 0,
+        carbs: 0,
+        impact: 0,
+        food_items: [],
+        time: timeStr,
+        date: dateStr,
+      });
+      setIsEditing(true);
+      setState('confirm');
+    }
+  };
+
+  const renderAdjustment = () => (
+    photo ? (
+      <ScreenDetectionOverlay
+        imageUri={photo}
+        initialRect={detectedRect}
+        onConfirm={(rect) => processFinalOCR(photo, rect)}
+        onCancel={onBack}
+        onRetake={() => { setPhoto(null); setState('camera'); }}
+      />
+    ) : null
+  );
+
   const renderCamera = () => (
     <View style={styles.cameraContainer}>
-      <CameraView style={styles.camera} ref={cameraRef}>
-        <View style={styles.overlay}>
+      <CameraView 
+        style={styles.camera} 
+        ref={cameraRef} 
+        enableTorch={flash === 'on'}
+      />
+      <View style={styles.overlay}>
+        <TouchableOpacity 
+          style={styles.flashBtn} 
+          onPress={() => setFlash(flash === 'off' ? 'on' : 'off')}
+        >
+          <Zap color={flash === 'on' ? '#FFD700' : '#FFF'} size={24} />
+        </TouchableOpacity>
+
+        <View style={styles.scannerFrameContainer}>
           <View style={[styles.scannerFrame, mode === 'meal' && { width: 300, height: 300, borderRadius: 32 }]} />
-          <Text style={styles.scanHint}>
-            {mode === 'glucose' ? 'Align glucometer screen within the box' : 'Position your meal within the frame'}
-          </Text>
         </View>
-      </CameraView>
+
+        <Text style={styles.scanHint}>
+          {mode === 'glucose' ? 'Align glucometer screen within the box' : 'Position your meal within the frame'}
+        </Text>
+      </View>
       <View style={styles.controls}>
-        <TouchableOpacity style={styles.manualBtn} onPress={() => setState('manual')}>
+        <TouchableOpacity style={styles.manualBtn} onPress={enterManualMode}>
           <Plus color="#FFF" size={24} />
           <Text style={styles.manualText}>Manual</Text>
         </TouchableOpacity>
@@ -237,7 +317,6 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   const renderMealConfirmSheet = () => {
     const searchVal = scanResult?.title || '';
     const query = searchVal.toLowerCase().trim();
-    // find top 5 matches
     const filteredSuggestions = query
       ? mealNames.filter(name => name.toLowerCase().includes(query) && name.toLowerCase().trim() !== query).slice(0, 5)
       : [];
@@ -265,194 +344,75 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
 
     return (
       <View style={styles.sheetContainer}>
-        {/* Semi-transparent backdrop to close/discard */}
         <TouchableOpacity 
           style={styles.backdrop} 
           activeOpacity={1} 
           onPress={handleDiscard}
         />
         
-        {/* Sheet Content container with dynamic height (stock 80% or full 100%) */}
         <View style={[
           styles.sheetContent, 
           { backgroundColor: C.bg },
           sheetHeight === 'full' ? { height: '100%', borderTopLeftRadius: 0, borderTopRightRadius: 0 } : { height: '80%' }
         ]}>
-          {/* Rounded indicator pill handle at the top center - TAP TO TOGGLE FULLSCREEN */}
-          <TouchableOpacity 
-            style={styles.sheetHandleRow}
-            activeOpacity={0.8}
-            onPress={() => setSheetHeight(sheetHeight === 'stock' ? 'full' : 'stock')}
-          >
-            <View style={[styles.sheetHandle, { backgroundColor: C.red }]} />
-          </TouchableOpacity>
-          
-          {/* Custom Header Row inside the sheet */}
-          <View style={styles.sheetHeader}>
-            <Text style={[styles.sheetTitle, { color: C.text }]}>Confirm Meal</Text>
-            
-            {/* Green Circular Confirm Button */}
-            <TouchableOpacity 
-              onPress={() => {
-                if (isEditing && !canSaveEdit) {
-                  Alert.alert("Invalid Meal Name", "Please select a valid meal name from the database suggestions before confirming.");
-                  return;
-                }
-                handleSave(scanResult);
-              }}
-              disabled={isEditing && !canSaveEdit}
-              style={[
-                styles.confirmCheckBtn, 
-                { backgroundColor: (isEditing && !canSaveEdit) ? C.redBorder : C.green + '15' }
-              ]}
-            >
-              <Check color={isEditing && !canSaveEdit ? C.textXs : C.green} size={24} style={{ fontWeight: 'bold' }} />
-            </TouchableOpacity>
-          </View>
-          
           <ScrollView 
-            showsVerticalScrollIndicator={false} 
-            contentContainerStyle={styles.sheetScroll}
-            keyboardShouldPersistTaps="handled"
+            style={styles.sheetScroll} 
+            contentContainerStyle={styles.sheetScrollContent}
+            showsVerticalScrollIndicator={false}
           >
-            {/* Meal Photo */}
-            {photo && <Image source={{ uri: photo }} style={styles.mealPhoto} />}
-            
-            {/* Detected Food Items section - matches the Figma Design! */}
-            <View style={{ marginBottom: 16 }}>
-              <Text style={[styles.subLabel, { color: C.text }]}>Detected Food Items</Text>
-              
-              {scanResult?.food_items && scanResult.food_items.length > 0 ? (
-                scanResult.food_items.map((item: any, idx: number) => (
-                  <View key={idx} style={[styles.foodItemRow, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
-                    <Text style={[styles.foodName, { color: C.text }]}>{item.name}</Text>
-                    <Text style={[styles.foodCarbs, { color: C.red }]}>{item.carbs}g carbs</Text>
-                  </View>
-                ))
-              ) : (
-                /* Fallback if food_items list is empty, display main predicted item as the detected food item */
-                <View style={[styles.foodItemRow, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
-                  <Text style={[styles.foodName, { color: C.text }]}>{scanResult?.title}</Text>
-                  <Text style={[styles.foodCarbs, { color: C.red }]}>{scanResult?.carbs || 0}g carbs</Text>
-                </View>
-              )}
-            </View>
-            
-            {/* Meal Name Input / Display with Autocomplete */}
-            <View style={{ marginBottom: 20 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <Text style={[styles.subLabel, { color: C.text, marginBottom: 0 }]}>Meal Name</Text>
+            <View style={styles.sheetHeader}>
+              <View style={[styles.sheetHandle, { backgroundColor: C.redBorder }]} />
+              <View style={styles.headerTop}>
+                <Text style={[styles.sheetTitle, { color: C.text }]}>Meal Found</Text>
                 <TouchableOpacity onPress={() => setIsEditing(!isEditing)}>
-                  <Text style={{ color: C.red, fontWeight: '700', fontSize: 13 }}>
-                    {isEditing ? (canSaveEdit ? 'Done' : 'Select Suggestion') : 'Edit'}
-                  </Text>
+                  <Text style={{ color: C.red, fontWeight: '700' }}>{isEditing ? 'Done' : 'Edit'}</Text>
                 </TouchableOpacity>
               </View>
-              
+            </View>
+
+            <View style={styles.foodImageContainer}>
+              <Image source={{ uri: photo || '' }} style={styles.foodImageLarge} />
+              <LinearGradient 
+                colors={['transparent', 'rgba(0,0,0,0.5)']} 
+                style={styles.foodImageOverlay} 
+              />
+              <View style={styles.confidenceBadge}>
+                <Text style={styles.confidenceText}>{Math.round((scanResult?.confidence || 0.85) * 100)}% Match</Text>
+              </View>
+            </View>
+
+            <View style={styles.mealTitleSection}>
               {isEditing ? (
-                <View style={{ zIndex: 100 }}>
+                <View style={{ width: '100%' }}>
                   <TextInput
-                    style={[
-                      styles.editInput, 
-                      { 
-                        color: C.text, 
-                        backgroundColor: C.white, 
-                        borderColor: canSaveEdit ? C.green + '80' : C.red,
-                        borderWidth: 1.5
-                      }
-                    ]}
+                    style={[styles.mealTitleInput, { color: C.text, borderBottomColor: C.redBorder }]}
                     value={scanResult?.title}
-                    onChangeText={(val) => {
-                      const valKey = val.toLowerCase().trim();
-                      const matchedFood = (foodDatabaseMin as any)[valKey];
-                      if (matchedFood) {
-                        setScanResult({
-                          ...scanResult,
-                          title: val,
-                          calories: matchedFood.calories,
-                          carbs: matchedFood.carbs,
-                          protein: matchedFood.protein,
-                          fat: matchedFood.fat,
-                          impact: matchedFood.impact,
-                          food_items: [{ name: matchedFood.name, carbs: matchedFood.carbs }]
-                        });
-                      } else {
-                        setScanResult({ ...scanResult, title: val });
-                      }
-                    }}
-                    placeholder="Type meal name..."
-                    placeholderTextColor={C.textXs}
+                    onChangeText={(val) => setScanResult({ ...scanResult, title: val })}
                     autoFocus
                   />
-                  
-                  {/* Real-time Autocomplete Suggestions Dropdown */}
                   {filteredSuggestions.length > 0 && (
                     <View style={[styles.dropdownContainer, { backgroundColor: C.white, borderColor: C.redBorder }]}>
-                      {filteredSuggestions.map((suggestion, index) => (
+                      {filteredSuggestions.map((item) => (
                         <TouchableOpacity
-                          key={index}
+                          key={item}
                           style={[styles.dropdownItem, { borderBottomColor: C.redBg }]}
                           onPress={() => {
-                            const suggestionKey = suggestion.toLowerCase().trim();
-                            const matchedFood = (foodDatabaseMin as any)[suggestionKey];
-                            if (matchedFood) {
-                              setScanResult({
-                                ...scanResult,
-                                title: suggestion,
-                                calories: matchedFood.calories,
-                                carbs: matchedFood.carbs,
-                                protein: matchedFood.protein,
-                                fat: matchedFood.fat,
-                                impact: matchedFood.impact,
-                                food_items: [{ name: matchedFood.name, carbs: matchedFood.carbs }]
-                              });
-                            } else {
-                              setScanResult({ ...scanResult, title: suggestion });
-                            }
+                            setScanResult({ ...scanResult, title: item });
+                            setIsEditing(false);
                           }}
                         >
-                          <Text style={[styles.dropdownText, { color: C.text }]}>{suggestion}</Text>
+                          <Text style={[styles.dropdownText, { color: C.text }]}>{item}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
                   )}
-                  
-                  {/* Invalid Meal Alert Banner */}
-                  {!canSaveEdit && (
-                    <Text style={{ color: C.red, fontSize: 11, fontWeight: '600', marginTop: 4 }}>
-                      ⚠️ Meal name must exactly match a database entry. Select a suggestion or type fully.
-                    </Text>
-                  )}
                 </View>
               ) : (
-                <Text style={[styles.foodNameDisplay, { color: C.text }]}>{scanResult?.title}</Text>
-              )}
-
-              {/* Retrain AI Correction feedback badge */}
-              {scanResult?.predicted_label && (
-                <View style={[
-                  styles.correctionHint, 
-                  { 
-                    backgroundColor: scanResult.title.toLowerCase().trim() !== scanResult.predicted_label.toLowerCase().trim() ? C.redBg : C.green + '15',
-                    borderColor: scanResult.title.toLowerCase().trim() !== scanResult.predicted_label.toLowerCase().trim() ? C.redBorder : C.green + '30',
-                    marginTop: 8
-                  }
-                ]}>
-                  <Text style={[
-                    styles.correctionHintText, 
-                    { color: scanResult.title.toLowerCase().trim() !== scanResult.predicted_label.toLowerCase().trim() ? C.red : C.green }
-                  ]}>
-                    {scanResult.title.toLowerCase().trim() !== scanResult.predicted_label.toLowerCase().trim() 
-                      ? "✏️ Correction detected! Saving will help retrain our AI model."
-                      : "✨ Scanned label matches! Saving will help confirm the model's accuracy."
-                    }
-                  </Text>
-                </View>
+                <Text style={[styles.mealTitleMain, { color: C.text }]}>{scanResult?.title}</Text>
               )}
             </View>
-            
-            {/* Meal Type Tag Selector - COMPACT FIX TO FIT HORIZONTALLY */}
-            <View style={{ marginBottom: 16 }}>
+
+            <View style={{ marginTop: 8, marginBottom: 20 }}>
               <Text style={[styles.subLabel, { color: C.text }]}>Meal Type</Text>
               <View style={styles.tagsRowCompact}>
                 {['breakfast', 'lunch', 'dinner', 'snack'].map(t => {
@@ -477,57 +437,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
                 })}
               </View>
             </View>
-            
-            {/* 3 Nutrient Cards matching the Figma Design layout */}
-            <Text style={[styles.subLabel, { color: C.text }]}>Nutrients</Text>
-            <View style={styles.nutrientsRowCompact}>
-              <View style={[styles.nutrientCardCompact, { backgroundColor: C.redBg }]}>
-                <Zap size={14} color={C.red} />
-                {isEditing ? (
-                  <TextInput
-                    style={[styles.nutrientInputCompact, { color: C.text }]}
-                    value={scanResult?.calories?.toString()}
-                    onChangeText={(val) => setScanResult({ ...scanResult, calories: parseInt(val) || 0 })}
-                    keyboardType="numeric"
-                  />
-                ) : (
-                  <Text style={[styles.nutrientValCompact, { color: C.text }]}>{scanResult?.calories} kcal</Text>
-                )}
-                <Text style={[styles.nutrientLabelCompact, { color: C.textSm }]}>Calories</Text>
-              </View>
-              
-              <View style={[styles.nutrientCardCompact, { backgroundColor: C.redBg }]}>
-                <Zap size={14} color={C.red} />
-                {isEditing ? (
-                  <TextInput
-                    style={[styles.nutrientInputCompact, { color: C.text }]}
-                    value={scanResult?.carbs?.toString()}
-                    onChangeText={(val) => setScanResult({ ...scanResult, carbs: parseInt(val) || 0 })}
-                    keyboardType="numeric"
-                  />
-                ) : (
-                  <Text style={[styles.nutrientValCompact, { color: C.text }]}>{scanResult?.carbs}g</Text>
-                )}
-                <Text style={[styles.nutrientLabelCompact, { color: C.textSm }]}>Total Carbs</Text>
-              </View>
-              
-              <View style={[styles.nutrientCardCompact, { backgroundColor: C.redBg }]}>
-                <Plus size={14} color={C.red} />
-                {isEditing ? (
-                  <TextInput
-                    style={[styles.nutrientInputCompact, { color: C.text }]}
-                    value={scanResult?.impact?.toString()}
-                    onChangeText={(val) => setScanResult({ ...scanResult, impact: parseInt(val) || 0 })}
-                    keyboardType="numeric"
-                  />
-                ) : (
-                  <Text style={[styles.nutrientValCompact, { color: C.text }]}>+{scanResult?.impact} mg/dL</Text>
-                )}
-                <Text style={[styles.nutrientLabelCompact, { color: C.textSm }]}>Impact</Text>
-              </View>
-            </View>
-            
-            {/* Notes Section with paper icon */}
+
             <View style={{ marginTop: 8, marginBottom: 20 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                 <FileText size={16} color={C.textSm} />
@@ -537,145 +447,100 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
               </View>
               
               <TextInput
-                style={[styles.notesInputCompact, { backgroundColor: C.white, borderColor: C.redBorder, color: C.text }]}
-                placeholder="e.g. Felt dizzy before reading, took medication 30 min ago..."
+                style={[styles.notesInputCompact, { color: C.text, backgroundColor: C.white, borderColor: C.redBorder }]}
+                placeholder="How are you feeling? Any specific details about this meal?"
                 placeholderTextColor={C.textXs}
                 multiline
                 value={notes}
                 onChangeText={setNotes}
-                maxLength={200}
               />
-              <View style={[styles.charCountCompact, { backgroundColor: C.white, borderColor: C.redBorder }]}>
-                <Text style={{ fontSize: 10, color: C.textXs }}>{notes.length}/200 characters</Text>
+              <View style={[styles.charCountCompact, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
+                <Text style={{ fontSize: 10, color: C.textSm, textAlign: 'right' }}>{notes.length}/200</Text>
               </View>
             </View>
-            
-            {/* Safe Bottom padding */}
-            <View style={{ height: 40 }} />
+
+            <View style={styles.confirmActions}>
+              <TouchableOpacity 
+                onPress={() => handleSave()} 
+                disabled={!canSaveEdit}
+                style={[styles.mainConfirmBtn, { backgroundColor: C.red, opacity: canSaveEdit ? 1 : 0.6 }]}
+              >
+                <Text style={styles.mainConfirmText}>Log Meal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={handleDiscard}
+                style={[styles.editBtn, { backgroundColor: C.redBg, borderColor: C.redBorder }]}
+              >
+                <Text style={[styles.editBtnText, { color: C.red }]}>Discard Scan</Text>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         </View>
       </View>
     );
   };
 
-  const renderConfirm = () => {
-    if (mode === 'glucose') {
-      return (
-        <ScrollView style={[styles.confirmContainer, { backgroundColor: C.bg }]}>
-          <View style={styles.confirmContent}>
-            <Text style={[styles.confirmTitle, { color: C.text }]}>Confirm Measurement</Text>
-            <View style={[styles.detectedCard, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
-              <Text style={[styles.detectedLabel, { color: C.textSm }]}>DETECTED VALUE</Text>
-              <View style={styles.detectedRow}>
-                {isEditing ? (
-                  <TextInput
-                    style={[styles.detectedValue, { color: C.text, borderBottomWidth: 2, borderBottomColor: C.red, minWidth: 80 }]}
-                    value={scanResult?.value?.toString()}
-                    onChangeText={(val) => setScanResult({ ...scanResult, value: parseFloat(val) || 0 })}
-                    keyboardType="numeric"
-                    autoFocus
-                  />
-                ) : (
-                  <Text style={[styles.detectedValue, { color: C.text }]}>{scanResult?.value}</Text>
-                )}
+  const renderConfirm = () => (
+    <ScrollView style={[styles.confirmContainer, { backgroundColor: C.bg }]}>
+      {mode === 'glucose' ? (
+        <View style={styles.confirmContent}>
+          <Text style={[styles.confirmTitle, { color: C.text }]}>Confirm Measurement</Text>
+          
+          <View style={[styles.detectedCard, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
+            <Text style={[styles.detectedLabel, { color: C.textSm }]}>DETECTED VALUE</Text>
+            <View style={styles.detectedRow}>
+              {isEditing ? (
+                <TextInput
+                  style={[styles.detectedValue, { color: C.text, borderBottomWidth: 2, borderBottomColor: C.red, minWidth: 80 }]}
+                  value={scanResult?.value?.toString()}
+                  onChangeText={(val) => setScanResult({ ...scanResult, value: parseFloat(val) || 0 })}
+                  keyboardType="numeric"
+                  autoFocus
+                />
+              ) : (
+                <Text style={[styles.detectedValue, { color: C.text }]}>{scanResult?.unit === 'mmol/L' ? scanResult?.value.toFixed(2) : scanResult?.value}</Text>
+              )}
+              
+              {isEditing ? (
+                <TouchableOpacity 
+                  onPress={() => setScanResult({ ...scanResult, unit: scanResult?.unit === 'mg/dL' ? 'mmol/L' : 'mg/dL' })}
+                  style={[styles.unitToggle, { backgroundColor: C.redBg, borderColor: C.redBorder }]}
+                >
+                  <Text style={[styles.detectedUnit, { color: C.red, fontWeight: 'bold' }]}>{scanResult?.unit || 'mg/dL'}</Text>
+                </TouchableOpacity>
+              ) : (
                 <Text style={[styles.detectedUnit, { color: C.textSm }]}>{scanResult?.unit || 'mg/dL'}</Text>
-                <View style={[
-                  styles.statusBadge, 
-                  { backgroundColor: (getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'High' || getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'Low' ? C.red : C.green) + '15' }
+              )}
+
+              <View style={[
+                styles.statusBadge, 
+                { backgroundColor: (getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'High' || getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'Low' ? C.red : C.green) + '15' }
+              ]}>
+                <Text style={[
+                  styles.statusText, 
+                  { color: (getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'High' || getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'Low' ? C.red : C.green) }
                 ]}>
-                  <Text style={[
-                    styles.statusText, 
-                    { color: (getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'High' || getStatus(scanResult?.value, scanResult?.unit || 'mg/dL') === 'Low' ? C.red : C.green) }
-                  ]}>
-                    {getStatus(scanResult?.value, scanResult?.unit || 'mg/dL')}
-                  </Text>
-                </View>
+                  {getStatus(scanResult?.value, scanResult?.unit || 'mg/dL')}
+                </Text>
               </View>
             </View>
-
-            <Text style={[styles.subLabel, { color: C.text }]}>Measurement Type</Text>
-            <View style={styles.tagsRow}>
-              {['Fasting', 'Before meal', 'After meal'].map(t => (
-                <TouchableOpacity 
-                  key={t} 
-                  onPress={() => setScanResult({ ...scanResult, tag: t })}
-                  style={[styles.tagBtn, scanResult?.tag === t && { backgroundColor: C.red }]}
-                >
-                  <Text style={[styles.tagText, scanResult?.tag === t ? { color: '#FFF' } : { color: C.textSm }]}>{t}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
           </View>
 
-          <View style={styles.notesSection}>
-            <Text style={[styles.subLabel, { color: C.text }]}>Add Notes <Text style={{ fontSize: 10, fontWeight: '400' }}>(optional)</Text></Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: C.redBg, borderColor: C.redBorder, color: C.text }]}
-              placeholder="e.g. Felt dizzy before reading..."
-              placeholderTextColor={C.textXs}
-              multiline
-              value={notes}
-              onChangeText={setNotes}
-            />
-            <Text style={[styles.charCount, { color: C.textXs }]}>{notes.length}/200 characters</Text>
+          <Text style={[styles.subLabel, { color: C.text }]}>Measurement Type</Text>
+          <View style={styles.tagsRow}>
+            {['Fasting', 'Before meal', 'After meal'].map(t => (
+              <TouchableOpacity 
+                key={t} 
+                onPress={() => setScanResult({ ...scanResult, tag: t })}
+                style={[styles.tagBtn, scanResult?.tag === t && { backgroundColor: C.red }]}
+              >
+                <Text style={[styles.tagText, scanResult?.tag === t ? { color: '#FFF' } : { color: C.textSm }]}>{t}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-
-          <View style={styles.confirmActions}>
-            <TouchableOpacity 
-              onPress={() => handleSave(scanResult)} 
-              style={[styles.mainConfirmBtn, { backgroundColor: C.red }]}
-            >
-              <Text style={styles.mainConfirmText}>Confirm</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={() => setIsEditing(!isEditing)} 
-              style={[styles.editBtn, { backgroundColor: C.redBg, borderColor: C.redBorder }, isEditing && { backgroundColor: C.red }]}
-            >
-              <Text style={[styles.editBtnText, { color: isEditing ? '#FFF' : C.red }]}>{isEditing ? 'Done' : 'Edit'}</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      );
-    }
-
-    return renderMealConfirmSheet();
-  };
-
-  const renderManual = () => (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={[styles.manualContainer, { backgroundColor: C.bg }]}
-    >
-      <View style={styles.manualForm}>
-        <Text style={[styles.formLabel, { color: C.textSm }]}>BLOOD GLUCOSE VALUE</Text>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            style={[styles.manualInput, { color: C.text, borderBottomColor: C.red }]}
-            value={manualValue}
-            onChangeText={setManualValue}
-            placeholder="0.0"
-            placeholderTextColor={C.textXs}
-            keyboardType="numeric"
-            autoFocus
-          />
-          <Text style={[styles.inputUnit, { color: C.textSm }]}>{profile?.glucoseUnit || 'mg/dL'}</Text>
         </View>
-        
-        <TouchableOpacity 
-          onPress={() => handleSave({ value: parseFloat(manualValue), unit: profile?.glucoseUnit || "mg/dL" })}
-          disabled={!manualValue}
-          style={[styles.saveBtn, { backgroundColor: manualValue ? C.red : C.redBorder }]}
-        >
-          <Text style={styles.saveBtnText}>Save Reading</Text>
-          <ChevronRight size={20} color="#FFF" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity onPress={() => setState('camera')} style={styles.backToCamera}>
-          <CameraIcon size={16} color={C.textXs} />
-          <Text style={{ color: C.textXs, fontWeight: '700' }}>Back to Camera Scan</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+      ) : renderMealConfirmSheet()}
+    </ScrollView>
   );
 
   const renderError = () => (
@@ -692,7 +557,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
         <Text style={styles.retryText}>Try Again</Text>
       </TouchableOpacity>
       
-      <TouchableOpacity onPress={() => setState('manual')} style={styles.manualEntryBtn}>
+      <TouchableOpacity onPress={enterManualMode} style={styles.manualEntryBtn}>
         <Text style={{ color: C.textXs, fontWeight: '700' }}>Enter Reading Manually</Text>
       </TouchableOpacity>
     </View>
@@ -703,7 +568,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
   if (isMealConfirm) {
     return (
       <View style={[styles.container, { backgroundColor: 'transparent' }]}>
-        {renderConfirm()}
+        {renderMealConfirmSheet()}
       </View>
     );
   }
@@ -713,8 +578,8 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
       {renderHeader()}
       {state === 'camera' && renderCamera()}
       {state === 'analyzing' && renderAnalyzing()}
+      {state === 'adjustment' && renderAdjustment()}
       {state === 'confirm' && renderConfirm()}
-      {state === 'manual' && renderManual()}
       {state === 'error' && renderError()}
     </SafeAreaView>
   );
@@ -743,10 +608,28 @@ const styles = StyleSheet.create({
   cameraContainer: { flex: 1 },
   camera: { flex: 1 },
   overlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  flashBtn: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  scannerFrameContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    height: '60%',
   },
   scannerFrame: {
     width: 240,
@@ -758,7 +641,7 @@ const styles = StyleSheet.create({
   },
   scanHint: {
     color: '#FFF',
-    marginTop: 24,
+    marginTop: 8,
     fontSize: 14,
     fontWeight: '600',
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -824,8 +707,8 @@ const styles = StyleSheet.create({
   },
   scanningText: { color: '#FFF', marginTop: 16, fontSize: 16, fontWeight: '700' },
   confirmContainer: { flex: 1 },
-  confirmContent: { padding: 24, paddingTop: 40 },
-  confirmTitle: { fontSize: 24, fontWeight: '900', marginBottom: 24 },
+  confirmTitle: { fontSize: 20, fontWeight: '800', marginBottom: 20 },
+  confirmContent: { padding: 20 },
   detectedCard: {
     padding: 20,
     borderRadius: 20,
@@ -843,12 +726,6 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
   },
   statusText: { fontSize: 12, fontWeight: '800' },
-  mealPhoto: {
-    width: '100%',
-    height: 200,
-    borderRadius: 24,
-    marginBottom: 24,
-  },
   subLabel: { fontSize: 16, fontWeight: '800', marginBottom: 12 },
   tagsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
   tagBtn: {
@@ -858,31 +735,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
   },
   tagText: { fontSize: 14, fontWeight: '700' },
-  foodItemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  foodName: { fontSize: 14, fontWeight: '700' },
-  foodCarbs: { fontSize: 12, fontWeight: '600' },
-  nutrientsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  nutrientCard: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 16,
-    alignItems: 'center',
-    gap: 4,
-  },
-  nutrientVal: { fontSize: 14, fontWeight: '800' },
-  nutrientLabel: { fontSize: 10, fontWeight: '600' },
   notesSection: { paddingHorizontal: 24, marginBottom: 32 },
   notesInput: {
     height: 100,
@@ -916,23 +768,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   editBtnText: { fontSize: 16, fontWeight: '800' },
-  manualContainer: { flex: 1, padding: 24, justifyContent: 'center' },
-  manualForm: { alignItems: 'center' },
-  formLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 20 },
-  inputWrapper: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 40 },
-  manualInput: { fontSize: 80, fontWeight: '900', textAlign: 'center', borderBottomWidth: 4, width: 160 },
-  inputUnit: { fontSize: 24, fontWeight: '600', marginLeft: 12 },
-  saveBtn: {
-    width: '100%',
-    height: 60,
-    borderRadius: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  saveBtnText: { color: '#FFF', fontSize: 18, fontWeight: '800' },
-  backToCamera: { marginTop: 24, flexDirection: 'row', alignItems: 'center', gap: 8 },
   errorContainer: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center' },
   errorTitle: { fontSize: 24, fontWeight: '900', marginTop: 20, marginBottom: 12 },
   errorDesc: { fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 40 },
@@ -948,39 +783,6 @@ const styles = StyleSheet.create({
   },
   retryText: { color: '#FFF', fontSize: 18, fontWeight: '800' },
   manualEntryBtn: { padding: 12 },
-  button: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
-  message: { fontSize: 16 },
-  editInput: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  nutrientInput: {
-    fontSize: 14,
-    fontWeight: '800',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
-    textAlign: 'center',
-    padding: 0,
-    minWidth: 40,
-  },
-  correctionHint: {
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  correctionHintText: {
-    fontSize: 11,
-    fontWeight: '700',
-    flex: 1,
-  },
   sheetContainer: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -994,7 +796,6 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   sheetContent: {
-    height: '78%',
     borderTopLeftRadius: 36,
     borderTopRightRadius: 36,
     paddingHorizontal: 24,
@@ -1004,16 +805,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 12,
   },
-  sheetHandleRow: {
-    alignItems: 'center',
-    paddingVertical: 14,
+  sheetScroll: {
+    flex: 1,
+  },
+  sheetScrollContent: {
+    paddingBottom: 40,
+  },
+  sheetHeader: {
+    marginBottom: 10,
   },
   sheetHandle: {
     width: 48,
     height: 5,
     borderRadius: 2.5,
+    alignSelf: 'center',
+    marginVertical: 14,
   },
-  sheetHeader: {
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -1023,20 +831,45 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
   },
-  confirmCheckBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
+  foodImageContainer: {
+    height: 200,
+    borderRadius: 24,
+    overflow: 'hidden',
+    marginBottom: 20,
   },
-  sheetScroll: {
-    paddingBottom: 40,
+  foodImageLarge: {
+    width: '100%',
+    height: '100%',
   },
-  foodNameDisplay: {
-    fontSize: 16,
+  foodImageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  confidenceBadge: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  confidenceText: {
+    color: '#FFF',
+    fontSize: 12,
     fontWeight: '700',
-    paddingVertical: 4,
+  },
+  mealTitleSection: {
+    marginBottom: 20,
+  },
+  mealTitleInput: {
+    fontSize: 20,
+    fontWeight: '800',
+    borderBottomWidth: 2,
+    paddingBottom: 4,
+  },
+  mealTitleMain: {
+    fontSize: 24,
+    fontWeight: '900',
   },
   dropdownContainer: {
     borderWidth: 1.5,
@@ -1057,8 +890,7 @@ const styles = StyleSheet.create({
   notesInputCompact: {
     height: 80,
     borderWidth: 1.5,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderRadius: 16,
     padding: 16,
     fontSize: 13,
     textAlignVertical: 'top',
@@ -1075,7 +907,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 6,
-    marginBottom: 20,
   },
   tagBtnCompact: {
     flex: 1,
@@ -1091,42 +922,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  nutrientsRowCompact: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
-    marginBottom: 20,
-  },
-  nutrientCardCompact: {
-    flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 6,
-    borderRadius: 18,
-    alignItems: 'center',
-    gap: 6,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  nutrientValCompact: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  nutrientLabelCompact: {
-    fontSize: 9,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  nutrientInputCompact: {
-    fontSize: 13,
-    fontWeight: '900',
-    borderBottomWidth: 1.5,
-    borderBottomColor: 'rgba(0,0,0,0.15)',
-    textAlign: 'center',
-    padding: 0,
-    minWidth: 40,
+  unitToggle: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginLeft: 4,
   }
 });
 

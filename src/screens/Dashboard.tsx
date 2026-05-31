@@ -14,7 +14,7 @@ import Svg, { Path, Line, Circle, Defs, LinearGradient as SvgLinearGradient, Sto
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
 import { useUser } from '../context/UserContext';
-import { apiService, mapStatus, mapTrend, formatTime } from '../services/apiService';
+import { apiService, mapStatus, mapTrend, formatTime, convertGlucose } from '../services/apiService';
 import { 
   Bell, 
   TrendingUp, 
@@ -98,7 +98,7 @@ const mock7Days = [
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetail, onSeeAllMeasurements }) => {
   const { C, isDark } = useTheme();
-  const { logs, alerts, homeData, recommendations, loading, refreshData } = useData();
+  const { logs, alerts, homeData, recommendations, premiumRecommendations, loading, refreshData } = useData();
   const { profile } = useUser();
   const [activeTab, setActiveTab] = useState<'7d' | '30d'>('7d');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -118,34 +118,41 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
     return `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}`;
   }, []);
 
-  // --- STATS COMPUTATION ---
   const stats = useMemo(() => {
     const measurements = logs.filter(l => l.type === 'measurement') as MeasurementEntry[];
     const latestFromLogs = measurements[0] || null;
+    const userUnit = profile?.glucoseUnit || 'mg/dL';
+    const serverUnit = 'mg/dL';
 
     const latest = homeData?.latest_reading ? {
       id: homeData.latest_reading.id,
       type: 'measurement' as const,
-      value: homeData.latest_reading.value_mg_dl,
-      unit: 'mg/dL',
+      value: convertGlucose(homeData.latest_reading.value_mg_dl, userUnit, serverUnit),
+      unit: userUnit,
       status: mapStatus(homeData.latest_reading.health_status),
       time: formatTime(homeData.latest_reading.measured_at),
       date: homeData.latest_reading.measured_at,
-      delta: homeData.latest_reading.delta_since_last,
+      delta: convertGlucose(homeData.latest_reading.delta_since_last || 0, userUnit, serverUnit),
       trend: mapTrend(homeData.latest_reading.trend || undefined),
     } : (latestFromLogs ? {
       ...latestFromLogs,
+      value: convertGlucose(latestFromLogs.value, userUnit, latestFromLogs.unit || 'mg/dL'),
+      unit: userUnit,
       delta: 0,
       trend: 'stable' as const,
     } : null);
 
-    const sum = measurements.reduce((acc, curr) => acc + curr.value, 0);
-    const avg = measurements.length > 0 ? Math.round(sum / measurements.length) : (latest?.value || 0);
+    const sum = measurements.reduce((acc, curr) => acc + convertGlucose(curr.value, userUnit, curr.unit || 'mg/dL'), 0);
+    const avgValue = measurements.length > 0 ? (sum / measurements.length) : (latest?.value || 0);
+    const avg = userUnit === 'mg/dL' ? Math.round(avgValue) : parseFloat(avgValue.toFixed(2));
     
-    const minGoal = homeData?.latest_reading?.target?.min || profile?.goals?.min || 70;
-    const maxGoal = homeData?.latest_reading?.target?.max || profile?.goals?.max || 140;
+    const minGoal = convertGlucose(homeData?.latest_reading?.target?.min || profile?.goals?.min || 70, userUnit, serverUnit);
+    const maxGoal = convertGlucose(homeData?.latest_reading?.target?.max || profile?.goals?.max || 140, userUnit, serverUnit);
     
-    const inRangeCount = measurements.filter(m => m.value >= minGoal && m.value <= maxGoal).length;
+    const inRangeCount = measurements.filter(m => {
+      const val = convertGlucose(m.value, userUnit, m.unit || 'mg/dL');
+      return val >= minGoal && val <= maxGoal;
+    }).length;
     const inRangePercent = measurements.length > 0 ? Math.round((inRangeCount / measurements.length) * 100) : 0;
     
     const todayStr = new Date().toISOString().split('T')[0];
@@ -160,7 +167,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
       status: latest?.status || 'Normal',
       unreadAlerts: alerts.filter(a => !a.read).length,
       targetMin: minGoal,
-      targetMax: maxGoal
+      targetMax: maxGoal,
+      userUnit
     };
   }, [logs, alerts, profile, homeData]);
 
@@ -338,9 +346,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
           
           <View style={styles.mainValueRow}>
             <View style={styles.valueWrap}>
-              <Text style={styles.mainValue}>{stats.latest?.value || '--'}</Text>
+              <Text style={styles.mainValue}>{stats.latest?.value ? (stats.userUnit === 'mmol/L' ? stats.latest.value.toFixed(1) : Math.round(stats.latest.value)) : '--'}</Text>
               <View style={styles.unitCol}>
-                <Text style={styles.mainUnit}>mg/dL</Text>
+                <Text style={styles.mainUnit}>{stats.userUnit}</Text>
               <View style={styles.trendRow}>
                   {stats.latest?.trend === 'up' ? <TrendingUp size={12} color="#FCD34D" /> : 
                    stats.latest?.trend === 'down' ? <TrendingDown size={12} color="#FCD34D" /> :
@@ -361,7 +369,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
           <View style={styles.mainCardFooter}>
             <View style={styles.footerItem}>
                <Text style={styles.footerLabel}>Average</Text>
-               <Text style={styles.footerValue}>{stats.avg} <Text style={styles.footerUnit}>mg/dL</Text></Text>
+               <Text style={styles.footerValue}>{stats.avg} <Text style={styles.footerUnit}>{stats.userUnit}</Text></Text>
             </View>
             <View style={styles.footerDivider} />
             <View style={styles.footerItem}>
@@ -549,7 +557,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
             >
               <Text style={styles.tooltipText}>
                 {chartData[hoverIndex].real
-                  ? `${chartData[hoverIndex].value} mg/dL`
+                  ? `${stats.userUnit === 'mmol/L' ? convertGlucose(chartData[hoverIndex].value || 0, 'mmol/L', 'mg/dL').toFixed(1) : Math.round(chartData[hoverIndex].value || 0)} ${stats.userUnit}`
                   : 'No entry'}
               </Text>
               <Text style={styles.tooltipSubText}>
@@ -714,9 +722,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
           </TouchableOpacity>
         </View>
 
-        {(recommendations.length > 0 || (homeData?.recommendations && homeData.recommendations.length > 0)) ? (
+        {(premiumRecommendations.length > 0 || recommendations.length > 0 || (homeData?.recommendations && homeData.recommendations.length > 0)) ? (
           <FlatList
-            data={recommendations.length > 0 ? recommendations : homeData?.recommendations || []}
+            data={premiumRecommendations.length > 0 ? premiumRecommendations : (recommendations.length > 0 ? recommendations : homeData?.recommendations || [])}
             keyExtractor={(item) => item.id.toString()}
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -748,7 +756,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
                     <View style={styles.foodMetaRow}>
                       <Text style={[styles.foodCal, { color: C.textSm }]}>{item.calories} kcal</Text>
                       <View style={[styles.giBadge, { backgroundColor: C.greenBg }]}>
-                        <Text style={[styles.giText, { color: C.green }]}>-{item.estimated_glucose_impact_mg_dl} mg/dL</Text>
+                        <Text style={[styles.giText, { color: C.green }]}>-{stats.userUnit === 'mmol/L' ? convertGlucose(item.estimated_glucose_impact_mg_dl, 'mmol/L', 'mg/dL').toFixed(1) : item.estimated_glucose_impact_mg_dl} {stats.userUnit}</Text>
                       </View>
                     </View>
                   </View>

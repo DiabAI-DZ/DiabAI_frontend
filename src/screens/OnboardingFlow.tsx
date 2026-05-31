@@ -6,8 +6,8 @@ import {
   FlatList,
   Dimensions,
   TouchableOpacity,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { SvgXml } from 'react-native-svg';
 import { useTheme } from '../context/ThemeContext';
 import { 
@@ -49,10 +49,12 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
   const flatListRef = useRef<FlatList>(null);
 
   const handleNext = () => {
+    console.log('[Onboarding] handleNext - currentIndex:', currentIndex);
     if (currentIndex < STEPS.length - 1) {
-      flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
-      setCurrentIndex(currentIndex + 1);
+      flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
+      // setCurrentIndex(currentIndex + 1); // Let onMomentumScrollEnd handle it
     } else {
+      console.log('[Onboarding] Triggering onComplete');
       onComplete();
     }
   };

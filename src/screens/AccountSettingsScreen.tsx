@@ -6,15 +6,17 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
-  User, Mail, Phone, MapPin, ChevronLeft, Camera, Lock, Calendar, Scale, Ruler
+  User, Mail, Phone, MapPin, ChevronLeft, Camera, Lock, Calendar, Scale, Ruler, Star, Zap
 } from 'lucide-react-native';
+import { Alert } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../context/ThemeContext';
 import { authApi } from '../services/authApi';
-import { apiService } from '../services/apiService';
+import { apiService, convertGlucose } from '../services/apiService';
 import { useUser } from '../context/UserContext';
 
 interface AccountSettingsScreenProps {
@@ -33,6 +35,9 @@ interface AccountSettingsScreenProps {
     weight: userProfile?.weight ? userProfile.weight.toString() : "",
     height: userProfile?.height ? userProfile.height.toString() : "",
     sex: userProfile?.sex || "male",
+    glucoseUnit: userProfile?.glucoseUnit || "mg/dL",
+    targetMin: userProfile?.goals?.min ? userProfile.goals.min.toString() : "70",
+    targetMax: userProfile?.goals?.max ? userProfile.goals.max.toString() : "140",
   });
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -68,6 +73,11 @@ interface AccountSettingsScreenProps {
         weight: form.weight ? parseFloat(form.weight) : undefined,
         height: form.height ? parseInt(form.height) : undefined,
         sex: form.sex as any,
+        glucoseUnit: form.glucoseUnit as any,
+        goals: {
+          min: parseFloat(form.targetMin),
+          max: parseFloat(form.targetMax),
+        }
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -145,6 +155,18 @@ interface AccountSettingsScreenProps {
     { 
       key: "weight", 
       label: "Weight (kg)", 
+      icon: Scale,
+      keyboardType: "numeric" as const 
+    },
+    { 
+      key: "targetMin", 
+      label: `Target Min (${form.glucoseUnit})`, 
+      icon: Scale,
+      keyboardType: "numeric" as const 
+    },
+    { 
+      key: "targetMax", 
+      label: `Target Max (${form.glucoseUnit})`, 
       icon: Scale,
       keyboardType: "numeric" as const 
     },
@@ -262,6 +284,43 @@ interface AccountSettingsScreenProps {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Unit selection */}
+          <View style={styles.fieldContainer}>
+            <Text style={[styles.label, { color: C.textSm, marginBottom: 8 }]}>Preferred Glucose Unit</Text>
+            <View style={styles.genderRow}>
+              {(['mg/dL', 'mmol/L'] as const).map((u) => (
+                <TouchableOpacity
+                  key={u}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    if (form.glucoseUnit !== u) {
+                      const newMin = convertGlucose(parseFloat(form.targetMin), u, form.glucoseUnit);
+                      const newMax = convertGlucose(parseFloat(form.targetMax), u, form.glucoseUnit);
+                      setForm({ 
+                        ...form, 
+                        glucoseUnit: u,
+                        targetMin: newMin.toString(),
+                        targetMax: newMax.toString()
+                      });
+                    }
+                  }}
+                  style={[
+                    styles.genderButton,
+                    {
+                      backgroundColor: form.glucoseUnit === u ? C.red : (C.redBg || '#F5DEDE'),
+                      borderColor: form.glucoseUnit === u ? C.red : (C.redBorder || '#EAC5C5'),
+                    }
+                  ]}
+                >
+                  <Text style={[
+                    styles.genderButtonText,
+                    { color: form.glucoseUnit === u ? '#FFF' : (C.text || '#000') }
+                  ]}>{u}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
         </View>
 
         {/* Save Button */}
@@ -279,6 +338,108 @@ interface AccountSettingsScreenProps {
               {saved ? "✓ Saved" : "Save Settings"}
             </Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Premium Upgrade Section */}
+        <View style={[styles.sectionDivider, { backgroundColor: C.redBorder }]} />
+        
+        <View style={styles.form}>
+          <Text style={[styles.sectionTitle, { color: C.redDark }]}>Subscription</Text>
+          
+          <View style={[
+            styles.premiumCard, 
+            { backgroundColor: userProfile?.isPremium ? (C.greenBg || '#ECFDF5') : (C.redBg || '#FEF2F2'), borderColor: userProfile?.isPremium ? (C.greenBorder || '#A7F3D0') : (C.redBorder || '#FECACA') }
+          ]}>
+            <View style={styles.premiumHeader}>
+              <View style={[styles.premiumIconBox, { backgroundColor: userProfile?.isPremium ? (C.green || '#10B981') : (C.red || '#EF4444') }]}>
+                {userProfile?.isPremium ? <Star size={20} color="#FFF" fill="#FFF" /> : <Zap size={20} color="#FFF" fill="#FFF" />}
+              </View>
+              <View>
+                <Text style={[styles.premiumTitle, { color: C.text }]}>
+                  {userProfile?.isPremium ? "DiabAI Premium Member" : "DiabAI Free Plan"}
+                </Text>
+                <Text style={[styles.premiumSub, { color: C.textSm }]}>
+                  {userProfile?.isPremium ? "Accessing heavy AI analysis & forecasts" : "Upgrade to unlock heavy AI analysis"}
+                </Text>
+              </View>
+            </View>
+
+            {!userProfile?.isPremium && (
+              <TouchableOpacity
+                onPress={async () => {
+                  try {
+                    await useUser().upgradeToPremium();
+                    Alert.alert("Success", "Welcome to DiabAI Premium!");
+                  } catch (e) {
+                    Alert.alert("Error", "Failed to upgrade. Please try again.");
+                  }
+                }}
+                activeOpacity={0.85}
+                style={styles.upgradeButton}
+              >
+                <LinearGradient
+                  colors={[C.red || '#EF4444', C.redDark || '#991B1B']}
+                  style={styles.upgradeGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Star size={16} color="#FFF" fill="#FFF" />
+                  <Text style={styles.upgradeText}>Upgrade to Premium</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Premium Upgrade Section */}
+        <View style={[styles.sectionDivider, { backgroundColor: C.redBorder }]} />
+        
+        <View style={styles.form}>
+          <Text style={[styles.sectionTitle, { color: C.redDark }]}>Subscription</Text>
+          
+          <View style={[
+            styles.premiumCard, 
+            { backgroundColor: userProfile?.isPremium ? (C.greenBg || '#ECFDF5') : (C.redBg || '#FEF2F2'), borderColor: userProfile?.isPremium ? (C.greenBorder || '#A7F3D0') : (C.redBorder || '#FECACA') }
+          ]}>
+            <View style={styles.premiumHeader}>
+              <View style={[styles.premiumIconBox, { backgroundColor: userProfile?.isPremium ? (C.green || '#10B981') : (C.red || '#EF4444') }]}>
+                {userProfile?.isPremium ? <Star size={20} color="#FFF" fill="#FFF" /> : <Zap size={20} color="#FFF" fill="#FFF" />}
+              </View>
+              <View>
+                <Text style={[styles.premiumTitle, { color: C.text }]}>
+                  {userProfile?.isPremium ? "DiabAI Premium Member" : "DiabAI Free Plan"}
+                </Text>
+                <Text style={[styles.premiumSub, { color: C.textSm }]}>
+                  {userProfile?.isPremium ? "Accessing heavy AI analysis & forecasts" : "Upgrade to unlock heavy AI analysis"}
+                </Text>
+              </View>
+            </View>
+
+            {!userProfile?.isPremium && (
+              <TouchableOpacity
+                onPress={async () => {
+                  try {
+                    await useUser().upgradeToPremium();
+                    Alert.alert("Success", "Welcome to DiabAI Premium!");
+                  } catch (e) {
+                    Alert.alert("Error", "Failed to upgrade. Please try again.");
+                  }
+                }}
+                activeOpacity={0.85}
+                style={[styles.upgradeButton, { backgroundColor: C.red }]}
+              >
+                <LinearGradient
+                  colors={[C.red, C.redDark]}
+                  style={styles.upgradeGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Star size={16} color="#FFF" fill="#FFF" />
+                  <Text style={styles.upgradeText}>Upgrade to Premium</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Change Password Section */}
@@ -512,6 +673,51 @@ const styles = StyleSheet.create({
   genderButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  // Premium Styles
+  premiumCard: {
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  premiumHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 20,
+  },
+  premiumIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  premiumTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  premiumSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  upgradeButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  upgradeGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 8,
+  },
+  upgradeText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '800',
   },
 });
 

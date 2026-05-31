@@ -13,6 +13,7 @@ interface UserContextType {
   signUp: (name: string, email: string, password: string) => Promise<void>;
   signOut: () => void;
   refreshProfile: () => Promise<void>;
+  upgradeToPremium: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -84,6 +85,19 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(null);
   };
 
+  const upgradeToPremium = async () => {
+    setLoading(true);
+    try {
+      const updated = await apiService.upgradeAccount();
+      setProfile(updated);
+    } catch (error) {
+      console.error("Failed to upgrade account:", error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Sync initial base URL configuration
   useEffect(() => {
     authApi.setBaseUrl(apiBaseUrl);
@@ -99,7 +113,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signIn, 
       signUp, 
       signOut, 
-      refreshProfile 
+      refreshProfile,
+      upgradeToPremium
     }}>
       {children}
     </UserContext.Provider>

@@ -6,11 +6,11 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   Animated,
   Switch,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ChevronLeft,
   CreditCard,
@@ -225,7 +225,7 @@ const SuccessScreen: React.FC<{ plan: typeof PLANS[0]; onDone: () => void }> = (
       </Text>
 
       {/* Features List */}
-      <View style={[styles.successCard, { backgroundColor: C.cardBg, borderColor: C.cardBorder }]}>
+      <View style={[styles.successCard, { backgroundColor: C.white, borderColor: C.divider }]}>
         <Text style={[styles.cardListTitle, { color: C.red }]}>PLAN INCLUDES</Text>
         {plan.features.map((f, i) => (
           <View key={i} style={styles.successFeatureRow}>
@@ -343,7 +343,7 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ plan, onBack, onSuccess }
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: C.bg }]}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: C.headerBg, borderBottomColor: C.redBorder }]}>
+      <View style={[styles.header, { backgroundColor: C.white, borderBottomColor: C.redBorder }]}>
         <TouchableOpacity
           onPress={onBack}
           activeOpacity={0.8}
@@ -533,7 +533,7 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ plan, onBack, onSuccess }
       </ScrollView>
 
       {/* Pay CTA Button */}
-      <View style={[styles.footer, { backgroundColor: C.headerBg, borderTopColor: C.cardBorder }]}>
+      <View style={[styles.footer, { backgroundColor: C.white, borderTopColor: C.redBorder }]}>
         <TouchableOpacity
           onPress={handlePay}
           disabled={isProcessing}

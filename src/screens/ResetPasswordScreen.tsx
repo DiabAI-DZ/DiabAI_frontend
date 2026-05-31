@@ -7,10 +7,10 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { SvgXml } from 'react-native-svg';
 import { Eye, EyeOff, ChevronLeft } from 'lucide-react-native';
 import { authApi } from '../services/authApi';
