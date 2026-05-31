@@ -12,8 +12,8 @@ const getDevHostIp = (): string => {
   return hostUri.split(':')[0];
 };
 
-// Public ngrok URL for mobile access to local backend
-export const AUTH_BASE_URL = `https://plank-anthill-attitude.ngrok-free.dev`;
+// Dynamically detect developer host IP address for local mobile-backend networking
+export const AUTH_BASE_URL = `http://${getDevHostIp()}:8000`;
 
 export class AuthApiException extends Error {
   statusCode?: number;
