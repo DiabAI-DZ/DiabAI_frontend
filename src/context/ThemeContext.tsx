@@ -19,6 +19,7 @@ export const COLORS = {
   blueBorder: "#BFDBFE",
   purple: "#7C3AED",
   purpleBg: "#F5F3FF",
+  purpleBorder: "#DDD6FE",
   text: "#111827",
   textDark: "#451C1C",
   textMd: "#4B5563",

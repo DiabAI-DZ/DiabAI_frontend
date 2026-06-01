@@ -12,10 +12,10 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useUser } from '../context/UserContext';
-import { 
-  User, Lock, LogOut, Syringe, Target, Ruler, 
+import {
+  User, Lock, LogOut, Syringe, Target, Ruler,
   Bell, Heart, Palette, ChevronRight, HelpCircle, Info,
-  Sun, Moon, Monitor, Globe, Type, CreditCard, Wallet, 
+  Sun, Moon, Monitor, Globe, Type, CreditCard, Wallet,
   ArrowUpDown, Receipt, BellRing, Clock, FileText, Settings,
   AlertTriangle, Check, CheckCircle2, Shield, X, BarChart3,
   Share2, Cloud, FileDown
@@ -124,24 +124,24 @@ const TargetGlucoseSlider: React.FC<{
 }> = ({ min, max, minVal, maxVal, onChange }) => {
   const { C, isDark } = useTheme();
   const pct = (v: number) => ((v - min) / (max - min)) * 100;
-  
+
   const trackWidth = width - 80;
 
   const handleTrackTouch = (event: any) => {
     const touchX = event.nativeEvent.locationX;
     const touchedPct = (touchX / trackWidth) * 100;
     const value = Math.round(min + (touchedPct / 100) * (max - min));
-    
+
     // Improved logic: find which handle is TRULY closer
     const distToMin = Math.abs(value - minVal);
     const distToMax = Math.abs(value - maxVal);
-    
+
     if (distToMin < distToMax) {
       // Don't let min overlap max
       const newMin = Math.min(Math.max(min, value), maxVal - 10);
       onChange(newMin, maxVal);
     } else {
-      // Don't let max overlap min 
+      // Don't let max overlap min
       const newMax = Math.max(Math.min(max, value), minVal + 10);
       onChange(minVal, newMax);
     }
@@ -163,7 +163,7 @@ const TargetGlucoseSlider: React.FC<{
         </View>
       </View>
 
-      <View 
+      <View
         style={[styles.sliderTrackContainer, { width: trackWidth }]}
         onStartShouldSetResponder={() => true}
         onResponderRelease={handleTrackTouch}
@@ -171,15 +171,15 @@ const TargetGlucoseSlider: React.FC<{
         <View style={[styles.sliderBgTrack, { backgroundColor: isDark ? "#2A2A30" : "#F0EDED" }]} />
         <View
           style={[
-            styles.sliderActiveTrack, 
-            { 
+            styles.sliderActiveTrack,
+            {
               backgroundColor: C.red,
-              left: `${pct(minVal)}%`, 
-              width: `${pct(maxVal) - pct(minVal)}%` 
+              left: `${pct(minVal)}%`,
+              width: `${pct(maxVal) - pct(minVal)}%`
             }
           ]}
         />
-        
+
         {/* Handles - White background, Red border as in screenshot */}
         <View style={[styles.sliderHandle, { left: `${pct(minVal)}%`, borderColor: C.red, backgroundColor: '#FFF' }]} />
         <View style={[styles.sliderHandle, { left: `${pct(maxVal)}%`, borderColor: C.red, backgroundColor: '#FFF' }]} />
@@ -265,8 +265,8 @@ const SettingRow: React.FC<SettingRowProps> = ({ icon, label, subtitle, toggle, 
   return (
     <TouchableOpacity
       style={styles.settingRowBtn}
-      onPress={toggle ? onToggle : onClick}
-      disabled={!onClick && !toggle}
+      onPress={onClick || onToggle}
+      disabled={!onClick && !onToggle}
     >
       <View style={[styles.settingRowIconBox, { backgroundColor: C.redBg }]}>
         {icon}
@@ -278,8 +278,8 @@ const SettingRow: React.FC<SettingRowProps> = ({ icon, label, subtitle, toggle, 
         )}
       </View>
       {toggle ? (
-        <Switch 
-          value={toggleValue} 
+        <Switch
+          value={toggleValue}
           onValueChange={onToggle}
           trackColor={{ false: '#DDD', true: C.red }}
           thumbColor="#FFF"
@@ -307,9 +307,15 @@ const SettingRow: React.FC<SettingRowProps> = ({ icon, label, subtitle, toggle, 
 
 interface SettingsScreenProps {
   onNavigateAccountSettings?: () => void;
+  onNavigatePayment?: (planId: string) => void;
+  onNavigateReminders?: () => void;
 }
 
-const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateAccountSettings }) => {
+const SettingsScreen: React.FC<SettingsScreenProps> = ({
+  onNavigateAccountSettings,
+  onNavigatePayment,
+  onNavigateReminders
+}) => {
   const { C, isDark, mode, setMode } = useTheme();
   const { profile, updateProfile, signOut, apiBaseUrl } = useUser();
 
@@ -380,7 +386,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateAccountSettin
 
   return (
     <View style={[styles.container, { backgroundColor: C.bg }]}>
-      
+
       {/* Header strip */}
       <View style={[styles.headerStrip, { backgroundColor: C.white, borderBottomColor: C.redBorder }]}>
         <Text style={[styles.headerTitleText, { color: C.textDark }]}>Settings</Text>
@@ -388,47 +394,47 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateAccountSettin
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
+
         <SectionCard title="Account Settings" icon={<Settings size={11} color="#FFF" />}>
-          <SettingRow 
-            icon={<User {...iconProps} />} 
-            label="Profile Information" 
-            subtitle={profile?.name || profile?.email} 
+          <SettingRow
+            icon={<User {...iconProps} />}
+            label="Profile Information"
+            subtitle={profile?.name || profile?.email}
             onClick={onNavigateAccountSettings}
           />
-          <SettingRow 
-            icon={<Lock {...iconProps} />} 
-            label="Change Password" 
+          <SettingRow
+            icon={<Lock {...iconProps} />}
+            label="Change Password"
             onClick={onNavigateAccountSettings}
           />
           <SettingRow icon={<LogOut {...iconProps} />} label="Sign Out" onClick={handleSignOut} />
         </SectionCard>
 
         <SectionCard title="Health Settings" icon={<Heart size={11} color="#FFF" />}>
-          <SettingRow 
-            icon={<Syringe {...iconProps} />} 
-            label="Diabetes Type" 
-            value={profile?.diabetesType || "Type 2"} 
-            onClick={() => setDiabetesPopup(true)} 
+          <SettingRow
+            icon={<Syringe {...iconProps} />}
+            label="Diabetes Type"
+            value={profile?.diabetesType || "Type 2"}
+            onClick={() => setDiabetesPopup(true)}
           />
-          <SettingRow 
-            icon={<Target {...iconProps} />} 
-            label="Target Glucose Range" 
-            value={`${targetMin}–${targetMax} mg/dL`} 
-            onClick={() => setRangePopup(true)} 
+          <SettingRow
+            icon={<Target {...iconProps} />}
+            label="Target Glucose Range"
+            value={`${targetMin}–${targetMax} mg/dL`}
+            onClick={() => setRangePopup(true)}
           />
-          <SettingRow 
-            icon={<Ruler {...iconProps} />} 
-            label="Units" 
-            value={profile?.glucoseUnit || "mg/dL"} 
-            onClick={() => setUnitsPopup(true)} 
+          <SettingRow
+            icon={<Ruler {...iconProps} />}
+            label="Units"
+            value={profile?.glucoseUnit || "mg/dL"}
+            onClick={() => setUnitsPopup(true)}
           />
           {(profile?.age !== undefined || profile?.weight !== undefined || profile?.height !== undefined || profile?.sex !== undefined) && (
-            <SettingRow 
-              icon={<User {...iconProps} />} 
-              label="Demographics" 
+            <SettingRow
+              icon={<User {...iconProps} />}
+              label="Demographics"
               value={`${profile.sex ? profile.sex.charAt(0).toUpperCase() + profile.sex.slice(1) : ''}${profile.age ? ', ' + profile.age + ' yrs' : ''}${profile.weight ? ', ' + profile.weight + ' kg' : ''}${profile.height ? ', ' + profile.height + ' cm' : ''}`.replace(/^,\s*/, '')}
-              onClick={onNavigateAccountSettings} 
+              onClick={onNavigateAccountSettings}
             />
           )}
         </SectionCard>
@@ -444,7 +450,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateAccountSettin
             icon={<Bell {...iconProps} />}
             label="Glucose Alerts"
             subtitle="Alert when out of range"
-            toggle 
+            toggle
             toggleValue={glucoseAlerts}
             onToggle={() => setGlucoseAlerts(!glucoseAlerts)}
           />
@@ -452,7 +458,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateAccountSettin
             icon={<AlertTriangle {...iconProps} />}
             label="Hypoglycemia Alerts"
             subtitle="Critical low warnings"
-            toggle 
+            toggle
             toggleValue={hypoAlerts}
             onToggle={() => setHypoAlerts(!hypoAlerts)}
           />
@@ -460,9 +466,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateAccountSettin
             icon={<Clock {...iconProps} />}
             label="Reminders"
             subtitle="Measurement reminders"
-            toggle 
+            toggle
             toggleValue={reminders}
             onToggle={() => setReminders(!reminders)}
+            onClick={onNavigateReminders}
           />
         </SectionCard>
 
@@ -476,27 +483,43 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateAccountSettin
           <SettingRow
             icon={<Wallet {...iconProps} />}
             label="Current Plan"
-            subtitle="Premium Plan · $4.99/month"
-            badge={{ label: "Active", color: "#16A34A", bg: isDark ? "#132A1B" : "#DCFCE7" }}
+            subtitle={profile?.isPremium ? "Premium Plan · Monthly" : "Basic Free Plan"}
+            badge={profile?.isPremium
+              ? { label: "Active", color: "#16A34A", bg: isDark ? "#132A1B" : "#DCFCE7" }
+              : { label: "Upgrade", color: C.red, bg: C.redBg }
+            }
+            onClick={!profile?.isPremium ? () => onNavigatePayment?.('premium') : undefined}
           />
-          <SettingRow
-            icon={<ArrowUpDown {...iconProps} />}
-            label="Change Plan"
-            subtitle="Upgrade or downgrade your subscription"
-            onClick={() => setPlanPopup(true)}
-          />
-          <SettingRow
-            icon={<Receipt {...iconProps} />}
-            label="Payment History"
-            subtitle="View your past transactions"
-            onClick={() => setHistoryPopup(true)}
-          />
-          <SettingRow
-            icon={<CreditCard {...iconProps} />}
-            label="Billing Method"
-            subtitle="Visa **** 4242"
-            onClick={() => setBillingPopup(true)}
-          />
+          {!profile?.isPremium && (
+            <SettingRow
+              icon={<ArrowUpDown {...iconProps} />}
+              label="Upgrade to Premium"
+              subtitle="Get AI Insights & Meal Scanner"
+              onClick={() => onNavigatePayment?.('premium')}
+            />
+          )}
+          {profile?.isPremium && (
+            <>
+              <SettingRow
+                icon={<ArrowUpDown {...iconProps} />}
+                label="Change Plan"
+                subtitle="Upgrade or downgrade your subscription"
+                onClick={() => setPlanPopup(true)}
+              />
+              <SettingRow
+                icon={<Receipt {...iconProps} />}
+                label="Payment History"
+                subtitle="View your past transactions"
+                onClick={() => setHistoryPopup(true)}
+              />
+              <SettingRow
+                icon={<CreditCard {...iconProps} />}
+                label="Billing Method"
+                subtitle="Visa **** 4242"
+                onClick={() => setBillingPopup(true)}
+              />
+            </>
+          )}
         </SectionCard>
 
         <SectionCard title="Legal & Support" icon={<Shield size={11} color="#FFF" />}>
@@ -641,6 +664,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigateAccountSettin
             onSelect={() => {
               setSelectedPlanId(p.id);
               setPlanPopup(false);
+              if (onNavigatePayment) {
+                onNavigatePayment(p.id);
+              }
             }}
             icon={p.icon}
           />

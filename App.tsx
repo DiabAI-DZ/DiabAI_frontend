@@ -8,6 +8,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import MainNavigation from './src/screens/MainNavigation';
 
 export default function App() {
+  React.useEffect(() => {
+    // Notifications temporarily disabled for stability
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

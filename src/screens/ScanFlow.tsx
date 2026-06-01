@@ -19,7 +19,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
 import { useUser } from '../context/UserContext';
-import { X, Camera as CameraIcon, Zap, RotateCcw, Check, ChevronRight, AlertCircle, Plus, Image as ImageIcon, FileText, Flame, TrendingUp } from 'lucide-react-native';
+import { X, Camera as CameraIcon, Zap, RotateCcw, Check, ChevronRight, AlertCircle, Plus, Image as ImageIcon, FileText, Flame, TrendingUp, AlertTriangle } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { ScrollView } from 'react-native-gesture-handler';
@@ -671,7 +671,15 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
 
             {/* Header row: title + top-right checkmark shortcut */}
             <View style={styles.headerTop}>
-              <Text style={[styles.sheetTitle, { color: C.text }]}>Confirm Meal</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sheetTitle, { color: C.text }]}>Confirm Meal</Text>
+                {scanResult?.is_mock && (
+                  <View style={[styles.inlineMockBadge, { backgroundColor: C.amberBg, borderColor: C.amberBorder }]}>
+                    <AlertTriangle size={10} color={C.amber} />
+                    <Text style={[styles.inlineMockText, { color: C.amber }]}>SIMULATED RESULT</Text>
+                  </View>
+                )}
+              </View>
               <TouchableOpacity
                 onPress={() => handleSave()}
                 disabled={!canSaveEdit}
@@ -904,7 +912,15 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
 
             {/* Header row: title + top-right checkmark shortcut */}
             <View style={styles.headerTop}>
-              <Text style={[styles.sheetTitle, { color: C.text }]}>Confirm Measurement</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sheetTitle, { color: C.text }]}>Confirm Measurement</Text>
+                {scanResult?.is_mock && (
+                  <View style={[styles.inlineMockBadge, { backgroundColor: C.amberBg, borderColor: C.amberBorder }]}>
+                    <AlertTriangle size={10} color={C.amber} />
+                    <Text style={[styles.inlineMockText, { color: C.amber }]}>SIMULATED RESULT</Text>
+                  </View>
+                )}
+              </View>
               <TouchableOpacity
                 onPress={handleSave}
                 style={[styles.headerCheckBtn, { backgroundColor: C.red, borderColor: C.red }]}
@@ -1621,6 +1637,22 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  inlineMockBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    marginTop: 2,
+    gap: 4,
+  },
+  inlineMockText: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.3,
   },
 });
 

@@ -156,6 +156,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
   const [detectedPatterns, setDetectedPatterns] = useState<any[]>([]);
   const [recList, setRecList] = useState<any[]>([]);
   const [insulinEstimate, setInsulinEstimate] = useState<any>(null);
+  const [isMockData, setIsMockData] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const dayScrollRef = useRef<ScrollView>(null);
 
@@ -164,7 +165,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
     try {
       const today = new Date();
       today.setHours(23, 59, 59, 999);
-      
+
       const startDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
       startDate.setHours(0, 0, 0, 0);
 
@@ -188,6 +189,9 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
         apiService.fetchPredictions(dateFrom, dateTo, selDateStr).catch(e => { console.warn(e); return null; }),
         apiService.fetchInsulinEstimate(dateFrom, dateTo, selDateStr).catch(e => { console.warn(e); return null; }),
       ]);
+
+      const mockDetected = !!(recsResult?.is_mock || patternsResult?.is_mock || predsResult?.is_mock || insulinResult?.is_mock);
+      setIsMockData(mockDetected);
 
       if (recsResult?.calendar?.days) {
         setCalendarDays(recsResult.calendar.days);
@@ -229,17 +233,17 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
         setRecList(recsResult.recommendations);
       } else {
         const dynamicRecs: any[] = [];
-        if (count === 0) {
-          dynamicRecs.push({ id: 1, icon: 'clock', title: 'Log your readings', description: `Log at least 3 blood glucose readings for ${clampedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} to unlock daily recommendations.`, priority: 'high', priority_label: 'High', category: 'timing' });
-        } else if (avg > maxGoal) {
-          dynamicRecs.push({ id: 1, icon: 'meal', title: 'Reduce lunch carb portions', description: `Your average of ${avg} mg/dL is above your max target. Try exchanging white rice/pasta for leafy greens or quinoa.`, priority: 'high', priority_label: 'High', category: 'diet' });
-          dynamicRecs.push({ id: 2, icon: 'activity', title: 'Take a 15-minute post-dinner walk', description: 'Light activity after your evening meal can lower your nighttime peak by up to 25 mg/dL.', priority: 'suggested', priority_label: 'Suggested', category: 'activity' });
-        } else {
-          dynamicRecs.push({ id: 1, icon: 'meal', title: 'Maintain balanced macro ratios', description: `Great job maintaining an average of ${avg} mg/dL on this day! Continue focusing on high-fiber carbs.`, priority: 'medium', priority_label: 'Medium', category: 'diet' });
-          dynamicRecs.push({ id: 2, icon: 'snack', title: 'Keep protein snacks handy', description: 'A small snack like almonds or Greek yogurt before 4 PM can stabilize energy levels.', priority: 'suggested', priority_label: 'Suggested', category: 'diet' });
-        }
-        dynamicRecs.push({ id: 4, icon: 'clock', title: 'Consistent meal scheduling', description: 'Try to eat meals within the same 45-minute window daily to improve glycemic predictability.', priority: 'suggested', priority_label: 'Suggested', category: 'timing' });
+        dynamicRecs.push({
+          id: 1,
+          icon: 'clock',
+          title: '[OFFLINE] Connect Services',
+          description: 'MOCK RECOMMENDATION: Connect to a model to see personalized advice. Current status: Service Offline.',
+          priority: 'high',
+          priority_label: 'Mock',
+          category: 'timing'
+        });
         setRecList(dynamicRecs);
+        setIsMockData(true);
       }
 
       // ── PATTERNS ─────────────────────────────────────────────────────────
@@ -248,21 +252,17 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
         setAnomalyList(patternsResult.patterns.filter((p: any) => p.trend === 'rising' || p.priority === 'high'));
       } else {
         const dynamicPatterns: any[] = [];
-        if (count === 0) {
-          dynamicPatterns.push({ id: 1, icon: 'clock', title: 'Fasting log missing', description: `Log a morning reading on ${clampedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} to let DiabAI analyze your dawn phenomenon pattern.`, confidence: 85, trend: 'stable', priority: 'low' });
-        } else if (avg > maxGoal) {
-          dynamicPatterns.push({ id: 1, icon: 'meal', title: 'Post-meal glucose spike', description: `Your average glucose on this day was elevated at ${avg} mg/dL. Try checking post-lunch carb portion sizes.`, confidence: 92, trend: 'rising', priority: 'high' });
-        } else {
-          dynamicPatterns.push({ id: 2, icon: 'sun', title: 'Stable target control', description: `Excellent stability on this day with average ${avg} mg/dL within target limits.`, confidence: 95, trend: 'stable', priority: 'low' });
-        }
-        const dayOfWeek = clampedDate.getDay();
-        if (dayOfWeek === 0 || dayOfWeek === 6) {
-          dynamicPatterns.push({ id: 3, icon: 'moon', title: 'Weekend routine shift', description: 'Slight variance in sleeping and eating schedules correlates with a 12% rise in glycemic variability.', confidence: 88, trend: 'rising', priority: 'medium' });
-        } else {
-          dynamicPatterns.push({ id: 4, icon: 'clock', title: 'Late dinner elevation', description: 'Eating after 8:30 PM correlates with a 15 mg/dL higher fasting reading the next morning.', confidence: 84, trend: 'rising', priority: 'medium' });
-        }
+        dynamicPatterns.push({
+          id: 1,
+          icon: 'alert',
+          title: '[OFFLINE] Pattern Search',
+          description: 'MOCK PATTERN: Unable to analyze logged data without active AI connection.',
+          confidence: 0,
+          trend: 'stable',
+          priority: 'low'
+        });
         setDetectedPatterns(dynamicPatterns);
-        setAnomalyList(dynamicPatterns.filter((p: any) => p.trend === 'rising' || p.priority === 'high'));
+        setAnomalyList(dynamicPatterns);
       }
 
       // ── PREDICTIONS ──────────────────────────────────────────────────────
@@ -271,19 +271,14 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
       } else if (predsResult?.prediction) {
         setPredictions([predsResult.prediction]);
       } else {
-        let expectedMgDl = 135;
-        let predStatus = 'in_target';
-        let predStatusLabel = 'In target';
-        let expectedAt = '19:00';
-        if (count > 0) {
-          const variance = (clampedDate.getDay() * 6) - 18;
-          expectedMgDl = Math.round(avg * 0.95 + variance + 15);
-          expectedMgDl = Math.max(65, Math.min(240, expectedMgDl));
-          predStatus = expectedMgDl < minGoal ? 'below_target' : (expectedMgDl > maxGoal ? 'above_target' : 'in_target');
-          predStatusLabel = expectedMgDl < minGoal ? 'Below target' : (expectedMgDl > maxGoal ? 'Above target' : 'In target');
-          expectedAt = '20:00';
-        }
-        setPredictions([{ expected_at: expectedAt, expected_mg_dl: expectedMgDl, status: predStatus, status_label: predStatusLabel === 'In target' ? 'normal' : predStatusLabel.toLowerCase(), confidence: 88, ai_powered: true }]);
+        setPredictions([{
+          expected_at: '00:00',
+          expected_mg_dl: 0,
+          status: 'offline',
+          status_label: '[OFFLINE]',
+          confidence: 0,
+          ai_powered: false
+        }]);
       }
 
       // ── INSULIN ESTIMATE ─────────────────────────────────────────────────
@@ -295,18 +290,14 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
           setCalendarDays(insulinResult.calendar.days);
         }
       } else {
-        let estimatedUnits = 4;
-        let insulinBasis = 'Standard base dose estimation applied. Log your glucose measurements to get personalized estimates.';
-        let currentMgDl: number | null = null;
-        if (count > 0) {
-          currentMgDl = avg;
-          if (avg < 70)        { estimatedUnits = 0; insulinBasis = `Your average glucose is low (${avg} mg/dL). No insulin is recommended. Take 15g of fast-acting carbohydrates.`; }
-          else if (avg < 100)  { estimatedUnits = 2; insulinBasis = `Your average glucose is in range (${avg} mg/dL). A minimal baseline dose is suggested for your next meal.`; }
-          else if (avg < 140)  { estimatedUnits = 4; insulinBasis = `Your average glucose is optimal (${avg} mg/dL). Standard mealtime insulin estimation applied.`; }
-          else if (avg < 180)  { estimatedUnits = 6; insulinBasis = `Your average glucose is elevated (${avg} mg/dL). Suggested dose includes correction insulin to bring you back to target.`; }
-          else                 { estimatedUnits = 8; insulinBasis = `Your average glucose is high (${avg} mg/dL). Correction dose of 8 units is recommended to prevent hyperglycemia.`; }
-        }
-        setInsulinEstimate({ units: estimatedUnits, current_mg_dl: currentMgDl, target_mg_dl: minGoal, basis: insulinBasis, disclaimer: 'For informational purposes only. This is not medical advice. Always consult your healthcare provider before adjusting insulin dosage.', ai_powered: true });
+        setInsulinEstimate({
+          units: 0,
+          current_mg_dl: 0,
+          target_mg_dl: 0,
+          basis: '[OFFLINE] MOCK ESTIMATE: Service unavailable.',
+          disclaimer: 'CRITICAL: Connect to AI services to enable real estimation.',
+          ai_powered: false
+        });
       }
     } catch (error) {
       console.error("[AIInsights] Failed to fetch backend insights:", error);
@@ -379,10 +370,10 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
       "Are you sure you want to reset the conversation?",
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Clear", 
-          style: "destructive", 
-          onPress: () => setMessages([initialMessage]) 
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: () => setMessages([initialMessage])
         }
       ]
     );
@@ -391,30 +382,30 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
   // --- DERIVED METRICS FOR SELECTED DAY ---
   const selectedDayStats = useMemo(() => {
     const selectedDateStr = formatDateStr(selectedDate);
-    const dayLogs = logs.filter((l): l is MeasurementEntry => 
-      l.type === 'measurement' && 
+    const dayLogs = logs.filter((l): l is MeasurementEntry =>
+      l.type === 'measurement' &&
       formatDateStr(new Date(l.date)) === selectedDateStr
     );
-    
+
     const minGoal = profile?.goals?.min || 70;
     const maxGoal = profile?.goals?.max || 140;
-    
+
     if (dayLogs.length === 0) {
       return { avg: 120, inRangePercent: 75, stability: 75, lowPercent: 10, normalPercent: 75, highPercent: 15, count: 0 };
     }
-    
+
     const values = dayLogs.map(l => l.value);
     const sum = values.reduce((a, b) => a + b, 0);
     const avg = Math.round(sum / values.length);
-    
+
     const lowCount = dayLogs.filter(l => l.value < minGoal).length;
     const normalCount = dayLogs.filter(l => l.value >= minGoal && l.value <= maxGoal).length;
     const highCount = dayLogs.filter(l => l.value > maxGoal).length;
-    
+
     const lowPercent = Math.round((lowCount / values.length) * 100);
     const normalPercent = Math.round((normalCount / values.length) * 100);
     const highPercent = 100 - lowPercent - normalPercent;
-    
+
     return {
       avg,
       inRangePercent: normalPercent,
@@ -435,15 +426,15 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
       const d = new Date(selectedDate);
       d.setDate(selectedDate.getDate() - i);
       const dateStr = formatDateStr(d);
-      
-      const dayLogs = logs.filter((l): l is MeasurementEntry => 
-        l.type === 'measurement' && 
+
+      const dayLogs = logs.filter((l): l is MeasurementEntry =>
+        l.type === 'measurement' &&
         formatDateStr(new Date(l.date)) === dateStr
       );
-      
+
       const sum = dayLogs.reduce((acc, curr) => acc + (curr.value || 0), 0);
       const avg = dayLogs.length > 0 ? Math.round(sum / dayLogs.length) : null;
-      
+
       points.push({
         date: dateStr,
         label: d.toLocaleDateString('en-US', { weekday: 'narrow' }), // "M", "T" etc
@@ -465,15 +456,15 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
         value: 120 + Math.sin(index * 1.2) * 15,
       }));
     }
-    
+
     const data = [...weeklyTrendData];
     let lastRealVal = 120;
-    
+
     const firstReal = data.find(d => d.real);
     if (firstReal && firstReal.value !== null) {
       lastRealVal = firstReal.value;
     }
-    
+
     for (let i = 0; i < data.length; i++) {
       if (data[i].value === null) {
         let nextRealIndex = -1;
@@ -483,7 +474,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
             break;
           }
         }
-        
+
         if (nextRealIndex !== -1 && data[nextRealIndex].value !== null) {
           const nextRealVal = data[nextRealIndex].value!;
           const steps = nextRealIndex - (i - 1);
@@ -503,28 +494,28 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
     const startDate = new Date(selectedDate);
     startDate.setDate(selectedDate.getDate() - 6);
     startDate.setHours(0, 0, 0, 0);
-    
+
     const endDate = new Date(selectedDate);
     endDate.setHours(23, 59, 59, 999);
-    
+
     const past7DaysLogs = logs.filter(l => {
       const logDate = new Date(l.date);
       return l.type === 'measurement' && logDate >= startDate && logDate <= endDate;
     }) as any[];
-    
+
     if (past7DaysLogs.length === 0) {
       return { lowest: 0, highest: 0, readings: 0, stdDev: 0 };
     }
-    
+
     const values = past7DaysLogs.map(l => l.value);
     const lowest = Math.min(...values);
     const highest = Math.max(...values);
     const readings = values.length;
-    
+
     const mean = values.reduce((a, b) => a + b, 0) / readings;
     const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / readings;
     const stdDev = Math.round(Math.sqrt(variance) * 10) / 10;
-    
+
     return { lowest, highest, readings, stdDev };
   }, [logs, selectedDate]);
 
@@ -582,11 +573,11 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
 
   const mealImpactData = useMemo(() => {
     const selectedDateStr = formatDateStr(selectedDate);
-    const mealLogs = logs.filter(l => 
-      l.type === 'meal' && 
+    const mealLogs = logs.filter(l =>
+      l.type === 'meal' &&
       formatDateStr(new Date(l.date)) === selectedDateStr
     ).slice(0, 4);
-    
+
     if (mealLogs.length === 0) return [];
     return mealLogs.map((m: any) => ({
       meal: m.name,
@@ -685,6 +676,12 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
           <Text style={[styles.headerTitleText, { color: C.text }]}>AI Insights ✨</Text>
           <Text style={[styles.headerSubText, { color: C.textSm }]}>Personalized advice by Gemini</Text>
         </View>
+        {isMockData && (
+          <View style={[styles.mockBadge, { backgroundColor: C.amberBg, borderColor: C.amberBorder }]}>
+            <AlertTriangle size={12} color={C.amber} />
+            <Text style={[styles.mockBadgeText, { color: C.amber }]}>DEMO DATA</Text>
+          </View>
+        )}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {activeSegment === 'chat' && (
             <TouchableOpacity onPress={clearChat} style={[styles.clearBtn, { backgroundColor: C.redBg }]}>
@@ -762,7 +759,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
 
       {activeSegment === 'dashboard' ? (
         <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
+
           {/* Card 1: Glucose Control Summary */}
           <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder }]}>
             <LinearGradient colors={[C.red, C.redDark]} style={styles.cardHeaderStrip}>
@@ -1260,11 +1257,23 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   clearBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: 'center',
+    padding: 8,
+    borderRadius: 12,
+  },
+  mockBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginRight: 8,
+    gap: 4,
+  },
+  mockBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   headerDateText: {
     fontSize: 11,

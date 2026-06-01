@@ -80,6 +80,7 @@ interface AccountSettingsScreenProps {
         }
       });
       setSaved(true);
+      Alert.alert("Success", "Account settings updated successfully.");
       setTimeout(() => setSaved(false), 2000);
     } catch (e: any) {
       setSaveError(e.message || 'Failed to save settings');

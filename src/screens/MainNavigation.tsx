@@ -9,21 +9,25 @@ import GlucoVisionHome from './GlucoVisionHome';
 import AlertsScreen from './AlertsScreen';
 import DetailScreen from './DetailScreen';
 import AccountSettingsScreen from './AccountSettingsScreen';
+import PaymentScreen, { PLANS } from './PaymentScreen';
+import RemindersScreen from './RemindersScreen';
 import { useUser } from '../context/UserContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
-type Screen = 
-  | 'splash' 
-  | 'onboarding' 
-  | 'signIn' 
-  | 'signUp' 
-  | 'forgotPassword' 
-  | 'resetPassword' 
-  | 'home' 
-  | 'alerts' 
+type Screen =
+  | 'splash'
+  | 'onboarding'
+  | 'signIn'
+  | 'signUp'
+  | 'forgotPassword'
+  | 'resetPassword'
+  | 'home'
+  | 'alerts'
   | 'detail'
-  | 'accountSettings';
+  | 'accountSettings'
+  | 'reminders'
+  | 'payment';
 
 const MainNavigation: React.FC = () => {
   const { profile } = useUser();
@@ -31,6 +35,7 @@ const MainNavigation: React.FC = () => {
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
   const [resetEmail, setResetEmail] = useState('');
   const [detailEntry, setDetailEntry] = useState<any>(null);
+  const [paymentPlan, setPaymentPlan] = useState<any>(null);
 
   const navigateToDetail = (entry: any) => {
     setDetailEntry(entry);
@@ -40,6 +45,7 @@ const MainNavigation: React.FC = () => {
   const goBack = () => {
     setCurrentScreen('home');
     setDetailEntry(null);
+    setPaymentPlan(null);
   };
 
   // Load onboarding state
@@ -60,7 +66,7 @@ const MainNavigation: React.FC = () => {
 
     if (currentScreen === 'splash' && hasSeenOnboarding) {
       // Skip onboarding if already seen
-      // We still wait for splash to "complete" via its own callback, 
+      // We still wait for splash to "complete" via its own callback,
       // but we handle the destination here.
     }
 
@@ -105,7 +111,7 @@ const MainNavigation: React.FC = () => {
         return <OnboardingFlow onComplete={handleOnboardingComplete} />;
       case 'signIn':
         return (
-          <SignInScreen 
+          <SignInScreen
             onNavigateToSignUp={() => setCurrentScreen('signUp')}
             onNavigateToForgotPassword={() => setCurrentScreen('forgotPassword')}
             onSuccess={() => setCurrentScreen('home')}
@@ -113,14 +119,14 @@ const MainNavigation: React.FC = () => {
         );
       case 'signUp':
         return (
-          <SignUpScreen 
+          <SignUpScreen
             onNavigateToSignIn={() => setCurrentScreen('signIn')}
             onSuccess={() => setCurrentScreen('signIn')}
           />
         );
       case 'forgotPassword':
         return (
-          <ForgotPasswordScreen 
+          <ForgotPasswordScreen
             onNavigateToSignIn={() => setCurrentScreen('signIn')}
             onOtpSent={(email) => {
               setResetEmail(email);
@@ -130,26 +136,47 @@ const MainNavigation: React.FC = () => {
         );
       case 'resetPassword':
         return (
-          <ResetPasswordScreen 
+          <ResetPasswordScreen
             email={resetEmail}
             onSuccess={() => setCurrentScreen('signIn')}
             onBack={() => setCurrentScreen('signIn')}
           />
         );
+      case 'accountSettings':
+        return <AccountSettingsScreen onBack={() => setCurrentScreen('home')} />;
       case 'home':
         return (
-          <GlucoVisionHome 
-            onNavigateAlerts={() => setCurrentScreen('alerts')} 
+          <GlucoVisionHome
+            onNavigateAlerts={() => setCurrentScreen('alerts')}
             onNavigateDetail={navigateToDetail}
             onNavigateAccountSettings={() => setCurrentScreen('accountSettings')}
+            onNavigatePayment={(planId: string) => {
+              const plan = PLANS.find(p => p.id === planId) || PLANS[1]; // default to premium
+              setPaymentPlan(plan);
+              setCurrentScreen('payment');
+            }}
+            onNavigateReminders={() => setCurrentScreen('reminders')}
           />
         );
+      case 'reminders':
+        return <RemindersScreen onBack={() => setCurrentScreen('home')} />;
       case 'accountSettings':
         return <AccountSettingsScreen onBack={() => setCurrentScreen('home')} />;
       case 'alerts':
         return <AlertsScreen onBack={() => setCurrentScreen('home')} />;
       case 'detail':
         return <DetailScreen entry={detailEntry} onBack={goBack} />;
+      case 'payment':
+        return paymentPlan ? (
+          <PaymentScreen
+            plan={paymentPlan}
+            onBack={goBack}
+            onSuccess={() => {
+              // Update local profile if needed, but PaymentScreen.tsx seems to handle success UI
+              // We could potentially trigger a profile reload here
+            }}
+          />
+        ) : <SplashScreen onComplete={handleSplashComplete} />;
       default:
         return <SplashScreen onComplete={handleSplashComplete} />;
     }

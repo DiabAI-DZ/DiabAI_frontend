@@ -246,7 +246,8 @@ const SuccessScreen: React.FC<{ plan: typeof PLANS[0]; onDone: () => void }> = (
   );
 };
 
-/* ─── Main PaymentScreen Component ─── */
+import { useUser } from '../context/UserContext';
+
 export interface PaymentScreenProps {
   plan: typeof PLANS[0];
   onBack: () => void;
@@ -255,6 +256,7 @@ export interface PaymentScreenProps {
 
 const PaymentScreen: React.FC<PaymentScreenProps> = ({ plan, onBack, onSuccess }) => {
   const { C } = useTheme();
+  const { upgradeToPremium } = useUser();
   const [cardNumber, setCardNumber] = useState("");
   const [cardName, setCardName] = useState("");
   const [expiry, setExpiry] = useState("");
@@ -316,10 +318,26 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ plan, onBack, onSuccess }
     return errs;
   };
 
-  const handlePay = () => {
+  const handlePay = async () => {
+    // Map frontend plan IDs to backend plan names
+    const planMap: Record<string, string> = {
+      'free': 'free',
+      'premium': 'premium_monthly',
+      'annual': 'premium_annual',
+    };
+    const backendPlan = planMap[plan.id] || 'premium_monthly';
+
     if (plan.amount === 0) {
       setIsProcessing(true);
-      setTimeout(() => { setIsProcessing(false); setPaid(true); }, 900);
+      try {
+        await upgradeToPremium('free');
+        setPaid(true);
+      } catch (err: any) {
+        console.error("Payment failed:", err);
+        setErrors({ general: err.message || "Failed to activate plan. Please try again." });
+      } finally {
+        setIsProcessing(false);
+      }
       return;
     }
     const errs = validate();
@@ -328,7 +346,16 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ plan, onBack, onSuccess }
       return;
     }
     setIsProcessing(true);
-    setTimeout(() => { setIsProcessing(false); setPaid(true); }, 2200);
+    try {
+      // Real backend call via UserContext with mapped plan
+      await upgradeToPremium(backendPlan);
+      setPaid(true);
+    } catch (err: any) {
+      console.error("Payment failed:", err);
+      setErrors({ general: err.message || "Payment failed. Please check your credentials." });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDone = () => {

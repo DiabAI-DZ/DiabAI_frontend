@@ -1,7 +1,7 @@
-import { 
-  LogEntry, AlertItem, UserProfile, GlucoseStatus, GlucoseTrend, 
-  ImpactLevel, MeasurementEntry, MealEntry, InsulinInjectionEntry, 
-  ActivityEntry, HomeData 
+import {
+  LogEntry, AlertItem, UserProfile, GlucoseStatus, GlucoseTrend,
+  ImpactLevel, MeasurementEntry, MealEntry, InsulinInjectionEntry,
+  ActivityEntry, HomeData
 } from './types';
 import { authApi } from './authApi';
 import { Platform } from 'react-native';
@@ -143,7 +143,7 @@ export const apiService = {
       const response = await authenticatedFetch('/api/logbook?per_page=50');
       const result = await response.json();
       console.log(`[API] Logbook response:`, JSON.stringify(result?.meta), `entries: ${result?.data?.length}`);
-      
+
       if (!result || !Array.isArray(result.data)) {
         console.warn('[API] Logbook returned unexpected shape:', result);
         return [];
@@ -471,7 +471,7 @@ export const apiService = {
     params.append('date_from', dateFrom || today);
     params.append('date_to', dateTo || today);
     if (selectedDate) params.append('selected_date', selectedDate);
-    
+
     console.log(`[API] Fetching recommendations`);
     const response = await authenticatedFetch(`/api/insights/recommendations?${params.toString()}`);
     const result = await response.json();
@@ -542,10 +542,10 @@ export const apiService = {
     console.log(`[API] Fetching settings from ${authApi.baseUrl}/api/settings`);
     const response = await authenticatedFetch('/api/settings');
     const settings = await response.json();
-    
+
     const p = settings.profile || {};
     const h = settings.health || {};
-    
+
     return {
       name: p.name || '',
       email: p.email || '',
@@ -569,16 +569,24 @@ export const apiService = {
     console.log(`[API] Updating profile`, updates);
     const profileUpdates: any = {};
     const healthUpdates: any = {};
-    
+
     if (updates.name !== undefined) profileUpdates.name = updates.name;
     if (updates.email !== undefined) profileUpdates.email = updates.email;
     if (updates.phone_number !== undefined) profileUpdates.phone_number = updates.phone_number;
     if (updates.address !== undefined) profileUpdates.address = updates.address;
-    if (updates.weight !== undefined) profileUpdates.weight = updates.weight !== null ? parseFloat(updates.weight as any) : null;
-    if (updates.height !== undefined) profileUpdates.height = updates.height !== null ? parseInt(updates.height as any) : null;
-    if (updates.age !== undefined) profileUpdates.age = updates.age !== null ? parseInt(updates.age as any) : null;
+
+    // Explicit casting for demographics to ensure backend compatibility
+    if (updates.weight !== undefined) {
+      profileUpdates.weight = updates.weight !== null ? parseFloat(String(updates.weight)) : null;
+    }
+    if (updates.height !== undefined) {
+      profileUpdates.height = updates.height !== null ? parseInt(String(updates.height), 10) : null;
+    }
+    if (updates.age !== undefined) {
+      profileUpdates.age = updates.age !== null ? parseInt(String(updates.age), 10) : null;
+    }
     if (updates.sex !== undefined) profileUpdates.sex = updates.sex || null;
-    
+
     if (updates.diabetesType !== undefined) {
       healthUpdates.diabetes_type = unmapDiabetesType(updates.diabetesType);
     }
@@ -589,22 +597,28 @@ export const apiService = {
       if (updates.goals.min !== undefined) healthUpdates.glucose_target_min = updates.goals.min;
       if (updates.goals.max !== undefined) healthUpdates.glucose_target_max = updates.goals.max;
     }
-    
+
     try {
       if (Object.keys(profileUpdates).length > 0) {
-        await authenticatedFetch('/api/profile', {
+        console.log(`[API] sending profileUpdates to /api/profile:`, JSON.stringify(profileUpdates));
+        const pResponse = await authenticatedFetch('/api/profile', {
           method: 'PATCH',
           body: JSON.stringify(profileUpdates)
         });
+        const pResult = await pResponse.json();
+        console.log(`[API] /api/profile response:`, JSON.stringify(pResult));
       }
-      
+
       if (Object.keys(healthUpdates).length > 0) {
-        await authenticatedFetch('/api/settings/health', {
+        console.log(`[API] sending healthUpdates to /api/settings/health:`, JSON.stringify(healthUpdates));
+        const hResponse = await authenticatedFetch('/api/settings/health', {
           method: 'PATCH',
           body: JSON.stringify(healthUpdates)
         });
+        const hResult = await hResponse.json();
+        console.log(`[API] /api/settings/health response:`, JSON.stringify(hResult));
       }
-      
+
       return await this.fetchProfile();
     } catch (error) {
       console.error("updateProfile failed:", error);
@@ -612,13 +626,46 @@ export const apiService = {
     }
   },
 
-  async upgradeAccount(): Promise<UserProfile> {
-    console.log(`[API] Upgrading account to premium`);
+  async upgradeAccount(planId: string = 'premium_monthly', stripePaymentMethodId?: string): Promise<UserProfile> {
+    console.log(`[API] Upgrading account to plan: ${planId}`);
     try {
-      await authenticatedFetch('/api/subscription/change-plan', {
-        method: 'POST',
-        body: JSON.stringify({ plan: 'premium_monthly' })
-      });
+      // Step 1: Check if user already has a subscription we can change
+      let currentSub: any = null;
+      try {
+        const subResponse = await authenticatedFetch('/api/subscription', { method: 'GET' });
+        currentSub = await subResponse.json();
+        console.log(`[API] Current subscription state:`, JSON.stringify(currentSub));
+      } catch (e) {
+        console.log(`[API] No existing subscription found, will create new one`);
+      }
+
+      const hasActiveStripeSub = currentSub?.data?.stripe_subscription_id &&
+                                  currentSub?.data?.status !== 'inactive';
+
+      if (hasActiveStripeSub) {
+        // User already has a Stripe subscription — use change-plan
+        console.log(`[API] User has active Stripe subscription, calling change-plan`);
+        await authenticatedFetch('/api/subscription/change-plan', {
+          method: 'POST',
+          body: JSON.stringify({ plan: planId })
+        });
+      } else if (stripePaymentMethodId) {
+        // New subscription with a payment method from Stripe SDK
+        console.log(`[API] Creating new subscription with payment method`);
+        await authenticatedFetch('/api/subscription/subscribe', {
+          method: 'POST',
+          body: JSON.stringify({ plan: planId, stripe_payment_method_id: stripePaymentMethodId })
+        });
+      } else {
+        // No Stripe payment method available — use subscribe with a test token
+        // This works in Stripe test mode; in production, the Stripe SDK must be used
+        console.log(`[API] Creating new subscription with test payment method`);
+        await authenticatedFetch('/api/subscription/subscribe', {
+          method: 'POST',
+          body: JSON.stringify({ plan: planId, stripe_payment_method_id: 'pm_card_visa' })
+        });
+      }
+
       return await this.fetchProfile();
     } catch (error) {
       console.error("upgradeAccount failed:", error);
@@ -673,13 +720,13 @@ export const apiService = {
 
   async scanMeasurementImage(imageUri: string): Promise<{ detected_value: number; confidence: number; preliminary_health_status: string; image_path: string; detected_unit?: string }> {
     console.log(`[API] Uploading measurement image for scan:`, imageUri);
-    
+
     const formData = new FormData();
     const rawFilename = imageUri.split('/').pop() || 'scan.jpg';
     const filename = /\.(jpg|jpeg|png)$/i.test(rawFilename) ? rawFilename : `${rawFilename}.jpg`;
     const match = /\.(\w+)$/.exec(filename);
     const type = match ? `image/${match[1]}` : `image/jpeg`;
-    
+
     formData.append('image', {
       uri: Platform.OS === 'android' ? imageUri : imageUri.replace('file://', ''),
       name: filename,
@@ -711,13 +758,13 @@ export const apiService = {
     };
   }> {
     console.log(`[API] Uploading meal image for food classification scan:`, imageUri);
-    
+
     const formData = new FormData();
     const rawFilename = imageUri.split('/').pop() || 'scan.jpg';
     const filename = /\.(jpg|jpeg|png)$/i.test(rawFilename) ? rawFilename : `${rawFilename}.jpg`;
     const match = /\.(\w+)$/.exec(filename);
     const type = match ? `image/${match[1]}` : `image/jpeg`;
-    
+
     formData.append('image', {
       uri: Platform.OS === 'android' ? imageUri : imageUri.replace('file://', ''),
       name: filename,

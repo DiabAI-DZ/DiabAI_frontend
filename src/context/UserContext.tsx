@@ -13,7 +13,7 @@ interface UserContextType {
   signUp: (name: string, email: string, password: string) => Promise<void>;
   signOut: () => void;
   refreshProfile: () => Promise<void>;
-  upgradeToPremium: () => Promise<void>;
+  upgradeToPremium: (planId?: string) => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -85,10 +85,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(null);
   };
 
-  const upgradeToPremium = async () => {
+  const upgradeToPremium = async (planId?: string) => {
     setLoading(true);
     try {
-      const updated = await apiService.upgradeAccount();
+      const updated = await apiService.upgradeAccount(planId || 'premium_monthly');
       setProfile(updated);
     } catch (error) {
       console.error("Failed to upgrade account:", error);

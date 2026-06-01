@@ -151,7 +151,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
       unit: userUnit,
       delta: 0,
       trend: 'stable' as const,
-    } : null);
+    } : {
+      id: 'mock',
+      type: 'measurement' as const,
+      value: 0,
+      unit: userUnit,
+      status: 'OFFLINE' as any,
+      time: '--:--',
+      date: new Date().toISOString(),
+      delta: 0,
+      trend: 'stable' as const,
+    });
 
     const sum = measurements.reduce((acc, curr) => acc + convertGlucose(curr.value, userUnit, curr.unit || 'mg/dL'), 0);
     const avgValue = measurements.length > 0 ? (sum / measurements.length) : (latest?.value || 0);
@@ -323,10 +333,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
       .slice(0, 4)
       .map((item: any, index: number) => ({
         id: item.id ?? index + 1,
-        title: item.title,
-        description: item.description || item.body || item.reason || item.impact_label || 'Personalized suggestion based on your recent logs.',
+        title: item.is_mock ? `[MOCK] ${item.title}` : item.title,
+        description: item.is_mock ? `MOCK DATA: ${item.description || 'Service unavailable'}` : (item.description || item.body || item.reason || item.impact_label || 'Personalized suggestion based on your recent logs.'),
         priority: item.priority || item.impact_level || 'suggested',
-        priorityLabel: item.priority_label || item.impact_label || 'Suggested',
+        priorityLabel: item.is_mock ? 'Mock' : (item.priority_label || item.impact_label || 'Suggested'),
       }));
   }, [premiumRecommendations, recommendations]);
 

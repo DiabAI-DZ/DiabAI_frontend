@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useTransition } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, SafeAreaView } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { 
-  Home, ClipboardList, Scan, MessageSquare, Settings as SettingsIcon, 
-  Plus, Utensils, Syringe, Activity, X 
+import {
+  Home, ClipboardList, Scan, MessageSquare, Settings as SettingsIcon,
+  Plus, Utensils, Syringe, Activity, X
 } from 'lucide-react-native';
 import Dashboard from './Dashboard';
 import LogbookScreen from './LogbookScreen';
@@ -13,11 +13,11 @@ import ScanFlow from './ScanFlow';
 import ActionForms from '../components/ActionForms';
 import { BlurView } from 'expo-blur';
 import { useData } from '../context/DataContext';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withSpring, 
-  withTiming, 
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
   interpolate,
   Extrapolate
 } from 'react-native-reanimated';
@@ -39,8 +39,8 @@ interface TabItemProps {
 }
 
 const TabItem = React.memo(({ name, icon: Icon, label, isActive, onPress, activeColor, inactiveColor }: TabItemProps) => (
-  <TouchableOpacity 
-    style={styles.tabItem} 
+  <TouchableOpacity
+    style={styles.tabItem}
     onPress={onPress}
   >
     <Icon size={24} color={isActive ? activeColor : inactiveColor} />
@@ -52,12 +52,16 @@ interface GlucoVisionHomeProps {
   onNavigateAlerts: () => void;
   onNavigateDetail: (entry: any) => void;
   onNavigateAccountSettings: () => void;
+  onNavigatePayment: (planId: string) => void;
+  onNavigateReminders: () => void;
 }
 
-const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({ 
-  onNavigateAlerts, 
+const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
+  onNavigateAlerts,
   onNavigateDetail,
-  onNavigateAccountSettings 
+  onNavigateAccountSettings,
+  onNavigatePayment,
+  onNavigateReminders
 }) => {
   const { C, isDark } = useTheme();
   const { addLog } = useData();
@@ -144,32 +148,36 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
       <View style={styles.content}>
         {/* Render all screens but only show active one - prevents unmount/remount lag */}
         <View style={[styles.screenWrapper, { display: activeTab === 'home' ? 'flex' : 'none' }]}>
-          <MemoizedDashboard 
-            onNavigateAlerts={onNavigateAlerts} 
-            onNavigateDetail={onNavigateDetail} 
+          <MemoizedDashboard
+            onNavigateAlerts={onNavigateAlerts}
+            onNavigateDetail={onNavigateDetail}
             onSeeAllMeasurements={handleSeeAllMeasurements}
             isActive={activeTab === 'home'}
           />
         </View>
-        
+
         <View style={[styles.screenWrapper, { display: activeTab === 'log' ? 'flex' : 'none' }]}>
-          <MemoizedLogbookScreen 
-            onNavigateDetail={onNavigateDetail} 
-            initialTypeFilter={logbookFilter} 
+          <MemoizedLogbookScreen
+            onNavigateDetail={onNavigateDetail}
+            initialTypeFilter={logbookFilter}
           />
         </View>
-        
+
         <View style={[styles.screenWrapper, { display: activeTab === 'ai' ? 'flex' : 'none' }]}>
           <MemoizedAIInsightsScreen onNavigateAlerts={onNavigateAlerts} />
         </View>
-        
+
         <View style={[styles.screenWrapper, { display: activeTab === 'settings' ? 'flex' : 'none' }]}>
-          <MemoizedSettingsScreen onNavigateAccountSettings={onNavigateAccountSettings} />
+          <MemoizedSettingsScreen
+            onNavigateAccountSettings={onNavigateAccountSettings}
+            onNavigatePayment={onNavigatePayment}
+            onNavigateReminders={onNavigateReminders}
+          />
         </View>
       </View>
 
-      <ActionForms 
-        visible={showActionPopup} 
+      <ActionForms
+        visible={showActionPopup}
         onClose={() => setShowActionPopup(false)}
         type={actionType}
         onSave={addLog}
@@ -177,18 +185,18 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
 
       {/* Animated Add Menu */}
       <Animated.View style={[styles.animatedOverlay, overlayStyle]}>
-        <TouchableOpacity 
-          style={StyleSheet.absoluteFill} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
           onPress={toggleMenu}
         >
           <BlurView intensity={isDark ? 40 : 60} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
         </TouchableOpacity>
-        
+
         <Animated.View style={[styles.menuContent, menuStyle]}>
           <View style={styles.menuRow}>
-            <TouchableOpacity 
-              style={styles.menuItem} 
+            <TouchableOpacity
+              style={styles.menuItem}
               onPress={() => handleAddOption('glucose_scan')}
             >
               <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
@@ -196,9 +204,9 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
               </View>
               <Text style={[styles.menuText, { color: C.text }]}>Glucose Scan</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.menuItem} 
+
+            <TouchableOpacity
+              style={styles.menuItem}
               onPress={() => handleAddOption('meal_scan')}
             >
               <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
@@ -209,8 +217,8 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
           </View>
 
           <View style={[styles.menuRow, { marginTop: 20 }]}>
-            <TouchableOpacity 
-              style={styles.menuItem} 
+            <TouchableOpacity
+              style={styles.menuItem}
               onPress={() => handleAddOption('injection')}
             >
               <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
@@ -218,9 +226,9 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
               </View>
               <Text style={[styles.menuText, { color: C.text }]}>Add Injection</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.menuItem} 
+
+            <TouchableOpacity
+              style={styles.menuItem}
               onPress={() => handleAddOption('activity')}
             >
               <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
@@ -231,8 +239,8 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
           </View>
 
           {/* New Central Close Button */}
-          <TouchableOpacity 
-            style={[styles.closeMenuBtn, { backgroundColor: C.red, marginTop: 40 }]} 
+          <TouchableOpacity
+            style={[styles.closeMenuBtn, { backgroundColor: C.red, marginTop: 40 }]}
             onPress={toggleMenu}
             activeOpacity={0.8}
           >
@@ -244,10 +252,10 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
       {/* Camera Flow Overlay */}
       {showScan && (
         <View style={StyleSheet.absoluteFill}>
-          <ScanFlow 
-            mode={scanMode} 
-            onBack={() => setShowScan(false)} 
-            onComplete={() => setShowScan(false)} 
+          <ScanFlow
+            mode={scanMode}
+            onBack={() => setShowScan(false)}
+            onComplete={() => setShowScan(false)}
           />
         </View>
       )}
@@ -255,28 +263,28 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
       {/* Bottom Tab Bar */}
       {!showScan && (
         <View style={[styles.tabBar, { backgroundColor: C.white, borderTopColor: C.redBorder }]}>
-          <TabItem 
-            name="home" 
-            icon={Home} 
+          <TabItem
+            name="home"
+            icon={Home}
             label="Home"
             isActive={activeTab === 'home'}
             onPress={() => handleTabPress('home')}
             activeColor={C.red}
             inactiveColor={C.textXs}
           />
-          <TabItem 
-            name="log" 
-            icon={ClipboardList} 
+          <TabItem
+            name="log"
+            icon={ClipboardList}
             label="Logbook"
             isActive={activeTab === 'log'}
             onPress={() => handleTabPress('log')}
             activeColor={C.red}
             inactiveColor={C.textXs}
           />
-          
+
           {/* Floating Add Button */}
           <Animated.View style={[styles.scanContainer, fabStyle]}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.scanButton, { backgroundColor: C.red }]}
               onPress={toggleMenu}
             >
@@ -284,19 +292,19 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
             </TouchableOpacity>
             <Animated.Text style={[styles.tabLabel, { color: C.textXs, marginTop: 4 }, labelStyle]}>Add</Animated.Text>
           </Animated.View>
-  
-          <TabItem 
-            name="ai" 
-            icon={MessageSquare} 
+
+          <TabItem
+            name="ai"
+            icon={MessageSquare}
             label="AI Insights"
             isActive={activeTab === 'ai'}
             onPress={() => handleTabPress('ai')}
             activeColor={C.red}
             inactiveColor={C.textXs}
           />
-          <TabItem 
-            name="settings" 
-            icon={SettingsIcon} 
+          <TabItem
+            name="settings"
+            icon={SettingsIcon}
             label="Settings"
             isActive={activeTab === 'settings'}
             onPress={() => handleTabPress('settings')}
