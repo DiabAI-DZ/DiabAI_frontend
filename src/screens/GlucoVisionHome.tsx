@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, SafeAreaView } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { 
@@ -46,40 +46,6 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   const isExpanded = useSharedValue(false);
 
   const [logbookFilter, setLogbookFilter] = useState<'all' | 'measurements' | 'meals' | 'injections' | 'activities'>('all');
-
-  // Memoize rendered content to prevent unmounting/remounting on tab switches
-  const renderedContent = useMemo(() => {
-    switch (activeTab) {
-      case 'home': 
-        return (
-          <Dashboard 
-            onNavigateAlerts={onNavigateAlerts} 
-            onNavigateDetail={onNavigateDetail} 
-            onSeeAllMeasurements={() => {
-              setLogbookFilter('measurements');
-              setActiveTab('log');
-            }}
-          />
-        );
-      case 'log': 
-        return <LogbookScreen onNavigateDetail={onNavigateDetail} initialTypeFilter={logbookFilter} />;
-      case 'ai': 
-        return <AIInsightsScreen onNavigateAlerts={onNavigateAlerts} />;
-      case 'settings': 
-        return <SettingsScreen onNavigateAccountSettings={onNavigateAccountSettings} />;
-      default: 
-        return (
-          <Dashboard 
-            onNavigateAlerts={onNavigateAlerts} 
-            onNavigateDetail={onNavigateDetail} 
-            onSeeAllMeasurements={() => {
-              setLogbookFilter('measurements');
-              setActiveTab('log');
-            }}
-          />
-        );
-    }
-  }, [activeTab, logbookFilter, onNavigateAlerts, onNavigateDetail, onNavigateAccountSettings]);
 
   const TabItem = ({ name, icon: Icon, label }: { name: any, icon: any, label: string }) => {
     const isActive = activeTab === name;
@@ -151,7 +117,32 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   return (
     <View style={[styles.container, { backgroundColor: C.bg }]}>
       <View style={styles.content}>
-        {renderedContent}
+        {/* Render all screens but only show active one - prevents unmount/remount lag */}
+        <View style={[styles.screenWrapper, activeTab !== 'home' && styles.hidden]}>
+          <Dashboard 
+            onNavigateAlerts={onNavigateAlerts} 
+            onNavigateDetail={onNavigateDetail} 
+            onSeeAllMeasurements={() => {
+              setLogbookFilter('measurements');
+              setActiveTab('log');
+            }}
+          />
+        </View>
+        
+        <View style={[styles.screenWrapper, activeTab !== 'log' && styles.hidden]}>
+          <LogbookScreen 
+            onNavigateDetail={onNavigateDetail} 
+            initialTypeFilter={logbookFilter} 
+          />
+        </View>
+        
+        <View style={[styles.screenWrapper, activeTab !== 'ai' && styles.hidden]}>
+          <AIInsightsScreen onNavigateAlerts={onNavigateAlerts} />
+        </View>
+        
+        <View style={[styles.screenWrapper, activeTab !== 'settings' && styles.hidden]}>
+          <SettingsScreen onNavigateAccountSettings={onNavigateAccountSettings} />
+        </View>
       </View>
 
       <ActionForms 
@@ -358,6 +349,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
+  },
+  screenWrapper: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  hidden: {
+    display: 'none',
   }
 });
 
