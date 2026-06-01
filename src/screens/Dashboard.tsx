@@ -6,9 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
-  ActivityIndicator,
-  Image,
-  FlatList,
 } from 'react-native';
 import Svg, { Path, Line, Circle, Defs, LinearGradient as SvgLinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 import { useTheme } from '../context/ThemeContext';
@@ -21,16 +18,14 @@ import {
   TrendingDown, 
   Minus, 
   Activity, 
-  Utensils, 
   ChevronRight,
   Sparkles,
   Droplets,
   Heart,
   Clock,
-  Target
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MeasurementEntry, GlucoseStatus, MealEntry, HomeData } from '../services/types';
+import { MeasurementEntry, GlucoseStatus, MealEntry } from '../services/types';
 
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - 48;
@@ -42,6 +37,14 @@ interface DashboardProps {
   onSeeAllMeasurements: () => void;
   isActive?: boolean;
 }
+
+type InlineRecommendation = {
+  id: number | string;
+  title: string;
+  description: string;
+  priority: string;
+  priorityLabel: string;
+};
 
 // --- DYNAMIC DATES HELPERS ---
 const getPast7Days = (): { label: string; date: string }[] => {
@@ -99,7 +102,7 @@ const mock7Days = [
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetail, onSeeAllMeasurements, isActive }) => {
   const { C, isDark } = useTheme();
-  const { logs, alerts, homeData, recommendations, premiumRecommendations, loading, refreshData } = useData();
+  const { logs, alerts, homeData, recommendations, premiumRecommendations, refreshData } = useData();
   const { profile } = useUser();
   const [activeTab, setActiveTab] = useState<'7d' | '30d'>('7d');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -306,7 +309,33 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
     return { color: C.green, bg: C.greenBg, border: C.greenBorder };
   };
 
-  const currentStatusStyle = statusStyle(stats.status);
+  const inlineRecommendations = useMemo<InlineRecommendation[]>(() => {
+    const rawRecommendations = Array.isArray(recommendations)
+      ? recommendations
+      : Array.isArray((recommendations as any)?.recommendations)
+        ? (recommendations as any).recommendations
+        : [];
+    const source = premiumRecommendations.length > 0 ? premiumRecommendations : rawRecommendations;
+    const removedPlaceholders = new Set(['chicken salad', 'mixed berries', 'greek yogurt']);
+
+    return source
+      .filter((item: any) => item?.title && !removedPlaceholders.has(String(item.title).trim().toLowerCase()))
+      .slice(0, 4)
+      .map((item: any, index: number) => ({
+        id: item.id ?? index + 1,
+        title: item.title,
+        description: item.description || item.body || item.reason || item.impact_label || 'Personalized suggestion based on your recent logs.',
+        priority: item.priority || item.impact_level || 'suggested',
+        priorityLabel: item.priority_label || item.impact_label || 'Suggested',
+      }));
+  }, [premiumRecommendations, recommendations]);
+
+  const recommendationTone = (priority?: string) => {
+    const value = String(priority || '').toLowerCase();
+    if (value === 'high') return { color: C.red, bg: C.redBg, border: C.redBorder };
+    if (value === 'medium' || value === 'moderate') return { color: C.amber, bg: C.amberBg, border: C.amberBorder };
+    return { color: C.green, bg: C.greenBg, border: C.greenBorder };
+  };
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: C.bg }]} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -712,8 +741,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
         </View>
       </View>
 
-      {/* Recommended Foods Horizontal List */}
-      <View style={styles.foodSection}>
+      {/* Inline Recommendations */}
+      <View style={[styles.recommendationSection, { backgroundColor: C.white, borderColor: C.redBorder }]}>
         <View style={styles.sectionHeaderRow}>
           <View style={styles.sectionHeaderTitleRow}>
             <View style={[styles.smallIconBox, { backgroundColor: C.red }]}>
@@ -721,61 +750,35 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
             </View>
             <View>
               <Text style={[styles.sectionTitle, { color: C.text }]}>Recommended for You</Text>
-              <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>AI-powered suggestions</Text>
+              <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>Personalized health guidance</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.seeAllBtn}>
-            <Text style={[styles.seeAllText, { color: C.red }]}>See all</Text>
-            <ChevronRight size={14} color={C.red} />
-          </TouchableOpacity>
         </View>
 
-        {(premiumRecommendations.length > 0 || recommendations.length > 0 || (homeData?.recommendations && homeData.recommendations.length > 0)) ? (
-          <FlatList
-            data={premiumRecommendations.length > 0 ? premiumRecommendations : (recommendations.length > 0 ? recommendations : homeData?.recommendations || [])}
-            keyExtractor={(item) => item.id.toString()}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.foodListContainer}
-            renderItem={({ item }) => {
-              const isBlue = item.impact_level === "moderate";
+        {inlineRecommendations.length > 0 ? (
+          <View style={styles.recommendationList}>
+            {inlineRecommendations.map((item) => {
+              const tone = recommendationTone(item.priority);
               return (
-                <View style={[styles.foodCard, { backgroundColor: C.white, borderColor: C.redBorder }]}>
-                  <View style={styles.foodImageContainer}>
-                    {item.image_url ? (
-                      <Image source={{ uri: item.image_url }} style={styles.foodImage} />
-                    ) : (
-                      <View style={[styles.foodImage, { backgroundColor: C.redBg, justifyContent: 'center', alignItems: 'center' }]}>
-                        <Utensils size={32} color={C.red} opacity={0.2} />
-                      </View>
-                    )}
-                    <View style={[
-                      styles.foodTag,
-                      { 
-                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                        borderColor: isBlue ? C.blue : C.green
-                      }
-                    ]}>
-                      <Text style={[styles.foodTagText, { color: isBlue ? C.blue : C.green }]}>{item.impact_label || 'Good choice'}</Text>
-                    </View>
+                <View key={item.id} style={[styles.recommendationCard, { backgroundColor: tone.bg, borderColor: tone.border }]}>
+                  <View style={[styles.recommendationIcon, { backgroundColor: tone.color }]}>
+                    <Sparkles size={14} color="#FFF" />
                   </View>
-                  <View style={styles.foodDetails}>
-                    <Text style={[styles.foodName, { color: C.text }]} numberOfLines={1}>{item.title}</Text>
-                    <View style={styles.foodMetaRow}>
-                      <Text style={[styles.foodCal, { color: C.textSm }]}>{item.calories} kcal</Text>
-                      <View style={[styles.giBadge, { backgroundColor: C.greenBg }]}>
-                        <Text style={[styles.giText, { color: C.green }]}>-{stats.userUnit === 'mmol/L' ? convertGlucose(item.estimated_glucose_impact_mg_dl, 'mmol/L', 'mg/dL').toFixed(1) : item.estimated_glucose_impact_mg_dl} {stats.userUnit}</Text>
-                      </View>
-                    </View>
+                  <View style={styles.recommendationCopy}>
+                    <Text style={[styles.recommendationTitle, { color: C.text }]}>{item.title}</Text>
+                    <Text style={[styles.recommendationDescription, { color: C.textSm }]}>{item.description}</Text>
+                  </View>
+                  <View style={[styles.recommendationPill, { backgroundColor: C.white, borderColor: tone.border }]}>
+                    <Text style={[styles.recommendationPillText, { color: tone.color }]}>{item.priorityLabel}</Text>
                   </View>
                 </View>
               );
-            }}
-          />
+            })}
+          </View>
         ) : (
           <View style={[styles.emptyRecommendations, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
              <Sparkles size={24} color={C.redMuted} />
-             <Text style={[styles.emptyRecText, { color: C.textSm }]}>Logging more meals will unlock AI recommendations</Text>
+             <Text style={[styles.emptyRecText, { color: C.textSm }]}>Log more readings and meals to generate personalized suggestions.</Text>
           </View>
         )}
       </View>
@@ -1153,68 +1156,60 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: 'bold',
   },
-  foodSection: {
+  recommendationSection: {
+    marginHorizontal: 24,
     marginVertical: 10,
-  },
-  foodListContainer: {
-    paddingHorizontal: 24,
-    gap: 12,
-  },
-  foodCard: {
-    width: 148,
-    borderRadius: 24,
+    borderRadius: 20,
     borderWidth: 1,
-    overflow: 'hidden',
+    padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.03,
     shadowRadius: 8,
     elevation: 1,
-    marginBottom: 4,
   },
-  foodImageContainer: {
-    height: 100,
-    position: 'relative',
+  recommendationList: {
+    gap: 10,
+    marginTop: 14,
   },
-  foodImage: {
-    width: '100%',
-    height: '100%',
+  recommendationCard: {
+    minHeight: 84,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
   },
-  foodTag: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
+  recommendationIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  recommendationCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  recommendationTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 17,
+  },
+  recommendationDescription: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  recommendationPill: {
     borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  foodTagText: {
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  foodDetails: {
-    padding: 10,
-  },
-  foodName: {
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  foodMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  foodCal: {
-    fontSize: 10,
-  },
-  giBadge: {
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  giText: {
+  recommendationPillText: {
     fontSize: 9,
     fontWeight: 'bold',
   },
