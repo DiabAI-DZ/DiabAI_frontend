@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, SafeAreaView } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { 
@@ -21,6 +21,32 @@ import Animated, {
   interpolate,
   Extrapolate
 } from 'react-native-reanimated';
+
+// Memoize tab screens to prevent re-renders when not active
+const MemoizedDashboard = React.memo(Dashboard);
+const MemoizedLogbookScreen = React.memo(LogbookScreen);
+const MemoizedAIInsightsScreen = React.memo(AIInsightsScreen);
+const MemoizedSettingsScreen = React.memo(SettingsScreen);
+
+interface TabItemProps {
+  name: 'home' | 'log' | 'ai' | 'settings';
+  icon: any;
+  label: string;
+  isActive: boolean;
+  onPress: () => void;
+  activeColor: string;
+  inactiveColor: string;
+}
+
+const TabItem = React.memo(({ name, icon: Icon, label, isActive, onPress, activeColor, inactiveColor }: TabItemProps) => (
+  <TouchableOpacity 
+    style={styles.tabItem} 
+    onPress={onPress}
+  >
+    <Icon size={24} color={isActive ? activeColor : inactiveColor} />
+    <Text style={[styles.tabLabel, { color: isActive ? activeColor : inactiveColor }]}>{label}</Text>
+  </TouchableOpacity>
+));
 
 interface GlucoVisionHomeProps {
   onNavigateAlerts: () => void;
@@ -47,23 +73,17 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
 
   const [logbookFilter, setLogbookFilter] = useState<'all' | 'measurements' | 'meals' | 'injections' | 'activities'>('all');
 
-  const TabItem = ({ name, icon: Icon, label }: { name: any, icon: any, label: string }) => {
-    const isActive = activeTab === name;
-    return (
-      <TouchableOpacity 
-        style={styles.tabItem} 
-        onPress={() => {
-          if (name === 'log') {
-            setLogbookFilter('all');
-          }
-          setActiveTab(name);
-        }}
-      >
-        <Icon size={24} color={isActive ? C.red : C.textXs} />
-        <Text style={[styles.tabLabel, { color: isActive ? C.red : C.textXs }]}>{label}</Text>
-      </TouchableOpacity>
-    );
-  };
+  const handleTabPress = useCallback((tabName: 'home' | 'log' | 'ai' | 'settings') => {
+    if (tabName === 'log') {
+      setLogbookFilter('all');
+    }
+    setActiveTab(tabName);
+  }, []);
+
+  const handleSeeAllMeasurements = useCallback(() => {
+    setLogbookFilter('measurements');
+    setActiveTab('log');
+  }, []);
 
   const handleAddOption = (type: 'glucose_scan' | 'meal_scan' | 'injection' | 'activity') => {
     toggleMenu();
@@ -119,29 +139,26 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
       <View style={styles.content}>
         {/* Render all screens but only show active one - prevents unmount/remount lag */}
         <View style={[styles.screenWrapper, activeTab !== 'home' && styles.hidden]}>
-          <Dashboard 
+          <MemoizedDashboard 
             onNavigateAlerts={onNavigateAlerts} 
             onNavigateDetail={onNavigateDetail} 
-            onSeeAllMeasurements={() => {
-              setLogbookFilter('measurements');
-              setActiveTab('log');
-            }}
+            onSeeAllMeasurements={handleSeeAllMeasurements}
           />
         </View>
         
         <View style={[styles.screenWrapper, activeTab !== 'log' && styles.hidden]}>
-          <LogbookScreen 
+          <MemoizedLogbookScreen 
             onNavigateDetail={onNavigateDetail} 
             initialTypeFilter={logbookFilter} 
           />
         </View>
         
         <View style={[styles.screenWrapper, activeTab !== 'ai' && styles.hidden]}>
-          <AIInsightsScreen onNavigateAlerts={onNavigateAlerts} />
+          <MemoizedAIInsightsScreen onNavigateAlerts={onNavigateAlerts} />
         </View>
         
         <View style={[styles.screenWrapper, activeTab !== 'settings' && styles.hidden]}>
-          <SettingsScreen onNavigateAccountSettings={onNavigateAccountSettings} />
+          <MemoizedSettingsScreen onNavigateAccountSettings={onNavigateAccountSettings} />
         </View>
       </View>
 
@@ -232,8 +249,24 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
       {/* Bottom Tab Bar */}
       {!showScan && (
         <View style={[styles.tabBar, { backgroundColor: C.white, borderTopColor: C.redBorder }]}>
-          <TabItem name="home" icon={Home} label="Home" />
-          <TabItem name="log" icon={ClipboardList} label="Logbook" />
+          <TabItem 
+            name="home" 
+            icon={Home} 
+            label="Home"
+            isActive={activeTab === 'home'}
+            onPress={() => handleTabPress('home')}
+            activeColor={C.red}
+            inactiveColor={C.textXs}
+          />
+          <TabItem 
+            name="log" 
+            icon={ClipboardList} 
+            label="Logbook"
+            isActive={activeTab === 'log'}
+            onPress={() => handleTabPress('log')}
+            activeColor={C.red}
+            inactiveColor={C.textXs}
+          />
           
           {/* Floating Add Button */}
           <Animated.View style={[styles.scanContainer, fabStyle]}>
@@ -246,8 +279,24 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
             <Animated.Text style={[styles.tabLabel, { color: C.textXs, marginTop: 4 }, labelStyle]}>Add</Animated.Text>
           </Animated.View>
   
-          <TabItem name="ai" icon={MessageSquare} label="AI Insights" />
-          <TabItem name="settings" icon={SettingsIcon} label="Settings" />
+          <TabItem 
+            name="ai" 
+            icon={MessageSquare} 
+            label="AI Insights"
+            isActive={activeTab === 'ai'}
+            onPress={() => handleTabPress('ai')}
+            activeColor={C.red}
+            inactiveColor={C.textXs}
+          />
+          <TabItem 
+            name="settings" 
+            icon={SettingsIcon} 
+            label="Settings"
+            isActive={activeTab === 'settings'}
+            onPress={() => handleTabPress('settings')}
+            activeColor={C.red}
+            inactiveColor={C.textXs}
+          />
         </View>
       )}
     </View>
