@@ -100,6 +100,9 @@ export interface UserProfile {
   age?: number;
   sex?: 'male' | 'female';
   isPremium?: boolean;
+  remindersEnabled?: boolean;
+  glucoseAlertsEnabled?: boolean;
+  hypoAlertsEnabled?: boolean;
 }
 
 export interface ScanResult {

@@ -308,20 +308,16 @@ const SettingRow: React.FC<SettingRowProps> = ({ icon, label, subtitle, toggle, 
 interface SettingsScreenProps {
   onNavigateAccountSettings?: () => void;
   onNavigatePayment?: (planId: string) => void;
-  onNavigateReminders?: () => void;
 }
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onNavigateAccountSettings,
   onNavigatePayment,
-  onNavigateReminders
 }) => {
   const { C, isDark, mode, setMode } = useTheme();
   const { profile, updateProfile, signOut, apiBaseUrl } = useUser();
 
-  const [glucoseAlerts, setGlucoseAlerts] = useState(true);
-  const [hypoAlerts, setHypoAlerts] = useState(true);
-  const [reminders, setReminders] = useState(false);
+
 
   // Modals Visibility
   const [diabetesPopup, setDiabetesPopup] = useState(false);
@@ -451,25 +447,24 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
             label="Glucose Alerts"
             subtitle="Alert when out of range"
             toggle
-            toggleValue={glucoseAlerts}
-            onToggle={() => setGlucoseAlerts(!glucoseAlerts)}
+            toggleValue={profile?.glucoseAlertsEnabled ?? true}
+            onToggle={() => updateProfile({ glucoseAlertsEnabled: !(profile?.glucoseAlertsEnabled ?? true) })}
           />
           <SettingRow
             icon={<AlertTriangle {...iconProps} />}
             label="Hypoglycemia Alerts"
             subtitle="Critical low warnings"
             toggle
-            toggleValue={hypoAlerts}
-            onToggle={() => setHypoAlerts(!hypoAlerts)}
+            toggleValue={profile?.hypoAlertsEnabled ?? true}
+            onToggle={() => updateProfile({ hypoAlertsEnabled: !(profile?.hypoAlertsEnabled ?? true) })}
           />
           <SettingRow
             icon={<Clock {...iconProps} />}
             label="Reminders"
             subtitle="Measurement reminders"
             toggle
-            toggleValue={reminders}
-            onToggle={() => setReminders(!reminders)}
-            onClick={onNavigateReminders}
+            toggleValue={profile?.remindersEnabled ?? false}
+            onToggle={() => updateProfile({ remindersEnabled: !(profile?.remindersEnabled ?? false) })}
           />
         </SectionCard>
 

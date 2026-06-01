@@ -53,7 +53,6 @@ interface GlucoVisionHomeProps {
   onNavigateDetail: (entry: any) => void;
   onNavigateAccountSettings: () => void;
   onNavigatePayment: (planId: string) => void;
-  onNavigateReminders: () => void;
 }
 
 const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
@@ -61,7 +60,6 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   onNavigateDetail,
   onNavigateAccountSettings,
   onNavigatePayment,
-  onNavigateReminders
 }) => {
   const { C, isDark } = useTheme();
   const { addLog } = useData();
@@ -171,7 +169,6 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
           <MemoizedSettingsScreen
             onNavigateAccountSettings={onNavigateAccountSettings}
             onNavigatePayment={onNavigatePayment}
-            onNavigateReminders={onNavigateReminders}
           />
         </View>
       </View>

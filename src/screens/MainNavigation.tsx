@@ -10,7 +10,6 @@ import AlertsScreen from './AlertsScreen';
 import DetailScreen from './DetailScreen';
 import AccountSettingsScreen from './AccountSettingsScreen';
 import PaymentScreen, { PLANS } from './PaymentScreen';
-import RemindersScreen from './RemindersScreen';
 import { useUser } from '../context/UserContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -26,7 +25,6 @@ type Screen =
   | 'alerts'
   | 'detail'
   | 'accountSettings'
-  | 'reminders'
   | 'payment';
 
 const MainNavigation: React.FC = () => {
@@ -155,11 +153,9 @@ const MainNavigation: React.FC = () => {
               setPaymentPlan(plan);
               setCurrentScreen('payment');
             }}
-            onNavigateReminders={() => setCurrentScreen('reminders')}
           />
         );
-      case 'reminders':
-        return <RemindersScreen onBack={() => setCurrentScreen('home')} />;
+
       case 'accountSettings':
         return <AccountSettingsScreen onBack={() => setCurrentScreen('home')} />;
       case 'alerts':
