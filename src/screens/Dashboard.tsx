@@ -40,6 +40,7 @@ interface DashboardProps {
   onNavigateAlerts: () => void;
   onNavigateDetail: (entry: any) => void;
   onSeeAllMeasurements: () => void;
+  isActive?: boolean;
 }
 
 // --- DYNAMIC DATES HELPERS ---
@@ -96,7 +97,7 @@ const mock7Days = [
   { day: "Thu", value: 98 }, { day: "Fri", value: 162 }, { day: "Sat", value: 128 }, { day: "Sun", value: 125 },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetail, onSeeAllMeasurements }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetail, onSeeAllMeasurements, isActive }) => {
   const { C, isDark } = useTheme();
   const { logs, alerts, homeData, recommendations, premiumRecommendations, loading, refreshData } = useData();
   const { profile } = useUser();
@@ -105,7 +106,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
 
   useEffect(() => {
     refreshData(activeTab);
-  }, [activeTab]);
+  }, [activeTab, refreshData]);
+
+  // Refresh data when dashboard becomes visible
+  useEffect(() => {
+    if (isActive) {
+      refreshData(activeTab);
+    }
+  }, [isActive, activeTab, refreshData]);
 
   // --- REAL DYNAMIC DATE GREETING ---
   const todayDateString = useMemo(() => {

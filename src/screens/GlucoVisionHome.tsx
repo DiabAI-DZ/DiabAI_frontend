@@ -148,6 +148,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
             onNavigateAlerts={onNavigateAlerts} 
             onNavigateDetail={onNavigateDetail} 
             onSeeAllMeasurements={handleSeeAllMeasurements}
+            isActive={activeTab === 'home'}
           />
         </View>
         
