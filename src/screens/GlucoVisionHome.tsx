@@ -138,7 +138,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
     <View style={[styles.container, { backgroundColor: C.bg }]}>
       <View style={styles.content}>
         {/* Render all screens but only show active one - prevents unmount/remount lag */}
-        <View style={[styles.screenWrapper, activeTab !== 'home' && styles.hidden]}>
+        <View style={[styles.screenWrapper, { display: activeTab === 'home' ? 'flex' : 'none' }]}>
           <MemoizedDashboard 
             onNavigateAlerts={onNavigateAlerts} 
             onNavigateDetail={onNavigateDetail} 
@@ -146,18 +146,18 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
           />
         </View>
         
-        <View style={[styles.screenWrapper, activeTab !== 'log' && styles.hidden]}>
+        <View style={[styles.screenWrapper, { display: activeTab === 'log' ? 'flex' : 'none' }]}>
           <MemoizedLogbookScreen 
             onNavigateDetail={onNavigateDetail} 
             initialTypeFilter={logbookFilter} 
           />
         </View>
         
-        <View style={[styles.screenWrapper, activeTab !== 'ai' && styles.hidden]}>
+        <View style={[styles.screenWrapper, { display: activeTab === 'ai' ? 'flex' : 'none' }]}>
           <MemoizedAIInsightsScreen onNavigateAlerts={onNavigateAlerts} />
         </View>
         
-        <View style={[styles.screenWrapper, activeTab !== 'settings' && styles.hidden]}>
+        <View style={[styles.screenWrapper, { display: activeTab === 'settings' ? 'flex' : 'none' }]}>
           <MemoizedSettingsScreen onNavigateAccountSettings={onNavigateAccountSettings} />
         </View>
       </View>
