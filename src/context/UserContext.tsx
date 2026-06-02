@@ -53,7 +53,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userProfile = await apiService.fetchProfile();
       setProfile(userProfile);
       // Register this device for push now that we have a JWT (fire-and-forget; self-guards).
-      registerDeviceToken();
+      void registerDeviceToken();
     } catch (error) {
       console.error("Sign in failed:", error);
       throw error;
@@ -91,9 +91,20 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     console.log("Signing out...");
     // Unregister the FCM token BEFORE clearing the JWT (the DELETE call is authenticated).
-    await unregisterDeviceToken();
-    authApi.setToken(null);
-    setProfile(null);
+    try {
+      await unregisterDeviceToken();
+    } catch (error) {
+      console.warn('[push] Failed to unregister device token:', error);
+    }
+
+    try {
+      await authApi.logout();
+    } catch (error) {
+      console.warn('Failed to revoke backend session:', error);
+    } finally {
+      authApi.setToken(null);
+      setProfile(null);
+    }
   };
 
   const upgradeToPremium = async (planId?: string) => {
@@ -126,7 +137,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!cancelled) {
           setProfile(data);
           // Already-logged-in cold start: refresh/register the device token.
-          registerDeviceToken();
+          void registerDeviceToken();
         }
       } catch {
         // Token invalid/expired — drop it so the app falls back to the sign-in screen.

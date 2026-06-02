@@ -73,6 +73,15 @@ export function parseDeepLink(data: Record<string, string> | undefined | null): 
   return target;
 }
 
+export type PermissionPromptPhase = 'pre-permission' | 'blocked';
+export type PermissionPromptHandler = (phase: PermissionPromptPhase) => Promise<boolean>;
+
+let permissionPromptHandler: PermissionPromptHandler | null = null;
+
+export function setPermissionPromptHandler(handler: PermissionPromptHandler | null): void {
+  permissionPromptHandler = handler;
+}
+
 /**
  * Request notification permission. On Android 13+ also requests the runtime POST_NOTIFICATIONS
  * permission. Returns true if push is allowed.
@@ -81,17 +90,57 @@ export async function requestPushPermission(): Promise<boolean> {
   const messaging = getMessaging();
   if (!messaging) return false;
   try {
-    if (Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version >= 33) {
-      const res = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
-      );
-      if (res !== PermissionsAndroid.RESULTS.GRANTED) return false;
+    // 1. Check if permission is already granted
+    let hasPermission = false;
+    if (Platform.OS === 'android') {
+      if (typeof Platform.Version === 'number' && Platform.Version >= 33) {
+        hasPermission = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+        );
+      } else {
+        hasPermission = true; // Android < 13 has notifications enabled by default
+      }
+    } else {
+      const status = await messaging().hasPermission();
+      hasPermission =
+        status === messaging.AuthorizationStatus.AUTHORIZED ||
+        status === messaging.AuthorizationStatus.PROVISIONAL;
     }
-    const status = await messaging().requestPermission();
-    return (
-      status === messaging.AuthorizationStatus.AUTHORIZED ||
-      status === messaging.AuthorizationStatus.PROVISIONAL
-    );
+
+    // 2. If not granted, trigger the custom pre-permission check
+    if (!hasPermission) {
+      const proceed = permissionPromptHandler
+        ? await permissionPromptHandler('pre-permission')
+        : true;
+      if (!proceed) return false;
+
+      // 3. Request native permission
+      if (Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version >= 33) {
+        const res = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+        );
+        if (res !== PermissionsAndroid.RESULTS.GRANTED) {
+          if (permissionPromptHandler) {
+            await permissionPromptHandler('blocked');
+          }
+          return false;
+        }
+      }
+
+      const status = await messaging().requestPermission();
+      hasPermission =
+        status === messaging.AuthorizationStatus.AUTHORIZED ||
+        status === messaging.AuthorizationStatus.PROVISIONAL;
+
+      if (!hasPermission) {
+        if (permissionPromptHandler) {
+          await permissionPromptHandler('blocked');
+        }
+        return false;
+      }
+    }
+
+    return true;
   } catch (error: any) {
     console.warn('[push] requestPushPermission error:', error?.message);
     return false;

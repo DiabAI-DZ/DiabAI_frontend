@@ -267,4 +267,44 @@ export const authApi = {
     const message = body.error || body.message || `Change password failed (status ${response.status}).`;
     throw new AuthApiException(message, response.status, body, rawText);
   },
+
+  async logout(deviceToken?: string) {
+    const token = this.token;
+    if (!token) {
+      return null;
+    }
+
+    const url = `${this.baseUrl}/api/auth/logout`;
+
+    let response: Response;
+    try {
+      response = await timeoutFetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(deviceToken ? { device_token: deviceToken } : {}),
+      });
+    } catch (e: any) {
+      if (e instanceof AuthApiException) {
+        throw e;
+      }
+      throw new AuthApiException(`Cannot reach server. Check API base URL: ${e.message}`);
+    }
+
+    const rawText = await response.text();
+    let body: any = {};
+    try {
+      body = JSON.parse(rawText);
+    } catch (_) {}
+
+    if (response.status >= 200 && response.status < 300) {
+      return body;
+    }
+
+    const message = body.error || body.message || `Logout failed (status ${response.status}).`;
+    throw new AuthApiException(message, response.status, body, rawText);
+  },
 };

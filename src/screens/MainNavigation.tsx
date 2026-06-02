@@ -20,6 +20,7 @@ import {
 } from '../services/pushNotifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { onNavigate } from '../services/uiEvents';
 
 type Screen =
   | 'splash'
@@ -89,11 +90,22 @@ const MainNavigation: React.FC = () => {
 
   // Load onboarding state
   React.useEffect(() => {
+    const unsubscribe = onNavigate((screen: string, payload?: any) => {
+      // Only accept known screens to avoid surprises
+      const known: Screen[] = ['home','alerts','detail','accountSettings','payment','signIn','signUp','forgotPassword','resetPassword','onboarding','splash'];
+      if (known.includes(screen as Screen)) {
+        setCurrentScreen(screen as Screen);
+        if (screen === 'detail' && payload) setDetailEntry(payload);
+        if (screen === 'payment' && payload) setPaymentPlan(payload);
+      }
+    });
+
     const checkOnboarding = async () => {
       const val = await AsyncStorage.getItem('hasSeenOnboarding');
       setHasSeenOnboarding(val === 'true');
     };
     checkOnboarding();
+    return () => { if (unsubscribe) unsubscribe(); };
   }, []);
 
   // Navigation sync based on auth state

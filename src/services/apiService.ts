@@ -296,6 +296,16 @@ const authenticatedFetch = async (
 
   if (response.status === 403) {
     console.warn("[API] Premium feature required (403).");
+    try {
+      // emit a UI-level event so the app can show the Premium overlay immediately
+      // without relying on every caller to propagate the error.
+      // Import here to avoid circular import issues at module init time.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { emitPremiumRequired } = require('./uiEvents');
+      emitPremiumRequired();
+    } catch (e) {
+      // ignore emitter failures
+    }
     throw new Error("PREMIUM_REQUIRED");
   }
 
