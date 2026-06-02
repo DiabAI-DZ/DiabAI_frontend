@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { UserProfile } from '../services/types';
 import { apiService } from '../services/apiService';
 import { authApi, AUTH_BASE_URL } from '../services/authApi';
+import { registerDeviceToken, unregisterDeviceToken } from '../services/pushNotifications';
 
 interface UserContextType {
   profile: UserProfile | null;
@@ -12,7 +13,7 @@ interface UserContextType {
   uploadAvatar: (imageUri: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (name: string, email: string, password: string) => Promise<void>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   upgradeToPremium: (planId?: string) => Promise<void>;
 }
@@ -51,6 +52,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Fetch user profile upon successful authentication
       const userProfile = await apiService.fetchProfile();
       setProfile(userProfile);
+      // Register this device for push now that we have a JWT (fire-and-forget; self-guards).
+      registerDeviceToken();
     } catch (error) {
       console.error("Sign in failed:", error);
       throw error;
@@ -85,8 +88,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(updated);
   };
 
-  const signOut = () => {
+  const signOut = async () => {
     console.log("Signing out...");
+    // Unregister the FCM token BEFORE clearing the JWT (the DELETE call is authenticated).
+    await unregisterDeviceToken();
     authApi.setToken(null);
     setProfile(null);
   };
@@ -118,7 +123,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!token || cancelled) return;
       try {
         const data = await apiService.fetchProfile();
-        if (!cancelled) setProfile(data);
+        if (!cancelled) {
+          setProfile(data);
+          // Already-logged-in cold start: refresh/register the device token.
+          registerDeviceToken();
+        }
       } catch {
         // Token invalid/expired — drop it so the app falls back to the sign-in screen.
         authApi.setToken(null);

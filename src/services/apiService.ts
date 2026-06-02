@@ -636,6 +636,65 @@ export const apiService = {
     }
   },
 
+  // Unread in-app notification count, for a badge. fetchAlerts already swallows the 403 that
+  // free (non-premium) users get from /api/notifications and returns [], so this is 403-safe.
+  async fetchUnreadNotificationCount(): Promise<number> {
+    const alerts = await this.fetchAlerts();
+    return alerts.filter((a) => !a.read).length;
+  },
+
+  // --- Push notification device tokens (FCM) ---
+
+  // Register/refresh this device's FCM token. Idempotent on the backend (re-sending the same
+  // token just updates it), so it's safe to call on every app open / login / token refresh.
+  async registerDevice(token: string, platform: 'android' | 'ios', deviceName?: string): Promise<void> {
+    await authenticatedFetch('/api/devices', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform, device_name: deviceName }),
+    });
+  },
+
+  // Remove this device's token on logout so the device stops receiving pushes. The backend
+  // returns 204 on success and 404 if the token isn't found/owned — neither should block logout.
+  async unregisterDevice(token: string): Promise<void> {
+    try {
+      await authenticatedFetch(`/api/devices/${encodeURIComponent(token)}`, { method: 'DELETE' });
+    } catch (error: any) {
+      console.warn('[API] unregisterDevice (non-fatal):', error?.message);
+    }
+  },
+
+  // Best-effort fetch of a single logbook entry by type + id, used to deep-link from a tapped
+  // push to its DetailScreen. The per-resource show endpoints may omit the entry_type
+  // discriminator and use a resource-specific timestamp field, so we normalise both before
+  // reusing mapLogRow. Returns null if the entry can't be loaded/mapped.
+  async fetchEntryByRef(
+    entryType: 'measurement' | 'meal' | 'injection' | 'activity',
+    id: number
+  ): Promise<LogEntry | null> {
+    const path =
+      entryType === 'measurement' ? `/api/measurements/${id}`
+      : entryType === 'meal' ? `/api/meals/${id}`
+      : entryType === 'injection' ? `/api/injections/${id}`
+      : `/api/activities/${id}`;
+    try {
+      const response = await authenticatedFetch(path);
+      const result = await response.json();
+      const row = result?.data ?? result;
+      if (!row) return null;
+      const normalized = {
+        ...row,
+        entry_type: entryType,
+        recorded_at:
+          row.recorded_at ?? row.measured_at ?? row.injected_at ?? row.started_at ?? row.created_at,
+      };
+      return mapLogRow(normalized);
+    } catch (error: any) {
+      console.warn('[API] fetchEntryByRef failed:', error?.message);
+      return null;
+    }
+  },
+
   // Home & Insights
   async fetchHomeData(trend_period: "7d" | "30d" = "7d"): Promise<HomeData> {
     console.log(`[API] Fetching home data from ${authApi.baseUrl}/api/home?trend_period=${trend_period}`);

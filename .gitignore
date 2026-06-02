@@ -38,3 +38,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Firebase client config (contains API keys — do not commit)
+google-services.json
+GoogleService-Info.plist
