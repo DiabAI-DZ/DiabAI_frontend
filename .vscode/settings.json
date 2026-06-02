@@ -1,0 +1,13 @@
+{
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/android/.gradle": true,
+    "**/android/app/build": true,
+    "**/android/.cxx": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/android/**": true
+  },
+  "java.configuration.updateBuildConfiguration": "interactive"
+}
