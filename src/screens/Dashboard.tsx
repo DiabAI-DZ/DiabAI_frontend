@@ -107,13 +107,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateAlerts, onNavigateDetai
   const [activeTab, setActiveTab] = useState<'7d' | '30d'>('7d');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
+  // Refresh when home tab is shown or trend period changes (keeps stale data visible while refreshing)
   useEffect(() => {
-    refreshData(activeTab);
-  }, [activeTab, refreshData]);
-
-  // Refresh data when dashboard becomes visible
-  useEffect(() => {
-    if (isActive) {
+    if (isActive !== false) {
       refreshData(activeTab);
     }
   }, [isActive, activeTab, refreshData]);

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useTransition } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, SafeAreaView } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import {
@@ -63,7 +63,6 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
 }) => {
   const { C, isDark } = useTheme();
   const { addLog } = useData();
-  const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<'home' | 'log' | 'ai' | 'settings'>('home');
   const [showScan, setShowScan] = useState(false);
   const [scanMode, setScanMode] = useState<'glucose' | 'meal'>('glucose');
@@ -77,19 +76,15 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   const [logbookFilter, setLogbookFilter] = useState<'all' | 'measurements' | 'meals' | 'injections' | 'activities'>('all');
 
   const handleTabPress = useCallback((tabName: 'home' | 'log' | 'ai' | 'settings') => {
-    startTransition(() => {
-      if (tabName === 'log') {
-        setLogbookFilter('all');
-      }
-      setActiveTab(tabName);
-    });
+    if (tabName === 'log') {
+      setLogbookFilter('all');
+    }
+    setActiveTab(tabName);
   }, []);
 
   const handleSeeAllMeasurements = useCallback(() => {
-    startTransition(() => {
-      setLogbookFilter('measurements');
-      setActiveTab('log');
-    });
+    setLogbookFilter('measurements');
+    setActiveTab('log');
   }, []);
 
   const handleAddOption = (type: 'glucose_scan' | 'meal_scan' | 'injection' | 'activity') => {
@@ -162,7 +157,10 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
         </View>
 
         <View style={[styles.screenWrapper, { display: activeTab === 'ai' ? 'flex' : 'none' }]}>
-          <MemoizedAIInsightsScreen onNavigateAlerts={onNavigateAlerts} />
+          <MemoizedAIInsightsScreen
+            onNavigateAlerts={onNavigateAlerts}
+            isActive={activeTab === 'ai'}
+          />
         </View>
 
         <View style={[styles.screenWrapper, { display: activeTab === 'settings' ? 'flex' : 'none' }]}>

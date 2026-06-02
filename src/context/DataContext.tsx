@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/apiService';
+import { clearInsightsCache } from '../services/insightsCache';
 import { aiService } from '../services/aiService';
 import { useUser } from './UserContext';
 import { LogEntry, AlertItem, ScanResult, AISummary, HomeData, MealScanResult } from '../services/types';
@@ -10,6 +11,7 @@ interface DataContextType {
   homeData: HomeData | null;
   recommendations: any[];
   loading: boolean;
+  isRefreshing: boolean;
   refreshData: (period?: '7d' | '30d') => Promise<void>;
   addLog: (log: Omit<LogEntry, "id">) => Promise<void>;
   deleteLog: (id: number) => Promise<void>;
@@ -36,11 +38,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [glucoseForecast, setGlucoseForecast] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const hasLoadedOnceRef = React.useRef(false);
 
   const refreshData = useCallback(async (period: '7d' | '30d' = '7d') => {
-    setLoading(true);
+    const isInitialLoad = !hasLoadedOnceRef.current;
+    if (isInitialLoad) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
     try {
-      const [logsData, alertsData, homeDataObj, recsData] = await Promise.all([
+      const [logsData, alertsData, homeDataObj] = await Promise.all([
         apiService.fetchLogs().catch(err => {
           console.warn("DataContext: Failed to fetch logs:", err);
           return [];
@@ -53,31 +62,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn("DataContext: Failed to fetch home data:", err);
           return null;
         }),
-        apiService.fetchRecommendations().catch(err => {
-          console.warn("DataContext: Failed to fetch recommendations:", err);
-          return [];
-        }),
       ]);
       setLogs(logsData);
       setAlerts(alertsData);
       setHomeData(homeDataObj);
-      setRecommendations(recsData);
-
-      // Fetch Premium Heavy AI data if applicable (Checkpoint 4)
-      const userProfile = await apiService.fetchProfile().catch(() => null);
-      if (userProfile?.isPremium) {
-        console.log("[DataContext] Fetching heavy AI content for premium member");
-        const [pRecs, gForecast] = await Promise.all([
-          apiService.fetchPremiumRecommendations().catch(() => []),
-          apiService.fetchGlucoseForecast().catch(() => []),
-        ]);
-        setPremiumRecommendations(pRecs);
-        setGlucoseForecast(gForecast);
-      }
+      setRecommendations([]);
+      setPremiumRecommendations([]);
+      setGlucoseForecast([]);
+      hasLoadedOnceRef.current = true;
     } catch (error) {
       console.error("DataContext: Failed to fetch data:", error);
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   }, []);
 
@@ -178,6 +175,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setHomeData(null);
       setRecommendations([]);
       setLastRefreshedUser(null);
+      hasLoadedOnceRef.current = false;
+      clearInsightsCache();
     }
   }, [profile, refreshData, lastRefreshedUser]);
 
@@ -187,7 +186,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       alerts, 
       homeData,
       recommendations,
-      loading, 
+      loading,
+      isRefreshing,
       refreshData, 
       addLog, 
       deleteLog,

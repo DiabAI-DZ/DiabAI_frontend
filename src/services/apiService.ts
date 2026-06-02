@@ -98,23 +98,54 @@ export const convertGlucose = (value: number, toUnit: string, fromUnit: string):
   return parseFloat(converted.toFixed(2));
 };
 
+/** Default for slow AI-backed Laravel routes (insights aggregate, etc.). */
+export const INSIGHTS_REQUEST_TIMEOUT_MS = 120_000;
+
+type FetchOptions = RequestInit & {
+  /** Abort after this many ms unless an external signal is provided. */
+  timeoutMs?: number;
+  signal?: AbortSignal;
+};
+
 // A helper for doing authenticated requests
-const authenticatedFetch = async (path: string, options: RequestInit = {}): Promise<Response> => {
+const authenticatedFetch = async (path: string, options: FetchOptions = {}): Promise<Response> => {
   const token = authApi.getToken();
   const baseUrl = authApi.baseUrl;
   const url = `${baseUrl}${path}`;
 
+  const { timeoutMs, signal: externalSignal, ...fetchOptions } = options;
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let timeoutController: AbortController | undefined;
+
+  if (timeoutMs && !externalSignal) {
+    timeoutController = new AbortController();
+    timeoutId = setTimeout(() => timeoutController?.abort(), timeoutMs);
+  }
+
+  const signal = externalSignal
+    ?? timeoutController?.signal
+    ?? fetchOptions.signal;
+
   const headers: any = {
     'Accept': 'application/json',
-    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(fetchOptions.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...(options.headers || {}),
+    ...(fetchOptions.headers || {}),
   };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...fetchOptions,
+      signal,
+      headers,
+    });
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
 
   if (response.status === 401) {
     console.warn("[API] Request unauthorized (401).");
@@ -463,6 +494,31 @@ export const apiService = {
     const response = await authenticatedFetch(`/api/home?trend_period=${trend_period}`);
     const result = await response.json();
     return result.data || result;
+  },
+
+  async fetchInsights(
+    dateFrom?: string,
+    dateTo?: string,
+    selectedDate?: string,
+    model?: string,
+    options?: { skipAi?: boolean; signal?: AbortSignal },
+  ): Promise<any> {
+    const params = new URLSearchParams();
+    const today = new Date().toISOString().split('T')[0];
+    params.append('date_from', dateFrom || today);
+    params.append('date_to', dateTo || today);
+    if (selectedDate) params.append('selected_date', selectedDate);
+    if (model) params.append('model', model);
+    if (options?.skipAi) params.append('skip_ai', '1');
+
+    console.log(
+      `[API] Fetching insights (skip_ai=${!!options?.skipAi}, model=${model ?? 'default'})`,
+    );
+    const response = await authenticatedFetch(`/api/insights?${params.toString()}`, {
+      signal: options?.signal,
+      timeoutMs: options?.signal ? undefined : INSIGHTS_REQUEST_TIMEOUT_MS,
+    });
+    return await response.json();
   },
 
   async fetchRecommendations(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string): Promise<any> {

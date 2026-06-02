@@ -45,6 +45,11 @@ import {
 import { MeasurementEntry } from '../services/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiService } from '../services/apiService';
+import {
+  buildInsightsCacheKey,
+  getInsightsCache,
+  patchInsightsCache,
+} from '../services/insightsCache';
 
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - 48;
@@ -121,10 +126,6 @@ const ProgressRing: React.FC<{ value: number; max: number; size: number; strokeW
   );
 };
 
-interface AIInsightsScreenProps {
-  onNavigateAlerts?: () => void;
-}
-
 const formatDateStr = (d: Date): string => {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -132,9 +133,48 @@ const formatDateStr = (d: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
-const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts }) => {
+/** Largest-remainder so low + normal + high always sum to 100. */
+const distributePercentages = (low: number, normal: number, high: number, total: number) => {
+  if (total <= 0) {
+    return { lowPercent: 0, normalPercent: 0, highPercent: 0 };
+  }
+  const exact = {
+    low_pct: (low / total) * 100,
+    normal_pct: (normal / total) * 100,
+    high_pct: (high / total) * 100,
+  };
+  const floors = {
+    low_pct: Math.floor(exact.low_pct),
+    normal_pct: Math.floor(exact.normal_pct),
+    high_pct: Math.floor(exact.high_pct),
+  };
+  let remainder = 100 - floors.low_pct - floors.normal_pct - floors.high_pct;
+  const fractions = Object.entries(exact)
+    .map(([key, value]) => ({ key, frac: value - floors[key as keyof typeof floors] }))
+    .sort((a, b) => b.frac - a.frac);
+  for (const { key } of fractions) {
+    if (remainder <= 0) break;
+    floors[key as keyof typeof floors]++;
+    remainder--;
+  }
+  return {
+    lowPercent: floors.low_pct,
+    normalPercent: floors.normal_pct,
+    highPercent: floors.high_pct,
+  };
+};
+
+const isOfflinePlaceholder = (title?: string) =>
+  !!title && (title.includes('[OFFLINE]') || title.toUpperCase().includes('MOCK'));
+
+interface AIInsightsScreenProps {
+  onNavigateAlerts?: () => void;
+  isActive?: boolean;
+}
+
+const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts, isActive = true }) => {
   const { C, isDark } = useTheme();
-  const { logs, alerts, getAIInsight, glucoseForecast, selectedDate, setSelectedDate, loading: dataLoading } = useData();
+  const { logs, alerts, getAIInsight, glucoseForecast, selectedDate, setSelectedDate } = useData();
   const { profile } = useUser();
   const [activeSegment, setActiveSegment] = useState<'dashboard' | 'chat'>('dashboard');
 
@@ -150,6 +190,8 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [insightsLoading, setInsightsLoading] = useState(true);
+  const [coreInsights, setCoreInsights] = useState<any>(null);
+  const [activityImpact, setActivityImpact] = useState<any>(null);
   const [calendarDays, setCalendarDays] = useState<any[]>([]);
   const [predictions, setPredictions] = useState<any[]>([]);
   const [anomalyList, setAnomalyList] = useState<any[]>([]);
@@ -162,156 +204,235 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
   const [usedModel, setUsedModel] = useState<'kaggle' | 'local' | 'fallback' | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const insightsRequestRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const logsRef = useRef(logs);
+  logsRef.current = logs;
 
   const scrollViewRef = useRef<ScrollView>(null);
   const dayScrollRef = useRef<ScrollView>(null);
 
-  const fetchInsights = useCallback(async () => {
-    setInsightsLoading(true);
-    try {
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
+  const insightsDateRange = useMemo(() => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const startDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+    startDate.setHours(0, 0, 0, 0);
+    let clampedDate = new Date(selectedDate);
+    if (clampedDate > today) clampedDate = today;
+    if (clampedDate < startDate) clampedDate = startDate;
+    return {
+      dateFrom: formatDateStr(startDate),
+      dateTo: formatDateStr(today),
+      selDateStr: formatDateStr(clampedDate),
+    };
+  }, [selectedDate]);
 
-      const startDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-      startDate.setHours(0, 0, 0, 0);
+  const applyCorePayload = useCallback((payload: any) => {
+    if (!payload) return;
+    setCoreInsights(payload);
+    if (payload.calendar?.days) {
+      setCalendarDays(payload.calendar.days);
+    }
+    if (payload.activity_glucose_impact) {
+      setActivityImpact(payload.activity_glucose_impact);
+    }
+  }, []);
 
-      // Clamp selectedDate between startDate (30 days ago) and today
-      let clampedDate = new Date(selectedDate);
-      if (clampedDate > today) {
-        clampedDate = today;
-        setSelectedDate(today);
-      } else if (clampedDate < startDate) {
-        clampedDate = startDate;
-        setSelectedDate(startDate);
-      }
+  const applyAiPayload = useCallback((payload: any) => {
+    if (!payload) return;
 
-      const dateFrom = formatDateStr(startDate);
-      const dateTo = formatDateStr(today);
-      const selDateStr = formatDateStr(clampedDate);
+    const patternsBlock = payload.patterns;
+    const patternList = Array.isArray(patternsBlock?.patterns)
+      ? patternsBlock.patterns
+      : Array.isArray(patternsBlock)
+        ? patternsBlock
+        : [];
 
-      const [recsResult, patternsResult, predsResult, insulinResult] = await Promise.all([
-        apiService.fetchRecommendations(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
-        apiService.fetchPatterns(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
-        apiService.fetchPredictions(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
-        apiService.fetchInsulinEstimate(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
-      ]);
-
-      const actualModel = patternsResult?.model_used || recsResult?.model_used || 'fallback';
+    const actualModel = patternsBlock?.model_used
+      ?? (patternsBlock?.status === 'fallback' ? 'fallback' : patternList.length > 0 ? 'kaggle' : null);
+    if (actualModel) {
       setUsedModel(actualModel);
       setIsMockData(actualModel === 'fallback');
-
-      if (recsResult?.calendar?.days) {
-        setCalendarDays(recsResult.calendar.days);
-      } else {
-        // Fallback generated calendar days for the last 30 days
-        const fallbackDays = [];
-        for (let i = 30; i >= 0; i--) {
-          const dayDate = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
-          const dayStr = formatDateStr(dayDate);
-          fallbackDays.push({
-            date: dayStr,
-            label: dayDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
-            day: dayDate.getDate(),
-            has_data: logs.some(l => l.type === 'measurement' && formatDateStr(new Date(l.date)) === dayStr),
-            is_selected: dayStr === selDateStr
-          });
-        }
-        setCalendarDays(fallbackDays);
-      }
-
-      // Calculate selectedDayStats locally (used as fallback for all sections below)
-      const dayLogs = logs.filter((l): l is MeasurementEntry =>
-        l.type === 'measurement' &&
-        formatDateStr(new Date(l.date)) === selDateStr
-      );
-
-      const minGoal = profile?.goals?.min || 70;
-      const maxGoal = profile?.goals?.max || 140;
-      const count = dayLogs.length;
-      let avg = 120;
-      if (count > 0) {
-        const values = dayLogs.map(l => l.value);
-        avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-      }
-
-      // ── RECOMMENDATIONS ──────────────────────────────────────────────────
-      // Prefer backend AI response; fall back to local logic for free users.
-      if (recsResult?.recommendations && Array.isArray(recsResult.recommendations) && recsResult.recommendations.length > 0) {
-        setRecList(recsResult.recommendations);
-      } else {
-        const dynamicRecs: any[] = [];
-        dynamicRecs.push({
-          id: 1,
-          icon: 'clock',
-          title: '[OFFLINE] Connect Services',
-          description: 'MOCK RECOMMENDATION: Connect to a model to see personalized advice. Current status: Service Offline.',
-          priority: 'high',
-          priority_label: 'Mock',
-          category: 'timing'
-        });
-        setRecList(dynamicRecs);
-        setIsMockData(true);
-      }
-
-      // ── PATTERNS ─────────────────────────────────────────────────────────
-      if (patternsResult?.patterns && Array.isArray(patternsResult.patterns) && patternsResult.patterns.length > 0) {
-        setDetectedPatterns(patternsResult.patterns);
-        setAnomalyList(patternsResult.patterns.filter((p: any) => p.trend === 'rising' || p.priority === 'high'));
-      } else {
-        const dynamicPatterns: any[] = [];
-        dynamicPatterns.push({
-          id: 1,
-          icon: 'alert',
-          title: '[OFFLINE] Pattern Search',
-          description: 'MOCK PATTERN: Unable to analyze logged data without active AI connection.',
-          confidence: 0,
-          trend: 'stable',
-          priority: 'low'
-        });
-        setDetectedPatterns(dynamicPatterns);
-        setAnomalyList(dynamicPatterns);
-      }
-
-      // ── PREDICTIONS ──────────────────────────────────────────────────────
-      if (glucoseForecast && glucoseForecast.length > 0) {
-        setPredictions(glucoseForecast);
-      } else if (predsResult?.prediction) {
-        setPredictions([predsResult.prediction]);
-      } else {
-        setPredictions([{
-          expected_at: '00:00',
-          expected_mg_dl: 0,
-          status: 'offline',
-          status_label: '[OFFLINE]',
-          confidence: 0,
-          ai_powered: false
-        }]);
-      }
-
-      // ── INSULIN ESTIMATE ─────────────────────────────────────────────────
-      // The backend now calls Gemini via AiFeatureService — use it when available.
-      if (insulinResult?.insulin_estimate) {
-        setInsulinEstimate(insulinResult.insulin_estimate);
-        // Calendar from insulin-estimate response can also update calendarDays
-        if (!recsResult?.calendar?.days && insulinResult?.calendar?.days) {
-          setCalendarDays(insulinResult.calendar.days);
-        }
-      } else {
-        setInsulinEstimate({
-          units: 0,
-          current_mg_dl: 0,
-          target_mg_dl: 0,
-          basis: '[OFFLINE] MOCK ESTIMATE: Service unavailable.',
-          disclaimer: 'CRITICAL: Connect to AI services to enable real estimation.',
-          ai_powered: false
-        });
-      }
-    } catch (error) {
-      console.error("[AIInsights] Failed to fetch backend insights:", error);
-    } finally {
-      setInsightsLoading(false);
     }
-  }, [selectedDate, logs, setSelectedDate, profile, selectedModel]);
+
+    const realPatterns = patternList.filter((p: any) => !isOfflinePlaceholder(p.title));
+    if (realPatterns.length > 0) {
+      setDetectedPatterns(realPatterns);
+      setAnomalyList(realPatterns.filter((p: any) => p.trend === 'rising' || p.priority === 'high'));
+    }
+
+    const recs = Array.isArray(payload.recommendations) ? payload.recommendations : [];
+    const realRecs = recs.filter((r: any) => !isOfflinePlaceholder(r.title));
+    if (realRecs.length > 0) {
+      setRecList(realRecs);
+    }
+
+    if (payload.prediction) {
+      setPredictions([payload.prediction]);
+    }
+
+    if (payload.insulin_estimate) {
+      setInsulinEstimate(payload.insulin_estimate);
+    }
+  }, []);
+
+  const buildFallbackCalendar = useCallback((selDateStr: string) => {
+    const today = new Date();
+    const fallbackDays = [];
+    for (let i = 30; i >= 0; i--) {
+      const dayDate = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+      const dayStr = formatDateStr(dayDate);
+      fallbackDays.push({
+        date: dayStr,
+        label: dayDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
+        day: dayDate.getDate(),
+        has_data: logsRef.current.some(
+          l => l.type === 'measurement' && formatDateStr(new Date(l.date)) === dayStr,
+        ),
+        is_selected: dayStr === selDateStr,
+      });
+    }
+    setCalendarDays(fallbackDays);
+  }, []);
+
+  const insightsCacheKey = useMemo(
+    () => buildInsightsCacheKey(
+      insightsDateRange.dateFrom,
+      insightsDateRange.dateTo,
+      insightsDateRange.selDateStr,
+      selectedModel,
+    ),
+    [insightsDateRange, selectedModel],
+  );
+
+  const hydrateFromCache = useCallback((entry: ReturnType<typeof getInsightsCache>) => {
+    if (!entry) return false;
+    if (entry.core) {
+      applyCorePayload(entry.core);
+    } else if (entry.full) {
+      applyCorePayload(entry.full);
+    }
+    if (entry.full && entry.aiComplete) {
+      applyAiPayload(entry.full);
+      if (entry.aiElapsedSec != null) {
+        setElapsedTime(entry.aiElapsedSec);
+      }
+      setInsightsLoading(false);
+      return true;
+    }
+    return false;
+  }, [applyCorePayload, applyAiPayload]);
+
+  const fetchInsights = useCallback(async (options?: { force?: boolean }) => {
+    const { dateFrom, dateTo, selDateStr } = insightsDateRange;
+    const cacheKey = insightsCacheKey;
+
+    if (!options?.force) {
+      const cached = getInsightsCache(cacheKey);
+      if (cached?.aiComplete && hydrateFromCache(cached)) {
+        return;
+      }
+      if (cached?.core) {
+        applyCorePayload(cached.core);
+      }
+    }
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const requestId = ++insightsRequestRef.current;
+    const isCurrentRequest = () =>
+      requestId === insightsRequestRef.current && !controller.signal.aborted;
+
+    setInsightsLoading(true);
+    const aiStartedAt = Date.now();
+
+    try {
+      const cached = getInsightsCache(cacheKey);
+      let fastPayload = cached?.core ?? null;
+
+      if (!fastPayload) {
+        fastPayload = await apiService.fetchInsights(
+          dateFrom,
+          dateTo,
+          selDateStr,
+          selectedModel,
+          { skipAi: true, signal: controller.signal },
+        );
+        if (!isCurrentRequest()) return;
+        patchInsightsCache(cacheKey, { core: fastPayload, aiComplete: false });
+      }
+
+      applyCorePayload(fastPayload);
+      if (!fastPayload?.calendar?.days) {
+        buildFallbackCalendar(selDateStr);
+      }
+
+      const fullPayload = await apiService.fetchInsights(
+        dateFrom,
+        dateTo,
+        selDateStr,
+        selectedModel,
+        { signal: controller.signal },
+      );
+      if (!isCurrentRequest()) return;
+
+      const aiElapsedSec = (Date.now() - aiStartedAt) / 1000;
+      patchInsightsCache(cacheKey, {
+        core: fastPayload,
+        full: fullPayload,
+        aiComplete: true,
+        aiElapsedSec,
+      });
+
+      applyCorePayload(fullPayload);
+      applyAiPayload(fullPayload);
+      setElapsedTime(aiElapsedSec);
+    } catch (error: any) {
+      if (controller.signal.aborted) {
+        return;
+      }
+      console.warn('[AIInsights] Insights fetch failed:', error?.message ?? error);
+      if (isCurrentRequest() && calendarDays.length === 0) {
+        buildFallbackCalendar(selDateStr);
+      }
+    } finally {
+      if (isCurrentRequest()) {
+        setInsightsLoading(false);
+      }
+    }
+  }, [
+    insightsDateRange,
+    insightsCacheKey,
+    selectedModel,
+    applyCorePayload,
+    applyAiPayload,
+    buildFallbackCalendar,
+    hydrateFromCache,
+    calendarDays.length,
+  ]);
+
+  const fetchKeyRef = useRef(insightsCacheKey);
+  useEffect(() => {
+    const cacheKeyChanged = fetchKeyRef.current !== insightsCacheKey;
+    fetchKeyRef.current = insightsCacheKey;
+
+    if (cacheKeyChanged) {
+      abortRef.current?.abort();
+      insightsRequestRef.current += 1;
+    }
+
+    fetchInsights();
+
+    return () => {
+      // Only abort when the date/model key changes — not when switching tabs.
+      if (fetchKeyRef.current !== insightsCacheKey) {
+        abortRef.current?.abort();
+        insightsRequestRef.current += 1;
+      }
+    };
+  }, [insightsCacheKey, fetchInsights]);
 
   useEffect(() => {
     if (calendarDays.length > 0) {
@@ -330,29 +451,25 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
   }, [calendarDays]);
 
   useEffect(() => {
-    fetchInsights();
-  }, [fetchInsights]);
-
-  useEffect(() => {
-    if (insightsLoading) {
-      setElapsedTime(0);
-      const startTime = Date.now();
-      timerRef.current = setInterval(() => {
-        setElapsedTime((Date.now() - startTime) / 1000);
-      }, 100);
-    } else {
+    if (!isActive || !insightsLoading) {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
+      return;
     }
+    setElapsedTime(0);
+    const startTime = Date.now();
+    timerRef.current = setInterval(() => {
+      setElapsedTime((Date.now() - startTime) / 1000);
+    }, 500);
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
     };
-  }, [insightsLoading]);
+  }, [insightsLoading, isActive]);
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -430,9 +547,12 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
     const normalCount = dayLogs.filter(l => l.value >= minGoal && l.value <= maxGoal).length;
     const highCount = dayLogs.filter(l => l.value > maxGoal).length;
 
-    const lowPercent = Math.round((lowCount / values.length) * 100);
-    const normalPercent = Math.round((normalCount / values.length) * 100);
-    const highPercent = 100 - lowPercent - normalPercent;
+    const { lowPercent, normalPercent, highPercent } = distributePercentages(
+      lowCount,
+      normalCount,
+      highCount,
+      values.length,
+    );
 
     return {
       avg,
@@ -441,14 +561,40 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
       lowPercent,
       normalPercent,
       highPercent,
-      count: values.length
+      count: values.length,
     };
   }, [logs, selectedDate, profile]);
 
-  const derivedStats = selectedDayStats;
+  const derivedStats = useMemo(() => {
+    const summary = coreInsights?.summary;
+    if (summary?.total_readings > 0 && summary.distribution) {
+      const d = summary.distribution;
+      return {
+        avg: summary.avg_glucose ?? selectedDayStats.avg,
+        inRangePercent: summary.time_in_range_pct ?? d.normal_pct ?? selectedDayStats.inRangePercent,
+        stability: summary.stability_score ?? selectedDayStats.stability,
+        lowPercent: d.low_pct ?? selectedDayStats.lowPercent,
+        normalPercent: d.normal_pct ?? selectedDayStats.normalPercent,
+        highPercent: d.high_pct ?? selectedDayStats.highPercent,
+        count: summary.total_readings ?? selectedDayStats.count,
+        controlLabel: summary.control_label,
+      };
+    }
+    return { ...selectedDayStats, controlLabel: null as string | null };
+  }, [coreInsights, selectedDayStats]);
 
   // Past 7 days ending at selectedDate
   const weeklyTrendData = useMemo(() => {
+    const backendTrend = coreInsights?.weekly_trend;
+    if (Array.isArray(backendTrend) && backendTrend.length > 0) {
+      return backendTrend.map((p: any) => ({
+        date: p.date,
+        label: p.label ?? p.date?.slice(5),
+        value: p.avg_value != null ? Math.round(p.avg_value) : null,
+        real: p.avg_value != null,
+      }));
+    }
+
     const points = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(selectedDate);
@@ -465,13 +611,13 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
 
       points.push({
         date: dateStr,
-        label: d.toLocaleDateString('en-US', { weekday: 'narrow' }), // "M", "T" etc
+        label: d.toLocaleDateString('en-US', { weekday: 'narrow' }),
         value: avg,
-        real: avg !== null
+        real: avg !== null,
       });
     }
     return points;
-  }, [logs, selectedDate]);
+  }, [logs, selectedDate, coreInsights]);
 
   const hasWeeklyTrendData = useMemo(() => {
     return weeklyTrendData.some(p => p.real);
@@ -519,6 +665,16 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
   }, [weeklyTrendData, hasWeeklyTrendData]);
 
   const weeklyStats = useMemo(() => {
+    const summary = coreInsights?.summary;
+    if (summary?.total_readings > 0) {
+      return {
+        lowest: summary.lowest_mg_dl ?? 0,
+        highest: summary.highest_mg_dl ?? 0,
+        readings: summary.total_readings ?? 0,
+        stdDev: summary.std_dev ?? 0,
+      };
+    }
+
     const startDate = new Date(selectedDate);
     startDate.setDate(selectedDate.getDate() - 6);
     startDate.setHours(0, 0, 0, 0);
@@ -529,7 +685,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
     const past7DaysLogs = logs.filter(l => {
       const logDate = new Date(l.date);
       return l.type === 'measurement' && logDate >= startDate && logDate <= endDate;
-    }) as any[];
+    }) as MeasurementEntry[];
 
     if (past7DaysLogs.length === 0) {
       return { lowest: 0, highest: 0, readings: 0, stdDev: 0 };
@@ -545,7 +701,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
     const stdDev = Math.round(Math.sqrt(variance) * 10) / 10;
 
     return { lowest, highest, readings, stdDev };
-  }, [logs, selectedDate]);
+  }, [logs, selectedDate, coreInsights]);
 
   const weeklySVG = useMemo(() => {
     const minVal = 50;
@@ -886,7 +1042,9 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
               </View>
               <View style={styles.statusPill}>
                 <View style={styles.statusDotGreen} />
-                <Text style={styles.statusPillText}>Good Control</Text>
+                <Text style={styles.statusPillText}>
+                  {derivedStats.controlLabel ?? (derivedStats.inRangePercent >= 70 ? 'Good Control' : 'Needs Attention')}
+                </Text>
               </View>
             </LinearGradient>
 
@@ -1030,6 +1188,16 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
             </View>
 
             <View style={styles.patternList}>
+              {insightsLoading && p_patterns.length === 0 ? (
+                <Text style={[styles.sectionSubtitle, { color: C.textSm, paddingVertical: 8 }]}>
+                  Loading AI patterns…
+                </Text>
+              ) : null}
+              {!insightsLoading && p_patterns.length === 0 ? (
+                <Text style={[styles.sectionSubtitle, { color: C.textSm, paddingVertical: 8 }]}>
+                  No patterns yet. Log more readings or wait for the AI model to finish.
+                </Text>
+              ) : null}
               {p_patterns.map((p) => {
                 const PatternIcon = p.icon;
                 return (
@@ -1132,6 +1300,51 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
             </View>
           </View>
 
+          {/* Card: Activity & glucose impact (from DB, fast path) */}
+          {activityImpact && (activityImpact.activities_count ?? 0) > 0 && (
+            <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.iconBox, { backgroundColor: C.blue }]}>
+                  <Activity size={15} color="#FFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sectionTitle, { color: C.text }]}>Activity Impact</Text>
+                  <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>
+                    {activityImpact.activities_count} sessions · {activityImpact.total_active_minutes ?? 0} min
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.summaryMetricsRow}>
+                <View style={styles.metricBox}>
+                  <Text style={[styles.metricLabel, { color: C.textXs }]}>BEFORE</Text>
+                  <Text style={[styles.metricVal, { color: C.text }]}>
+                    {activityImpact.avg_glucose_before_activity ?? '--'}{' '}
+                    <Text style={styles.metricUnit}>mg/dL</Text>
+                  </Text>
+                </View>
+                <View style={styles.metricBox}>
+                  <Text style={[styles.metricLabel, { color: C.textXs }]}>AFTER</Text>
+                  <Text style={[styles.metricVal, { color: C.text }]}>
+                    {activityImpact.avg_glucose_after_activity ?? '--'}{' '}
+                    <Text style={styles.metricUnit}>mg/dL</Text>
+                  </Text>
+                </View>
+                <View style={[styles.metricBox, { alignItems: 'flex-end' }]}>
+                  <Text style={[styles.metricLabel, { color: C.textXs }]}>DROP</Text>
+                  <Text style={[styles.metricVal, { color: C.green }]}>
+                    {activityImpact.avg_glucose_drop ?? '--'}{' '}
+                    <Text style={styles.metricUnit}>mg/dL</Text>
+                  </Text>
+                </View>
+              </View>
+              {activityImpact.most_frequent_activity ? (
+                <Text style={[styles.sectionSubtitle, { color: C.textSm, marginTop: 8 }]}>
+                  Most frequent: {String(activityImpact.most_frequent_activity).replace(/_/g, ' ')}
+                </Text>
+              ) : null}
+            </View>
+          )}
+
           {/* Card 5: Meal Impact Analysis */}
           <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
             <View style={styles.sectionTitleRow}>
@@ -1186,6 +1399,16 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
             </View>
 
             <View style={styles.recList}>
+              {insightsLoading && p_recommendations.length === 0 ? (
+                <Text style={[styles.sectionSubtitle, { color: C.textSm, paddingVertical: 8 }]}>
+                  Loading recommendations…
+                </Text>
+              ) : null}
+              {!insightsLoading && p_recommendations.length === 0 ? (
+                <Text style={[styles.sectionSubtitle, { color: C.textSm, paddingVertical: 8 }]}>
+                  Recommendations unavailable. Try again or check the model tunnel.
+                </Text>
+              ) : null}
               {p_recommendations.map((rec) => {
                 const RecIcon = rec.icon;
                 return (
