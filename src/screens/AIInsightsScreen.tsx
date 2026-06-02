@@ -44,7 +44,8 @@ import {
 } from 'lucide-react-native';
 import { MeasurementEntry } from '../services/types';
 import { LinearGradient } from 'expo-linear-gradient';
-import { apiService } from '../services/apiService';
+import { insightsService, InsightsBundle, DEFAULT_WINDOW_DAYS } from '../services/insightsService';
+import DateStrip, { DateRange } from '../components/DateStrip';
 
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - 48;
@@ -78,6 +79,46 @@ const MiniSparkline: React.FC<{ data: number[]; color: string }> = ({ data, colo
     <Svg width={w} height={h}>
       <Path d={path} fill="none" stroke={color} strokeWidth={1.8} />
     </Svg>
+  );
+};
+
+// Loading placeholder row for slow AI sections (patterns / recommendations / insulin)
+const SkeletonRow: React.FC<{ C: any }> = ({ C }) => {
+  const block = C.redBorder || '#ECECEC';
+  return (
+    <View style={[styles.skeletonRow, { backgroundColor: C.redBg || '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>
+      <View style={[styles.skeletonIcon, { backgroundColor: block }]} />
+      <View style={{ flex: 1, gap: 8 }}>
+        <View style={[styles.skeletonLine, { width: '70%', backgroundColor: block }]} />
+        <View style={[styles.skeletonLine, { width: '95%', backgroundColor: block }]} />
+      </View>
+    </View>
+  );
+};
+
+// Loading placeholder for the Insulin card. Mirrors the loaded card's layout (ring + text +
+// disclaimer bar) so the card keeps the SAME height while loading — without this the card
+// collapses to one short row and appears to "jump into place" when the data arrives.
+const InsulinSkeleton: React.FC<{ C: any }> = ({ C }) => {
+  const block = C.redBorder || '#ECECEC';
+  const bar = C.divider || '#F0EDED';
+  return (
+    <>
+      <View style={styles.insulinContent}>
+        <View style={[styles.skeletonIcon, { width: 60, height: 60, borderRadius: 30, backgroundColor: block }]} />
+        <View style={{ flex: 1, gap: 8 }}>
+          <View style={[styles.skeletonLine, { width: '50%', backgroundColor: block }]} />
+          <View style={[styles.skeletonLine, { width: '95%', backgroundColor: block }]} />
+          <View style={[styles.skeletonLine, { width: '80%', backgroundColor: block }]} />
+        </View>
+      </View>
+      <View style={[styles.disclaimerBox, { backgroundColor: '#FAFAFA', borderColor: bar }]}>
+        <View style={{ flex: 1, gap: 6 }}>
+          <View style={[styles.skeletonLine, { width: '90%', backgroundColor: block }]} />
+          <View style={[styles.skeletonLine, { width: '70%', backgroundColor: block }]} />
+        </View>
+      </View>
+    </>
   );
 };
 
@@ -158,201 +199,249 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
   const [insulinEstimate, setInsulinEstimate] = useState<any>(null);
   const [isMockData, setIsMockData] = useState(false);
 
-  const [selectedModel, setSelectedModel] = useState<'kaggle' | 'local' | 'fallback'>('kaggle');
-  const [usedModel, setUsedModel] = useState<'kaggle' | 'local' | 'fallback' | null>(null);
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Model is fixed to the backend default now that the in-app selector is gone (see design).
+  const selectedModel = 'kaggle';
+  const [insightsError, setInsightsError] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
-  const dayScrollRef = useRef<ScrollView>(null);
 
-  const fetchInsights = useCallback(async () => {
+  // True while the screen is mounted. Used to ignore late async results WITHOUT cancelling the
+  // network request — a background prefetch must keep running when the user navigates away.
+  const mountedRef = useRef(true);
+
+  // Keep latest non-trigger values readable inside applyBundle without widening the load
+  // callback's dependency list (those deps are what re-fire the request — keep them stable).
+  const logsRef = useRef(logs);
+  logsRef.current = logs;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  const forecastRef = useRef(glucoseForecast);
+  forecastRef.current = glucoseForecast;
+
+  const patientId = useMemo(
+    () => String((profile as any)?.id ?? profile?.email ?? 'anon'),
+    [profile]
+  );
+
+  // The insights window is driven by the DateStrip's range selection.
+  // null → the default rolling DEFAULT_WINDOW_DAYS-day window (see buildInsightsParams).
+  const [range, setRange] = useState<{ from: Date; to: Date } | null>(null);
+
+  // The default window shown in the DateStrip when the user hasn't picked a custom range.
+  // Computed the same way as buildInsightsParams' default so the strip highlights EXACTLY
+  // the range the screen fetches (today minus DEFAULT_WINDOW_DAYS → today).
+  const defaultRange = useMemo(() => {
+    const to = new Date();
+    const from = new Date(to.getTime() - DEFAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    return { from, to };
+  }, []);
+  // Stable string trigger — only changes when a COMPLETE range is chosen, so the (slow) request
+  // doesn't fire on the first tap, only once both ends are picked.
+  const rangeKey = range ? `${formatDateStr(range.from)}_${formatDateStr(range.to)}` : 'default';
+
+  // Days that have at least one measurement — shown as a dot under the date in the strip.
+  const datesWithData = useMemo(() => {
+    const s = new Set<string>();
+    for (const l of logs) {
+      if (l.type === 'measurement') s.add(formatDateStr(new Date(l.date)));
+    }
+    return s;
+  }, [logs]);
+
+  const handleRangeSelected = useCallback(({ dateFrom, dateTo }: DateRange) => {
+    if (dateFrom && dateTo) {
+      // Complete range → refetch insights for [from, to].
+      setRange({ from: dateFrom, to: dateTo });
+      setSelectedDate(dateTo); // header + local day stats follow the range end
+    } else if (dateFrom) {
+      // Only the first end picked so far — move the header there, don't refetch yet.
+      setSelectedDate(dateFrom);
+    } else {
+      setRange(null);
+    }
+  }, [setSelectedDate]);
+
+  // Apply a fetched (or cached) insights bundle to the screen's state. Reads the latest
+  // logs/profile/forecast via refs, so it needs no deps and is safe to call from any path.
+  const applyBundle = useCallback((bundle: InsightsBundle, selDateStr: string) => {
+    const recsResult = bundle.recommendations;
+    const patternsResult = bundle.patterns;
+    const predsResult = bundle.prediction;
+    const insulinResult = bundle.insulin;
+
+    const logs = logsRef.current;
+    const profile = profileRef.current;
+    const glucoseForecast = forecastRef.current;
+
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    const actualModel = patternsResult?.model_used || recsResult?.model_used || 'fallback';
+    setIsMockData(actualModel === 'fallback');
+
+    if (recsResult?.calendar?.days) {
+      setCalendarDays(recsResult.calendar.days);
+    } else {
+      // Fallback generated calendar days for the default window
+      const fallbackDays = [];
+      for (let i = DEFAULT_WINDOW_DAYS; i >= 0; i--) {
+        const dayDate = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+        const dayStr = formatDateStr(dayDate);
+        fallbackDays.push({
+          date: dayStr,
+          label: dayDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
+          day: dayDate.getDate(),
+          has_data: logs.some(l => l.type === 'measurement' && formatDateStr(new Date(l.date)) === dayStr),
+          is_selected: dayStr === selDateStr
+        });
+      }
+      setCalendarDays(fallbackDays);
+    }
+
+    // ── RECOMMENDATIONS ──────────────────────────────────────────────────
+    // Prefer backend AI response; fall back to local logic for free users.
+    if (recsResult?.recommendations && Array.isArray(recsResult.recommendations) && recsResult.recommendations.length > 0) {
+      setRecList(recsResult.recommendations);
+    } else {
+      const dynamicRecs: any[] = [];
+      dynamicRecs.push({
+        id: 1,
+        icon: 'clock',
+        title: '[OFFLINE] Connect Services',
+        description: 'MOCK RECOMMENDATION: Connect to a model to see personalized advice. Current status: Service Offline.',
+        priority: 'high',
+        priority_label: 'Mock',
+        category: 'timing'
+      });
+      setRecList(dynamicRecs);
+      setIsMockData(true);
+    }
+
+    // ── PATTERNS ─────────────────────────────────────────────────────────
+    if (patternsResult?.patterns && Array.isArray(patternsResult.patterns) && patternsResult.patterns.length > 0) {
+      setDetectedPatterns(patternsResult.patterns);
+      setAnomalyList(patternsResult.patterns.filter((p: any) => p.trend === 'rising' || p.priority === 'high'));
+    } else {
+      const dynamicPatterns: any[] = [];
+      dynamicPatterns.push({
+        id: 1,
+        icon: 'alert',
+        title: '[OFFLINE] Pattern Search',
+        description: 'MOCK PATTERN: Unable to analyze logged data without active AI connection.',
+        confidence: 0,
+        trend: 'stable',
+        priority: 'low'
+      });
+      setDetectedPatterns(dynamicPatterns);
+      setAnomalyList(dynamicPatterns);
+    }
+
+    // ── PREDICTIONS ──────────────────────────────────────────────────────
+    if (glucoseForecast && glucoseForecast.length > 0) {
+      setPredictions(glucoseForecast);
+    } else if (predsResult?.prediction) {
+      setPredictions([predsResult.prediction]);
+    } else {
+      setPredictions([{
+        expected_at: '00:00',
+        expected_mg_dl: 0,
+        status: 'offline',
+        status_label: '[OFFLINE]',
+        confidence: 0,
+        ai_powered: false
+      }]);
+    }
+
+    // ── INSULIN ESTIMATE ─────────────────────────────────────────────────
+    // The backend now calls Gemini via AiFeatureService — use it when available.
+    if (insulinResult?.insulin_estimate) {
+      setInsulinEstimate(insulinResult.insulin_estimate);
+      // Calendar from insulin-estimate response can also update calendarDays
+      if (!recsResult?.calendar?.days && insulinResult?.calendar?.days) {
+        setCalendarDays(insulinResult.calendar.days);
+      }
+    } else {
+      setInsulinEstimate({
+        units: 0,
+        current_mg_dl: 0,
+        target_mg_dl: 0,
+        basis: '[OFFLINE] MOCK ESTIMATE: Service unavailable.',
+        disclaimer: 'CRITICAL: Connect to AI services to enable real estimation.',
+        ai_powered: false
+      });
+    }
+  }, []);
+
+  // Load insights with stale-while-revalidate: render cached data instantly, then revalidate in
+  // the background. Requests are de-duped + persisted by insightsService, and are only ever
+  // aborted on logout — never on unmount / tab switch — so a prefetch is never cancelled.
+  const loadInsights = useCallback(async (force = false) => {
+    const params = insightsService.buildInsightsParams({
+      patientId,
+      dateFrom: range?.from,
+      dateTo: range?.to,
+      model: selectedModel,
+    });
+    const selDateStr = params.selectedDate;
+
+    await insightsService.hydrate();
+    const cached = insightsService.getCached(params);
+
+    if (cached && !force) {
+      // Instant render from cache — no spinner.
+      applyBundle(cached, selDateStr);
+      setInsightsError(false);
+      setInsightsLoading(false);
+      // Revalidate in the background if stale; keep showing cached data if revalidation fails.
+      if (insightsService.isStale(cached)) {
+        insightsService
+          .fetchInsightsBundle(params)
+          .then(fresh => { if (mountedRef.current) applyBundle(fresh, selDateStr); })
+          .catch(() => {});
+      }
+      return;
+    }
+
+    // No cache (or forced retry) → show the loading skeletons and wait for the (long) call.
+    // Clear the previous range's data first: the skeletons are gated on the lists being empty
+    // (e.g. `insightsLoading && p_patterns.length === 0`), so without this the stale data from
+    // the old range stays on screen with no spinner and silently swaps when the fetch lands.
+    setRecList([]);
+    setDetectedPatterns([]);
+    setAnomalyList([]);
+    setInsulinEstimate(null);
+    setInsightsError(false);
     setInsightsLoading(true);
     try {
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-
-      const startDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-      startDate.setHours(0, 0, 0, 0);
-
-      // Clamp selectedDate between startDate (30 days ago) and today
-      let clampedDate = new Date(selectedDate);
-      if (clampedDate > today) {
-        clampedDate = today;
-        setSelectedDate(today);
-      } else if (clampedDate < startDate) {
-        clampedDate = startDate;
-        setSelectedDate(startDate);
-      }
-
-      const dateFrom = formatDateStr(startDate);
-      const dateTo = formatDateStr(today);
-      const selDateStr = formatDateStr(clampedDate);
-
-      const [recsResult, patternsResult, predsResult, insulinResult] = await Promise.all([
-        apiService.fetchRecommendations(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
-        apiService.fetchPatterns(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
-        apiService.fetchPredictions(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
-        apiService.fetchInsulinEstimate(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
-      ]);
-
-      const actualModel = patternsResult?.model_used || recsResult?.model_used || 'fallback';
-      setUsedModel(actualModel);
-      setIsMockData(actualModel === 'fallback');
-
-      if (recsResult?.calendar?.days) {
-        setCalendarDays(recsResult.calendar.days);
-      } else {
-        // Fallback generated calendar days for the last 30 days
-        const fallbackDays = [];
-        for (let i = 30; i >= 0; i--) {
-          const dayDate = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
-          const dayStr = formatDateStr(dayDate);
-          fallbackDays.push({
-            date: dayStr,
-            label: dayDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
-            day: dayDate.getDate(),
-            has_data: logs.some(l => l.type === 'measurement' && formatDateStr(new Date(l.date)) === dayStr),
-            is_selected: dayStr === selDateStr
-          });
-        }
-        setCalendarDays(fallbackDays);
-      }
-
-      // Calculate selectedDayStats locally (used as fallback for all sections below)
-      const dayLogs = logs.filter((l): l is MeasurementEntry =>
-        l.type === 'measurement' &&
-        formatDateStr(new Date(l.date)) === selDateStr
-      );
-
-      const minGoal = profile?.goals?.min || 70;
-      const maxGoal = profile?.goals?.max || 140;
-      const count = dayLogs.length;
-      let avg = 120;
-      if (count > 0) {
-        const values = dayLogs.map(l => l.value);
-        avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-      }
-
-      // ── RECOMMENDATIONS ──────────────────────────────────────────────────
-      // Prefer backend AI response; fall back to local logic for free users.
-      if (recsResult?.recommendations && Array.isArray(recsResult.recommendations) && recsResult.recommendations.length > 0) {
-        setRecList(recsResult.recommendations);
-      } else {
-        const dynamicRecs: any[] = [];
-        dynamicRecs.push({
-          id: 1,
-          icon: 'clock',
-          title: '[OFFLINE] Connect Services',
-          description: 'MOCK RECOMMENDATION: Connect to a model to see personalized advice. Current status: Service Offline.',
-          priority: 'high',
-          priority_label: 'Mock',
-          category: 'timing'
-        });
-        setRecList(dynamicRecs);
-        setIsMockData(true);
-      }
-
-      // ── PATTERNS ─────────────────────────────────────────────────────────
-      if (patternsResult?.patterns && Array.isArray(patternsResult.patterns) && patternsResult.patterns.length > 0) {
-        setDetectedPatterns(patternsResult.patterns);
-        setAnomalyList(patternsResult.patterns.filter((p: any) => p.trend === 'rising' || p.priority === 'high'));
-      } else {
-        const dynamicPatterns: any[] = [];
-        dynamicPatterns.push({
-          id: 1,
-          icon: 'alert',
-          title: '[OFFLINE] Pattern Search',
-          description: 'MOCK PATTERN: Unable to analyze logged data without active AI connection.',
-          confidence: 0,
-          trend: 'stable',
-          priority: 'low'
-        });
-        setDetectedPatterns(dynamicPatterns);
-        setAnomalyList(dynamicPatterns);
-      }
-
-      // ── PREDICTIONS ──────────────────────────────────────────────────────
-      if (glucoseForecast && glucoseForecast.length > 0) {
-        setPredictions(glucoseForecast);
-      } else if (predsResult?.prediction) {
-        setPredictions([predsResult.prediction]);
-      } else {
-        setPredictions([{
-          expected_at: '00:00',
-          expected_mg_dl: 0,
-          status: 'offline',
-          status_label: '[OFFLINE]',
-          confidence: 0,
-          ai_powered: false
-        }]);
-      }
-
-      // ── INSULIN ESTIMATE ─────────────────────────────────────────────────
-      // The backend now calls Gemini via AiFeatureService — use it when available.
-      if (insulinResult?.insulin_estimate) {
-        setInsulinEstimate(insulinResult.insulin_estimate);
-        // Calendar from insulin-estimate response can also update calendarDays
-        if (!recsResult?.calendar?.days && insulinResult?.calendar?.days) {
-          setCalendarDays(insulinResult.calendar.days);
-        }
-      } else {
-        setInsulinEstimate({
-          units: 0,
-          current_mg_dl: 0,
-          target_mg_dl: 0,
-          basis: '[OFFLINE] MOCK ESTIMATE: Service unavailable.',
-          disclaimer: 'CRITICAL: Connect to AI services to enable real estimation.',
-          ai_powered: false
-        });
-      }
-    } catch (error) {
+      const bundle = await insightsService.fetchInsightsBundle(params);
+      if (!mountedRef.current) return;
+      applyBundle(bundle, selDateStr);
+    } catch (error: any) {
+      if (!mountedRef.current) return;
+      if (error?.name === 'AbortError') return; // logout-triggered cancel — ignore
       console.error("[AIInsights] Failed to fetch backend insights:", error);
+      setInsightsError(true);
     } finally {
-      setInsightsLoading(false);
+      if (mountedRef.current) setInsightsLoading(false);
     }
-  }, [selectedDate, logs, setSelectedDate, profile, selectedModel]);
+    // `range` is read above but tracked via the stable `rangeKey` string so the request only
+    // re-fires when a complete range changes.
+  }, [patientId, rangeKey, selectedModel, applyBundle]);
 
   useEffect(() => {
-    if (calendarDays.length > 0) {
-      const selectedIndex = calendarDays.findIndex(d => d.is_selected);
-      if (selectedIndex !== -1) {
-        // Approximate day chip width (48px minWidth + padding/margins ~= 56px)
-        const chipWidth = 56;
-        const gap = 8;
-        const paddingLeft = 16;
-        const scrollX = Math.max(0, paddingLeft + selectedIndex * (chipWidth + gap) - 150);
-        setTimeout(() => {
-          dayScrollRef.current?.scrollTo({ x: scrollX, y: 0, animated: true });
-        }, 150);
-      }
-    }
-  }, [calendarDays]);
-
-  useEffect(() => {
-    fetchInsights();
-  }, [fetchInsights]);
-
-  useEffect(() => {
-    if (insightsLoading) {
-      setElapsedTime(0);
-      const startTime = Date.now();
-      timerRef.current = setInterval(() => {
-        setElapsedTime((Date.now() - startTime) / 1000);
-      }, 100);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
+    mountedRef.current = true;
+    loadInsights();
+    // On unmount we only stop listening for results — we deliberately do NOT abort the network
+    // request, so a slow in-flight/prefetch call keeps running while the user is on another tab.
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      mountedRef.current = false;
     };
-  }, [insightsLoading]);
+  }, [loadInsights]);
+
+  const handleRetryInsights = useCallback(() => {
+    loadInsights(true);
+  }, [loadInsights]);
+
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -701,15 +790,9 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
       <View style={[styles.header, { borderBottomColor: C.divider }]}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.headerDateText, { color: C.textSm }]}>{selectedDateHeaderStr}</Text>
-          <Text style={[styles.headerTitleText, { color: C.text }]}>AI Insights ✨</Text>
-          <Text style={[styles.headerSubText, { color: C.textSm }]}>Personalized advice by Gemini</Text>
+          <Text style={[styles.headerTitleText, { color: C.text }]}>Hello, {profile?.name || 'there'}</Text>
+          <Text style={[styles.headerSubText, { color: C.textSm }]}>Track your glucose with confidence</Text>
         </View>
-        {isMockData && (
-          <View style={[styles.mockBadge, { backgroundColor: C.amberBg, borderColor: C.amberBorder }]}>
-            <AlertTriangle size={12} color={C.amber} />
-            <Text style={[styles.mockBadgeText, { color: C.amber }]}>DEMO DATA</Text>
-          </View>
-        )}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {activeSegment === 'chat' && (
             <TouchableOpacity onPress={clearChat} style={[styles.clearBtn, { backgroundColor: C.redBg }]}>
@@ -727,38 +810,14 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
         </View>
       </View>
 
-      {/* Day Selector Chips */}
-      {activeSegment === 'dashboard' && calendarDays.length > 0 && (
-        <ScrollView
-          ref={dayScrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.dayScrollRow}
-          contentContainerStyle={styles.dayScrollContent}
-        >
-          {calendarDays.map((day) => (
-            <TouchableOpacity
-              key={day.date}
-              style={[
-                styles.dayChip,
-                day.is_selected
-                  ? [styles.dayChipActive, { backgroundColor: C.red }]
-                  : [styles.dayChipInactive, { backgroundColor: C.redBg, borderColor: C.redBorder }],
-              ]}
-              onPress={() => setSelectedDate(new Date(day.date + 'T12:00:00'))}
-            >
-              <Text style={[styles.dayChipLabel, { color: day.is_selected ? 'rgba(255,255,255,0.75)' : C.textSm }]}>
-                {day.label}
-              </Text>
-              <Text style={[styles.dayChipDay, { color: day.is_selected ? '#FFF' : C.text }]}>
-                {day.day}
-              </Text>
-              {day.has_data && (
-                <View style={[styles.dayChipDot, { backgroundColor: day.is_selected ? '#FFF' : C.red }]} />
-              )}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+      {/* Horizontal date RANGE selector — two taps pick from→to; refetches for that range */}
+      {activeSegment === 'dashboard' && (
+        <DateStrip
+          initialFrom={range?.from ?? defaultRange.from}
+          initialTo={range?.to ?? defaultRange.to}
+          onRangeSelected={handleRangeSelected}
+          datesWithData={datesWithData}
+        />
       )}
 
       {/* Segment Selector Tab - Quarantined (Hidden) */}
@@ -787,95 +846,23 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
 
       {activeSegment === 'dashboard' ? (
         <>
-          {/* Model Selector and Status Banner */}
-          <View style={styles.modelSelectorContainer}>
-            <Text style={[styles.modelSelectorLabel, { color: C.textSm }]}>AI RECOMMENDATION ENGINE MODEL</Text>
-            <View style={[styles.modelSelectorBg, { backgroundColor: C.redBg || '#FDE8E8' }]}>
-              <TouchableOpacity
-                style={[styles.modelSegment, selectedModel === 'kaggle' && [styles.activeModelSegment, { backgroundColor: C.red }]]}
-                onPress={() => setSelectedModel('kaggle')}
-              >
-                <Text style={[styles.modelSegmentText, { color: selectedModel === 'kaggle' ? '#FFF' : C.textSm }]}>
-                  Cloud Qwen
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modelSegment, selectedModel === 'local' && [styles.activeModelSegment, { backgroundColor: C.red }]]}
-                onPress={() => setSelectedModel('local')}
-              >
-                <Text style={[styles.modelSegmentText, { color: selectedModel === 'local' ? '#FFF' : C.textSm }]}>
-                  Local PC
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modelSegment, selectedModel === 'fallback' && [styles.activeModelSegment, { backgroundColor: C.red }]]}
-                onPress={() => setSelectedModel('fallback')}
-              >
-                <Text style={[styles.modelSegmentText, { color: selectedModel === 'fallback' ? '#FFF' : C.textSm }]}>
-                  Heuristics
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Diagnostic Status Banner */}
-            <View style={[
-              styles.statusBanner,
-              {
-                backgroundColor: insightsLoading
-                  ? (C.blueBg || '#EFF6FF')
-                  : (usedModel === 'fallback' ? (C.amberBg || '#FEF3C7') : (C.greenBg || '#F0FDF4')),
-                borderColor: insightsLoading
-                  ? (C.blueBorder || '#BFDBFE')
-                  : (usedModel === 'fallback' ? (C.amberBorder || '#FDE68A') : (C.greenBorder || '#BBF7D0'))
-              }
-            ]}>
-              <View style={styles.statusBannerLeft}>
-                <View style={[
-                  styles.statusIndicator,
-                  {
-                    backgroundColor: insightsLoading
-                      ? '#3B82F6'
-                      : (usedModel === 'fallback' ? '#F59E0B' : '#10B981')
-                  }
-                ]} />
-                <Text style={[
-                  styles.statusBannerText,
-                  {
-                    color: insightsLoading
-                      ? '#1E40AF'
-                      : (usedModel === 'fallback' ? '#92400E' : '#166534')
-                  }
-                ]}>
-                  {insightsLoading ? (
-                    `Querying ${selectedModel === 'kaggle' ? 'Kaggle Cloud' : selectedModel === 'local' ? 'Local PC' : 'PHP Fallback'}...`
-                  ) : (
-                    `Response from: ${usedModel === 'kaggle' ? 'Kaggle Cloud (Qwen)' : usedModel === 'local' ? 'Local PC (Qwen)' : 'PHP Heuristic/Fallback'}`
-                  )}
-                </Text>
-              </View>
-              <View style={styles.statusBannerRight}>
-                <Clock size={12} color={
-                  insightsLoading
-                    ? '#1E40AF'
-                    : (usedModel === 'fallback' ? '#92400E' : '#166534')
-                } style={{ marginRight: 4 }} />
-                <Text style={[
-                  styles.timerText,
-                  {
-                    color: insightsLoading
-                      ? '#1E40AF'
-                      : (usedModel === 'fallback' ? '#92400E' : '#166534')
-                  }
-                ]}>
-                  {insightsLoading ? `${elapsedTime.toFixed(1)}s` : `${elapsedTime.toFixed(2)}s`}
-                </Text>
-              </View>
-            </View>
-          </View>
-
           <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+
+          {/* Genuine timeout / network failure — distinct from the [OFFLINE] mock fallback */}
+          {insightsError && !insightsLoading && (
+            <View style={[styles.errorCard, { backgroundColor: C.redBg || '#FEF2F2', borderColor: C.redBorder || '#FECACA' }]}>
+              <View style={[styles.errorIconBox, { backgroundColor: '#FEE2E2' }]}>
+                <AlertCircle size={20} color="#EF4444" />
+              </View>
+              <Text style={[styles.errorTitle, { color: C.text }]}>Couldn't load AI insights</Text>
+              <Text style={[styles.errorDesc, { color: C.textSm }]}>
+                The AI engine took too long to respond or the connection dropped. Your summary below is still up to date.
+              </Text>
+              <TouchableOpacity style={[styles.retryBtn, { backgroundColor: C.red }]} onPress={handleRetryInsights}>
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Card 1: Glucose Control Summary */}
           <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder }]}>
@@ -970,99 +957,6 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
             </View>
           </View>
 
-          {/* Card 2: Alerts & Anomalies */}
-          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
-            <View style={styles.sectionTitleRow}>
-              <View style={[styles.iconBox, { backgroundColor: '#EF4444' }]}>
-                <AlertTriangle size={15} color="#FFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sectionTitle, { color: C.text }]}>Alerts & Anomalies</Text>
-                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>Requires your attention</Text>
-              </View>
-              <View style={styles.alertCountBadge}>
-                <Text style={styles.alertCountText}>{anomalyAlerts.length > 0 ? `${anomalyAlerts.length} active` : 'None'}</Text>
-              </View>
-            </View>
-
-            <View style={styles.alertList}>
-              {anomalyAlerts.map((alert) => {
-                const AlertIcon = alert.icon;
-                return (
-                  <View key={alert.id} style={[styles.alertCard, { borderColor: alert.border }]}>
-                    <View style={[styles.alertCardHeader, { backgroundColor: alert.bg }]}>
-                      <View style={[styles.cardAlertIconBox, { backgroundColor: `${alert.iconColor}18` }]}>
-                        <AlertIcon size={14} color={alert.iconColor} />
-                      </View>
-                      <Text style={[styles.alertTitle, { color: C.text }]} numberOfLines={1}>{alert.title}</Text>
-                      <View style={[styles.severityBadge, { borderColor: alert.border }]}>
-                        <Text style={[styles.severityText, { color: alert.iconColor }]}>
-                          {alert.severity.toUpperCase()}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.alertBody}>
-                      <Text style={[styles.alertDesc, { color: C.textMd }]}>{alert.desc}</Text>
-                      <View style={styles.alertTimeRow}>
-                        <Clock size={10} color={C.textXs} />
-                        <Text style={[styles.alertTimeText, { color: C.textXs }]}>{alert.time}</Text>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Card 3: Patterns Detected */}
-          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
-            <View style={styles.sectionTitleRow}>
-              <View style={[styles.iconBox, { backgroundColor: C.purple }]}>
-                <Eye size={15} color="#FFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sectionTitle, { color: C.text }]}>Patterns Detected</Text>
-                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>AI-identified from history</Text>
-              </View>
-              <View style={[styles.alertCountBadge, { backgroundColor: C.purpleBg }]}>
-                <Text style={[styles.alertCountText, { color: C.purple }]}>{p_patterns.length > 0 ? `${p_patterns.length} patterns` : 'None'}</Text>
-              </View>
-            </View>
-
-            <View style={styles.patternList}>
-              {p_patterns.map((p) => {
-                const PatternIcon = p.icon;
-                return (
-                  <View key={p.id} style={[styles.patternRow, { backgroundColor: '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>
-                    <View style={[styles.patternIconWrapper, { backgroundColor: p.iconBg, borderColor: `${p.color}25` }]}>
-                      <PatternIcon size={14} color={p.color} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={styles.patternRowHeader}>
-                        <Text style={[styles.patternTitleText, { color: C.text }]} numberOfLines={1}>{p.title}</Text>
-                        <MiniSparkline data={p.sparkData} color={p.color} />
-                      </View>
-                      <Text style={[styles.patternDescText, { color: C.textMd }]}>{p.desc}</Text>
-                      <View style={styles.patternMetaRow}>
-                        <View style={[styles.confBadge, { backgroundColor: `${p.color}10`, borderColor: `${p.color}30` }]}>
-                          <Text style={[styles.confText, { color: p.color }]}>{p.confidence}% confidence</Text>
-                        </View>
-                        <View style={styles.trendRowSmall}>
-                          {p.trend === 'up' && <TrendingUp size={11} color={C.amber} />}
-                          {p.trend === 'down' && <TrendingDown size={11} color={C.green} />}
-                          {p.trend === 'stable' && <Minus size={11} color={C.green} />}
-                          <Text style={[styles.trendRowText, { color: p.trend === 'up' ? C.amber : C.green }]}>
-                            {p.trend === 'up' ? 'Rising' : p.trend === 'down' ? 'Declining' : 'Stable'}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-
           {/* Card 4: Prediction Forecast */}
           <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
             <View style={styles.sectionTitleRow}>
@@ -1132,82 +1026,6 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
             </View>
           </View>
 
-          {/* Card 5: Meal Impact Analysis */}
-          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
-            <View style={styles.sectionTitleRow}>
-              <View style={[styles.iconBox, { backgroundColor: C.green }]}>
-                <Utensils size={15} color="#FFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sectionTitle, { color: C.text }]}>Meal Impact</Text>
-                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>How food affects your glucose</Text>
-              </View>
-            </View>
-
-            <View style={styles.mealImpactList}>
-              {mealImpactData.map((m) => {
-                const isHigh = m.severity === "high";
-                const colorToken = isHigh ? C.amber : C.green;
-                return (
-                  <View key={m.meal} style={[styles.mealImpactRow, { borderColor: isHigh ? C.amberBorder : '#F0EDED' }]}>
-                    <View style={styles.mealLeft}>
-                      <Text style={styles.mealEmoji}>{m.emoji}</Text>
-                      <View>
-                        <Text style={[styles.mealName, { color: C.text }]}>{m.meal}</Text>
-                        <Text style={[styles.mealDeltaText, { color: C.textSm }]}>
-                          {m.before} → <Text style={{ fontWeight: 'bold', color: isHigh ? C.amber : C.text }}>{m.after}</Text> mg/dL
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                      <Text style={[styles.deltaVal, { color: colorToken }]}>{m.delta}</Text>
-                      <View style={[styles.severityPill, { backgroundColor: isHigh ? C.amberBg : C.greenBg, borderColor: isHigh ? C.amberBorder : C.greenBorder }]}>
-                        <Text style={[styles.severityPillText, { color: colorToken }]}>
-                          {isHigh ? "High Impact" : "Low Impact"}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Card 6: AI Recommendations */}
-          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
-            <View style={styles.sectionTitleRow}>
-              <View style={[styles.iconBox, { backgroundColor: C.red }]}>
-                <Lightbulb size={15} color="#FFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sectionTitle, { color: C.text }]}>What You Should Do</Text>
-                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>Personalized recommendations</Text>
-              </View>
-            </View>
-
-            <View style={styles.recList}>
-              {p_recommendations.map((rec) => {
-                const RecIcon = rec.icon;
-                return (
-                  <View key={rec.id} style={[styles.recRow, { backgroundColor: '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>
-                    <View style={[styles.recIconBox, { backgroundColor: rec.iconBg }]}>
-                      <RecIcon size={14} color={rec.color} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={styles.recRowHeader}>
-                        <Text style={[styles.recTitle, { color: C.text }]} numberOfLines={1}>{rec.title}</Text>
-                        <View style={[styles.recPriorityBadge, { backgroundColor: rec.bg, borderColor: rec.border }]}>
-                          <Text style={[styles.recPriorityText, { color: rec.color }]}>{rec.priority}</Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.recDesc, { color: C.textMd }]}>{rec.desc}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-
           {/* Card 7: Insulin Estimate */}
           <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, overflow: 'hidden' }]}>
             <LinearGradient colors={['#6366F1', '#4F46E5']} style={styles.insulinHeaderStrip}>
@@ -1216,6 +1034,10 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
             </LinearGradient>
 
             <View style={styles.insulinBody}>
+              {insightsLoading && !insulinEstimate ? (
+                <InsulinSkeleton C={C} />
+              ) : (
+              <>
               <View style={styles.insulinContent}>
                 <View style={styles.insulinRingContainer}>
                   <ProgressRing
@@ -1248,6 +1070,102 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
                   {insulinEstimate?.disclaimer ?? 'For informational purposes only. This is not medical advice. Always consult your healthcare provider before adjusting insulin dosage.'}
                 </Text>
               </View>
+              </>
+              )}
+            </View>
+          </View>
+
+          {/* Card 3: Patterns Detected */}
+          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.iconBox, { backgroundColor: C.purple }]}>
+                <Eye size={15} color="#FFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: C.text }]}>Patterns Detected</Text>
+                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>AI-identified from history</Text>
+              </View>
+              <View style={[styles.alertCountBadge, { backgroundColor: C.purpleBg }]}>
+                <Text style={[styles.alertCountText, { color: C.purple }]}>{p_patterns.length > 0 ? `${p_patterns.length} patterns` : 'None'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.patternList}>
+              {insightsLoading && p_patterns.length === 0 ? (
+                <>
+                  <SkeletonRow C={C} />
+                  <SkeletonRow C={C} />
+                </>
+              ) : p_patterns.map((p) => {
+                const PatternIcon = p.icon;
+                return (
+                  <View key={p.id} style={[styles.patternRow, { backgroundColor: '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>
+                    <View style={[styles.patternIconWrapper, { backgroundColor: p.iconBg, borderColor: `${p.color}25` }]}>
+                      <PatternIcon size={14} color={p.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.patternRowHeader}>
+                        <Text style={[styles.patternTitleText, { color: C.text }]} numberOfLines={1}>{p.title}</Text>
+                        <MiniSparkline data={p.sparkData} color={p.color} />
+                      </View>
+                      <Text style={[styles.patternDescText, { color: C.textMd }]}>{p.desc}</Text>
+                      <View style={styles.patternMetaRow}>
+                        <View style={[styles.confBadge, { backgroundColor: `${p.color}10`, borderColor: `${p.color}30` }]}>
+                          <Text style={[styles.confText, { color: p.color }]}>{p.confidence}% confidence</Text>
+                        </View>
+                        <View style={styles.trendRowSmall}>
+                          {p.trend === 'up' && <TrendingUp size={11} color={C.amber} />}
+                          {p.trend === 'down' && <TrendingDown size={11} color={C.green} />}
+                          {p.trend === 'stable' && <Minus size={11} color={C.green} />}
+                          <Text style={[styles.trendRowText, { color: p.trend === 'up' ? C.amber : C.green }]}>
+                            {p.trend === 'up' ? 'Rising' : p.trend === 'down' ? 'Declining' : 'Stable'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Card 6: AI Recommendations */}
+          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder, padding: 16 }]}>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.iconBox, { backgroundColor: C.red }]}>
+                <Lightbulb size={15} color="#FFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: C.text }]}>What You Should Do</Text>
+                <Text style={[styles.sectionSubtitle, { color: C.textSm }]}>Personalized recommendations</Text>
+              </View>
+            </View>
+
+            <View style={styles.recList}>
+              {insightsLoading && p_recommendations.length === 0 ? (
+                <>
+                  <SkeletonRow C={C} />
+                  <SkeletonRow C={C} />
+                </>
+              ) : p_recommendations.map((rec) => {
+                const RecIcon = rec.icon;
+                return (
+                  <View key={rec.id} style={[styles.recRow, { backgroundColor: '#FAFAFA', borderColor: C.divider || '#F0EDED' }]}>
+                    <View style={[styles.recIconBox, { backgroundColor: rec.iconBg }]}>
+                      <RecIcon size={14} color={rec.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.recRowHeader}>
+                        <Text style={[styles.recTitle, { color: C.text }]} numberOfLines={1}>{rec.title}</Text>
+                        <View style={[styles.recPriorityBadge, { backgroundColor: rec.bg, borderColor: rec.border }]}>
+                          <Text style={[styles.recPriorityText, { color: rec.color }]}>{rec.priority}</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.recDesc, { color: C.textMd }]}>{rec.desc}</Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           </View>
 
@@ -1350,6 +1268,63 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  // --- Loading skeleton + error/retry ---
+  skeletonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  skeletonIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    opacity: 0.6,
+  },
+  skeletonLine: {
+    height: 10,
+    borderRadius: 5,
+    opacity: 0.6,
+  },
+  errorCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 20,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  errorIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  errorTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  errorDesc: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  retryBtn: {
+    paddingHorizontal: 28,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  retryBtnText: {
+    color: '#FFF',
+    fontWeight: '800',
+    fontSize: 13.5,
   },
   header: {
     paddingHorizontal: 20,

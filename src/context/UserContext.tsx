@@ -9,6 +9,7 @@ interface UserContextType {
   apiBaseUrl: string;
   setApiBaseUrl: (url: string) => void;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  uploadAvatar: (imageUri: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (name: string, email: string, password: string) => Promise<void>;
   signOut: () => void;
@@ -79,6 +80,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const uploadAvatar = async (imageUri: string) => {
+    const updated = await apiService.uploadAvatar(imageUri);
+    setProfile(updated);
+  };
+
   const signOut = () => {
     console.log("Signing out...");
     authApi.setToken(null);
@@ -103,14 +109,35 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     authApi.setBaseUrl(apiBaseUrl);
   }, [apiBaseUrl]);
 
+  // Restore a persisted session on cold start: load the saved token, then fetch the profile.
+  // Setting the profile triggers the post-login data + insights prefetch in DataContext.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const token = await authApi.restoreToken();
+      if (!token || cancelled) return;
+      try {
+        const data = await apiService.fetchProfile();
+        if (!cancelled) setProfile(data);
+      } catch {
+        // Token invalid/expired — drop it so the app falls back to the sign-in screen.
+        authApi.setToken(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <UserContext.Provider value={{ 
       profile, 
       loading, 
       apiBaseUrl, 
       setApiBaseUrl, 
-      updateProfile, 
-      signIn, 
+      updateProfile,
+      uploadAvatar,
+      signIn,
       signUp, 
       signOut, 
       refreshProfile,

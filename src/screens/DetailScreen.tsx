@@ -30,6 +30,8 @@ import {
   Minus,
   Heart,
   Target,
+  Syringe,
+  Maximize2,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -175,6 +177,21 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
     }
   };
 
+  // Shared clean image hero (used by measurement / injection / activity): the captured photo
+  // shown on a light surface, with an icon fallback and a corner expand affordance.
+  const renderMediaHero = (image: string | undefined, FallbackIcon: any, tint: string) => (
+    <View style={[styles.heroArea, { backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF', borderBottomColor: C.divider, overflow: 'hidden' }]}>
+      {image ? (
+        <Image source={{ uri: image }} style={styles.mediaHeroImg} resizeMode="cover" />
+      ) : (
+        <FallbackIcon size={96} color={tint} strokeWidth={1} style={{ opacity: 0.18 }} />
+      )}
+      <TouchableOpacity style={[styles.heroExpandBtn, { backgroundColor: C.red }]} activeOpacity={0.85}>
+        <Maximize2 size={16} color="#FFF" />
+      </TouchableOpacity>
+    </View>
+  );
+
   const renderMeasurementDetail = () => {
     const sc = statusCfg(entry.status);
     const TrendIcon = entry.trend === 'up' ? TrendingUp : (entry.trend === 'down' ? TrendingDown : Minus);
@@ -203,21 +220,8 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
     return (
       <View style={styles.detailWrapper}>
         
-        {/* Glow Hero Circular Visual */}
-        <View style={[styles.heroArea, { backgroundColor: isDark ? '#1C1C1E' : '#FAFAFA', borderBottomColor: C.divider }]}>
-          <LinearGradient
-            colors={[C.redBg, C.white]}
-            style={styles.heroBackgroundGradient}
-          />
-          <View style={[styles.glowingRing, { borderColor: sc.color, shadowColor: sc.color }]}>
-            <Text style={[styles.glowingVal, { color: C.text }]}>{entry.value}</Text>
-            <Text style={[styles.glowingUnit, { color: C.textSm }]}>{entry.unit}</Text>
-          </View>
-          <View style={[styles.statusTagFloating, { backgroundColor: sc.bg, borderColor: sc.border }]}>
-            <View style={[styles.floatingDot, { backgroundColor: sc.color }]} />
-            <Text style={[styles.floatingTagText, { color: sc.color }]}>{sc.label}</Text>
-          </View>
-        </View>
+        {/* Captured scan image hero */}
+        {renderMediaHero(entry.image, Activity, C.red)}
 
         {/* Primary Value strip info */}
         <View style={[styles.stripRow, { backgroundColor: C.white, borderBottomColor: C.divider }]}>
@@ -424,6 +428,10 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
               <Text style={styles.mealHeroTime}>{entry.time} · {entry.date}</Text>
             </View>
           </View>
+
+          <TouchableOpacity style={[styles.heroExpandBtn, { backgroundColor: C.red }]} activeOpacity={0.85}>
+            <Maximize2 size={16} color="#FFF" />
+          </TouchableOpacity>
         </View>
 
         {/* Estimated Glucose impact */}
@@ -579,14 +587,167 @@ const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
     );
   };
 
+  const titleCase = (s?: string) =>
+    (s || '')
+      .split('_')
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+
+  const renderInjectionDetail = () => {
+    const insulinLabel = titleCase(entry.insulinType) || 'Insulin';
+    const reasonLabel = titleCase(entry.reason) || '—';
+
+    return (
+      <View style={styles.detailWrapper}>
+        {renderMediaHero(entry.image, Syringe, C.red)}
+
+        {/* Dose strip */}
+        <View style={[styles.stripRow, { backgroundColor: C.white, borderBottomColor: C.divider }]}>
+          <View>
+            <Text style={[styles.stripLabel, { color: C.textSm }]}>Insulin Dose</Text>
+            <View style={styles.stripFlexRow}>
+              <Text style={[styles.stripVal, { color: C.text }]}>{entry.dose}</Text>
+              <Text style={[styles.stripUnit, { color: C.textXs }]}>units</Text>
+            </View>
+          </View>
+          <View style={[styles.badgePill, { backgroundColor: C.red + '15', borderColor: C.red }]}>
+            <Syringe size={12} color={C.red} />
+            <Text style={[styles.badgeText, { color: C.red }]}>{insulinLabel}</Text>
+          </View>
+        </View>
+
+        {/* Info rows */}
+        <View style={[styles.infoRowsCard, { backgroundColor: C.white, marginTop: 20 }]}>
+          <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+            <Text style={[styles.infoLabel, { color: C.text }]}>Insulin Type</Text>
+            <Text style={[styles.infoValue, { color: C.textSm }]}>{insulinLabel}</Text>
+          </View>
+          <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+            <Text style={[styles.infoLabel, { color: C.text }]}>Dose</Text>
+            <Text style={[styles.infoValue, { color: C.textSm }]}>{entry.dose} units</Text>
+          </View>
+          <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+            <Text style={[styles.infoLabel, { color: C.text }]}>Reason</Text>
+            <Text style={[styles.infoValue, { color: C.textSm }]}>{reasonLabel}</Text>
+          </View>
+          {entry.site ? (
+            <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+              <Text style={[styles.infoLabel, { color: C.text }]}>Site</Text>
+              <Text style={[styles.infoValue, { color: C.textSm, textTransform: 'capitalize' }]}>{entry.site}</Text>
+            </View>
+          ) : null}
+          <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+            <Text style={[styles.infoLabel, { color: C.text }]}>Day</Text>
+            <Text style={[styles.infoValue, { color: C.textSm }]}>{entry.date}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={[styles.infoLabel, { color: C.text }]}>Hour</Text>
+            <Text style={[styles.infoValue, { color: C.textSm }]}>{entry.time}</Text>
+          </View>
+        </View>
+
+        {entry.notes ? (
+          <View style={styles.sectionWrap}>
+            <Text style={[styles.sectionTitle, { color: C.text, marginBottom: 12 }]}>Notes</Text>
+            <View style={[styles.insightRowCard, { backgroundColor: C.white, borderColor: C.divider }]}>
+              <Text style={[styles.insightRowDesc, { color: C.textSm, marginTop: 0 }]}>{entry.notes}</Text>
+            </View>
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
+  const renderActivityDetail = () => {
+    const intensityColor = entry.intensity === 'high' ? C.red : (entry.intensity === 'moderate' ? C.amber : C.green);
+    const activityLabel = titleCase(entry.activityType) || 'Activity';
+
+    return (
+      <View style={styles.detailWrapper}>
+        {renderMediaHero(entry.image, Activity, intensityColor)}
+
+        {/* Duration strip */}
+        <View style={[styles.stripRow, { backgroundColor: C.white, borderBottomColor: C.divider }]}>
+          <View>
+            <Text style={[styles.stripLabel, { color: C.textSm }]}>Duration</Text>
+            <View style={styles.stripFlexRow}>
+              <Text style={[styles.stripVal, { color: C.text }]}>{entry.duration}</Text>
+              <Text style={[styles.stripUnit, { color: C.textXs }]}>min</Text>
+            </View>
+          </View>
+          <View style={[styles.badgePill, { backgroundColor: intensityColor + '15', borderColor: intensityColor }]}>
+            <Activity size={12} color={intensityColor} />
+            <Text style={[styles.badgeText, { color: intensityColor, textTransform: 'capitalize' }]}>{entry.intensity} intensity</Text>
+          </View>
+        </View>
+
+        {/* Info rows */}
+        <View style={[styles.infoRowsCard, { backgroundColor: C.white, marginTop: 20 }]}>
+          <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+            <Text style={[styles.infoLabel, { color: C.text }]}>Activity</Text>
+            <Text style={[styles.infoValue, { color: C.textSm }]}>{activityLabel}</Text>
+          </View>
+          <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+            <Text style={[styles.infoLabel, { color: C.text }]}>Intensity</Text>
+            <Text style={[styles.infoValue, { color: intensityColor, fontWeight: 'bold', textTransform: 'capitalize' }]}>{entry.intensity}</Text>
+          </View>
+          <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+            <Text style={[styles.infoLabel, { color: C.text }]}>Duration</Text>
+            <Text style={[styles.infoValue, { color: C.textSm }]}>{entry.duration} min</Text>
+          </View>
+          {entry.calories ? (
+            <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+              <Text style={[styles.infoLabel, { color: C.text }]}>Calories</Text>
+              <Text style={[styles.infoValue, { color: C.textSm }]}>{entry.calories} kcal</Text>
+            </View>
+          ) : null}
+          {entry.distance ? (
+            <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+              <Text style={[styles.infoLabel, { color: C.text }]}>Distance</Text>
+              <Text style={[styles.infoValue, { color: C.textSm }]}>{entry.distance} km</Text>
+            </View>
+          ) : null}
+          <View style={[styles.infoRow, { borderBottomColor: C.divider }]}>
+            <Text style={[styles.infoLabel, { color: C.text }]}>Day</Text>
+            <Text style={[styles.infoValue, { color: C.textSm }]}>{entry.date}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={[styles.infoLabel, { color: C.text }]}>Hour</Text>
+            <Text style={[styles.infoValue, { color: C.textSm }]}>{entry.time}</Text>
+          </View>
+        </View>
+
+        {entry.notes ? (
+          <View style={styles.sectionWrap}>
+            <Text style={[styles.sectionTitle, { color: C.text, marginBottom: 12 }]}>Notes</Text>
+            <View style={[styles.insightRowCard, { backgroundColor: C.white, borderColor: C.divider }]}>
+              <Text style={[styles.insightRowDesc, { color: C.textSm, marginTop: 0 }]}>{entry.notes}</Text>
+            </View>
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
+  const renderDetailByType = () => {
+    switch (entry.type) {
+      case 'measurement': return renderMeasurementDetail();
+      case 'meal': return renderMealDetail();
+      case 'injection': return renderInjectionDetail();
+      case 'activity': return renderActivityDetail();
+      default: return renderMeasurementDetail();
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: C.bg }]}>
       <TouchableOpacity onPress={onBack} style={styles.backButton}>
         <ChevronLeft size={24} color={C.text} />
       </TouchableOpacity>
-      
+
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {isMeasurement ? renderMeasurementDetail() : renderMealDetail()}
+        {renderDetailByType()}
       </ScrollView>
     </View>
   );
@@ -626,55 +787,24 @@ const styles = StyleSheet.create({
     position: 'relative',
     borderBottomWidth: 1,
   },
-  heroBackgroundGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+  mediaHeroImg: {
+    width: '100%',
+    height: '100%',
   },
-  glowingRing: {
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    borderWidth: 6,
+  heroExpandBtn: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  glowingVal: {
-    fontSize: 54,
-    fontWeight: '900',
-  },
-  glowingUnit: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginTop: -2,
-  },
-  statusTagFloating: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    gap: 6,
-  },
-  floatingDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  floatingTagText: {
-    fontSize: 11,
-    fontWeight: 'bold',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 4,
   },
   stripRow: {
     flexDirection: 'row',

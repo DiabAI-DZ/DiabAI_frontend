@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/apiService';
 import { aiService } from '../services/aiService';
+import { insightsService } from '../services/insightsService';
 import { useUser } from './UserContext';
 import { LogEntry, AlertItem, ScanResult, AISummary, HomeData, MealScanResult } from '../services/types';
 
@@ -40,7 +41,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshData = useCallback(async (period: '7d' | '30d' = '7d') => {
     setLoading(true);
     try {
-      const [logsData, alertsData, homeDataObj, recsData] = await Promise.all([
+      const [logsData, alertsData, homeDataObj] = await Promise.all([
         apiService.fetchLogs().catch(err => {
           console.warn("DataContext: Failed to fetch logs:", err);
           return [];
@@ -53,15 +54,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn("DataContext: Failed to fetch home data:", err);
           return null;
         }),
-        apiService.fetchRecommendations().catch(err => {
-          console.warn("DataContext: Failed to fetch recommendations:", err);
-          return [];
-        }),
       ]);
       setLogs(logsData);
       setAlerts(alertsData);
       setHomeData(homeDataObj);
-      setRecommendations(recsData);
+      // NOTE: recommendations are intentionally NOT fetched here. The standalone
+      // /api/insights/recommendations call used to run concurrently with the aggregate
+      // /api/insights prefetch, hitting the SAME recommendations LLM twice at once and pushing it
+      // past the backend pool timeout (→ "context canceled" → heuristic fallback). They now come
+      // from the single aggregate call below, so that LLM is hit exactly once per window.
 
       // Fetch Premium Heavy AI data if applicable (Checkpoint 4)
       const userProfile = await apiService.fetchProfile().catch(() => null);
@@ -165,10 +166,33 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { profile } = useUser();
   const [lastRefreshedUser, setLastRefreshedUser] = useState<string | null>(null);
 
+  // Make persisted insights available for instant render as early as possible.
+  useEffect(() => {
+    insightsService.hydrate();
+  }, []);
+
   useEffect(() => {
     if (profile?.email) {
       if (lastRefreshedUser !== profile.email) {
         refreshData();
+        // Kick off the slow AI insights in the background the moment we have a session, so the
+        // data is ready (cached) by the time the user opens the Insights tab. This is the ONLY
+        // call that touches the patterns/recommendations LLMs — it de-dupes with the Insights
+        // screen's own request AND feeds the home dashboard's inline recommendations, so each
+        // LLM service is hit exactly once per window (no concurrent double-hit → no cancellation).
+        const patientId = String((profile as any).id ?? profile.email);
+        const params = insightsService.buildInsightsParams({ patientId });
+        insightsService.hydrate().then(() => {
+          const cached = insightsService.getCached(params);
+          if (cached && !insightsService.isStale(cached)) {
+            setRecommendations(cached.recommendations?.recommendations ?? []);
+            return;
+          }
+          insightsService
+            .fetchInsightsBundle(params)
+            .then(bundle => setRecommendations(bundle?.recommendations?.recommendations ?? []))
+            .catch(() => {});
+        });
         setLastRefreshedUser(profile.email);
       }
     } else if (!profile) {
@@ -178,6 +202,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setHomeData(null);
       setRecommendations([]);
       setLastRefreshedUser(null);
+      // Abort any in-flight insights request and drop the in-memory cache.
+      insightsService.resetInsightsSession();
     }
   }, [profile, refreshData, lastRefreshedUser]);
 

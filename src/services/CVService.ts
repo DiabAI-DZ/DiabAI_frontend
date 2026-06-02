@@ -1,4 +1,7 @@
-import { OpenCV, ObjectType, DataTypes } from 'react-native-fast-opencv';
+// NOTE: react-native-fast-opencv and react-native-fast-tflite are native modules absent from
+// Expo Go. Loading them at module scope registers TurboModules ('OpenCV' / 'Tflite') via
+// getEnforcing() and red-screens the whole app. They are required lazily inside the methods
+// that use them, so this file can be imported anywhere without pulling in the natives.
 import * as FileSystem from 'expo-file-system/legacy';
 
 export interface Rectangle {
@@ -8,9 +11,12 @@ export interface Rectangle {
   height: number;
 }
 
-import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
+import type { TensorflowModel } from 'react-native-fast-tflite';
 import { Asset } from 'expo-asset';
 import * as ImageManipulator from 'expo-image-manipulator';
+
+const getTflite = () => require('react-native-fast-tflite');
+const getOpenCV = () => require('react-native-fast-opencv');
 
 export const CVService = {
   yoloModel: null as TensorflowModel | null,
@@ -21,6 +27,7 @@ export const CVService = {
       console.log("[CV] Loading YOLO detection model...");
       const asset = Asset.fromModule(require('../../assets/models/device_detector.tflite'));
       await asset.downloadAsync();
+      const { loadTensorflowModel } = getTflite();
       this.yoloModel = await loadTensorflowModel({ url: asset.localUri! });
       console.log("[CV] YOLO model loaded successfully");
     } catch (err) {
@@ -43,6 +50,7 @@ export const CVService = {
       );
       
       // Extraction helper (similar to tfliteService but for RGB/Detection)
+      const { OpenCV } = getOpenCV();
       const base64 = await FileSystem.readAsStringAsync(manipulated.uri, { encoding: 'base64' as any });
       const mat = OpenCV.base64ToMat(base64);
       const bufferData = OpenCV.matToBuffer(mat, 'uint8');
@@ -87,6 +95,7 @@ export const CVService = {
     try {
       console.log(`[CV] Using classical OpenCV detection fallback...`);
       // ... existing OpenCV logic ...
+      const { OpenCV, ObjectType, DataTypes } = getOpenCV();
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
         encoding: 'base64' as any, // Bypass strict enum check if needed
       });

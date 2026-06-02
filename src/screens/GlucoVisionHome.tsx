@@ -2,8 +2,7 @@ import React, { useState, useCallback, useTransition } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, SafeAreaView } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import {
-  Home, ClipboardList, Scan, MessageSquare, Settings as SettingsIcon,
-  Plus, Utensils, Syringe, Activity, X
+  Home, ClipboardList, Settings as SettingsIcon,
 } from 'lucide-react-native';
 import Dashboard from './Dashboard';
 import LogbookScreen from './LogbookScreen';
@@ -11,16 +10,12 @@ import AIInsightsScreen from './AIInsightsScreen';
 import SettingsScreen from './SettingsScreen';
 import ScanFlow from './ScanFlow';
 import ActionForms from '../components/ActionForms';
-import { BlurView } from 'expo-blur';
+import InsightsFAB, { FabAction } from '../components/InsightsFAB';
+import { InsightsIcon } from '../components/icons/NavIcons';
 import { useData } from '../context/DataContext';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  interpolate,
-  Extrapolate
-} from 'react-native-reanimated';
+
+// Inactive nav icon/label colour (muted red), matching the Figma bottom-nav.
+const NAV_INACTIVE = '#A86262';
 
 // Memoize tab screens to prevent re-renders when not active
 const MemoizedDashboard = React.memo(Dashboard);
@@ -70,10 +65,6 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   const [showActionPopup, setShowActionPopup] = useState(false);
   const [actionType, setActionType] = useState<'injection' | 'activity'>('injection');
 
-  // Animation values
-  const expandProgress = useSharedValue(0);
-  const isExpanded = useSharedValue(false);
-
   const [logbookFilter, setLogbookFilter] = useState<'all' | 'measurements' | 'meals' | 'injections' | 'activities'>('all');
 
   const handleTabPress = useCallback((tabName: 'home' | 'log' | 'ai' | 'settings') => {
@@ -92,8 +83,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
     });
   }, []);
 
-  const handleAddOption = (type: 'glucose_scan' | 'meal_scan' | 'injection' | 'activity') => {
-    toggleMenu();
+  const handleAddOption = useCallback((type: FabAction) => {
     if (type === 'glucose_scan') {
       setScanMode('glucose');
       setShowScan(true);
@@ -107,39 +97,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
       setActionType('activity');
       setShowActionPopup(true);
     }
-  };
-
-  const toggleMenu = () => {
-    const nextValue = !isExpanded.value;
-    isExpanded.value = nextValue;
-    expandProgress.value = withSpring(nextValue ? 1 : 0, {
-      damping: 15,
-      stiffness: 100,
-    });
-  };
-
-  const overlayStyle = useAnimatedStyle(() => ({
-    opacity: expandProgress.value,
-    pointerEvents: expandProgress.value > 0.1 ? 'auto' : 'none',
-  }));
-
-  const menuStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: interpolate(expandProgress.value, [0, 1], [200, 0]) },
-      { scale: interpolate(expandProgress.value, [0, 1], [0.8, 1]) },
-    ],
-  }));
-
-  const fabStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(expandProgress.value, [0, 0.2], [1, 0]),
-    transform: [
-      { scale: interpolate(expandProgress.value, [0, 0.2], [1, 0.8]) },
-    ],
-  }));
-
-  const labelStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(expandProgress.value, [0, 0.2], [1, 0]),
-  }));
+  }, []);
 
   return (
     <View style={[styles.container, { backgroundColor: C.bg }]}>
@@ -150,6 +108,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
             onNavigateAlerts={onNavigateAlerts}
             onNavigateDetail={onNavigateDetail}
             onSeeAllMeasurements={handleSeeAllMeasurements}
+            onSeeAllRecommendations={() => handleTabPress('ai')}
             isActive={activeTab === 'home'}
           />
         </View>
@@ -158,6 +117,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
           <MemoizedLogbookScreen
             onNavigateDetail={onNavigateDetail}
             initialTypeFilter={logbookFilter}
+            isActive={activeTab === 'log'}
           />
         </View>
 
@@ -180,72 +140,6 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
         onSave={addLog}
       />
 
-      {/* Animated Add Menu */}
-      <Animated.View style={[styles.animatedOverlay, overlayStyle]}>
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          activeOpacity={1}
-          onPress={toggleMenu}
-        >
-          <BlurView intensity={isDark ? 40 : 60} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
-        </TouchableOpacity>
-
-        <Animated.View style={[styles.menuContent, menuStyle]}>
-          <View style={styles.menuRow}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => handleAddOption('glucose_scan')}
-            >
-              <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
-                <Scan size={24} color="#FFF" />
-              </View>
-              <Text style={[styles.menuText, { color: C.text }]}>Glucose Scan</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => handleAddOption('meal_scan')}
-            >
-              <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
-                <Utensils size={24} color="#FFF" />
-              </View>
-              <Text style={[styles.menuText, { color: C.text }]}>Meal Scan</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={[styles.menuRow, { marginTop: 20 }]}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => handleAddOption('injection')}
-            >
-              <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
-                <Syringe size={24} color="#FFF" />
-              </View>
-              <Text style={[styles.menuText, { color: C.text }]}>Add Injection</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => handleAddOption('activity')}
-            >
-              <View style={[styles.menuIconBox, { backgroundColor: C.red }]}>
-                <Activity size={24} color="#FFF" />
-              </View>
-              <Text style={[styles.menuText, { color: C.text }]}>Add Activity</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* New Central Close Button */}
-          <TouchableOpacity
-            style={[styles.closeMenuBtn, { backgroundColor: C.red, marginTop: 40 }]}
-            onPress={toggleMenu}
-            activeOpacity={0.8}
-          >
-            <X size={32} color="#FFF" strokeWidth={2.5} />
-          </TouchableOpacity>
-        </Animated.View>
-      </Animated.View>
-
       {/* Camera Flow Overlay */}
       {showScan && (
         <View style={StyleSheet.absoluteFill}>
@@ -257,58 +151,54 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
         </View>
       )}
 
-      {/* Bottom Tab Bar */}
+      {/* Bottom Tab Bar + Floating Action Button */}
       {!showScan && (
-        <View style={[styles.tabBar, { backgroundColor: C.white, borderTopColor: C.redBorder }]}>
-          <TabItem
-            name="home"
-            icon={Home}
-            label="Home"
-            isActive={activeTab === 'home'}
-            onPress={() => handleTabPress('home')}
-            activeColor={C.red}
-            inactiveColor={C.textXs}
-          />
-          <TabItem
-            name="log"
-            icon={ClipboardList}
-            label="Logbook"
-            isActive={activeTab === 'log'}
-            onPress={() => handleTabPress('log')}
-            activeColor={C.red}
-            inactiveColor={C.textXs}
-          />
+        <>
+          <View style={[styles.tabBar, { backgroundColor: C.white, borderTopColor: C.redBorder }]}>
+            <TabItem
+              name="home"
+              icon={Home}
+              label="Home"
+              isActive={activeTab === 'home'}
+              onPress={() => handleTabPress('home')}
+              activeColor={C.red}
+              inactiveColor={NAV_INACTIVE}
+            />
+            <TabItem
+              name="ai"
+              icon={InsightsIcon}
+              label="Insights"
+              isActive={activeTab === 'ai'}
+              onPress={() => handleTabPress('ai')}
+              activeColor={C.red}
+              inactiveColor={NAV_INACTIVE}
+            />
 
-          {/* Floating Add Button */}
-          <Animated.View style={[styles.scanContainer, fabStyle]}>
-            <TouchableOpacity
-              style={[styles.scanButton, { backgroundColor: C.red }]}
-              onPress={toggleMenu}
-            >
-              <Plus size={32} color="#FFF" />
-            </TouchableOpacity>
-            <Animated.Text style={[styles.tabLabel, { color: C.textXs, marginTop: 4 }, labelStyle]}>Add</Animated.Text>
-          </Animated.View>
+            {/* Spacer slot for the floating action button (rendered above as InsightsFAB) */}
+            <View style={styles.fabSpacer} />
 
-          <TabItem
-            name="ai"
-            icon={MessageSquare}
-            label="AI Insights"
-            isActive={activeTab === 'ai'}
-            onPress={() => handleTabPress('ai')}
-            activeColor={C.red}
-            inactiveColor={C.textXs}
-          />
-          <TabItem
-            name="settings"
-            icon={SettingsIcon}
-            label="Settings"
-            isActive={activeTab === 'settings'}
-            onPress={() => handleTabPress('settings')}
-            activeColor={C.red}
-            inactiveColor={C.textXs}
-          />
-        </View>
+            <TabItem
+              name="log"
+              icon={ClipboardList}
+              label="Logbook"
+              isActive={activeTab === 'log'}
+              onPress={() => handleTabPress('log')}
+              activeColor={C.red}
+              inactiveColor={NAV_INACTIVE}
+            />
+            <TabItem
+              name="settings"
+              icon={SettingsIcon}
+              label="Settings"
+              isActive={activeTab === 'settings'}
+              onPress={() => handleTabPress('settings')}
+              activeColor={C.red}
+              inactiveColor={NAV_INACTIVE}
+            />
+          </View>
+
+          <InsightsFAB color={C.red} gradient={[C.red, C.redDark]} onAction={handleAddOption} />
+        </>
       )}
     </View>
   );
@@ -339,6 +229,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     marginTop: 4,
+  },
+  fabSpacer: {
+    width: 64,
   },
   scanContainer: {
     top: -20,

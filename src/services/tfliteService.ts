@@ -1,7 +1,14 @@
-import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
+// NOTE: react-native-fast-tflite and react-native-fast-opencv are native modules that do NOT
+// exist in Expo Go. Importing them at module load registers TurboModules ('Tflite' / 'OpenCV')
+// via getEnforcing(), which red-screens the whole app in Expo Go. They are required lazily
+// below so this service file can be loaded anywhere without crashing — the natives are only
+// pulled in when an OCR method actually runs (i.e. inside a real dev build, on the scan screen).
+import type { TensorflowModel } from 'react-native-fast-tflite';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Asset } from 'expo-asset';
-import { OpenCV, ObjectType, DataTypes } from 'react-native-fast-opencv';
+
+const getTflite = () => require('react-native-fast-tflite');
+const getOpenCV = () => require('react-native-fast-opencv');
 
 // Character set and CTC configuration based on model specs:
 // Input: [1, 32, 128, 1], Output: [1, 32, 21]
@@ -19,7 +26,8 @@ export const tfliteService = {
       console.log("[TFLite] Loading model...");
       const asset = Asset.fromModule(require('../../assets/models/glucometer_ocr.tflite'));
       await asset.downloadAsync();
-      
+
+      const { loadTensorflowModel } = getTflite();
       model = await loadTensorflowModel({ url: asset.localUri! });
       console.log("[TFLite] Model loaded successfully");
     } catch (err) {
@@ -43,6 +51,7 @@ export const tfliteService = {
 
   async getNormalizedPixels(uri: string): Promise<Float32Array> {
     try {
+      const { OpenCV, ObjectType, DataTypes } = getOpenCV();
       // Load image into OpenCV Mat
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
       const mat = OpenCV.base64ToMat(base64);

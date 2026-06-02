@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,12 @@ import {
   Dimensions,
   Modal,
   PanResponder,
+  ActivityIndicator,
+  RefreshControl,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { useData } from '../context/DataContext';
 import { useUser } from '../context/UserContext';
 import { 
   Search, 
@@ -38,9 +41,9 @@ import {
   Syringe
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { convertGlucose } from '../services/apiService';
-import { MeasurementEntry, MealEntry } from '../services/types';
-import { format, isSameDay, isAfter, isBefore, subDays, parseISO } from 'date-fns';
+import { convertGlucose, apiService, LogbookQueryParams, LogbookStats } from '../services/apiService';
+import { LogEntry } from '../services/types';
+import { format, isSameDay, isAfter, isBefore, subDays, parseISO, startOfDay } from 'date-fns';
 
 const { width, height } = Dimensions.get('window');
 
@@ -71,6 +74,9 @@ const defaultFilters: Filters = {
   glucoseMax: 300,
   mealTypes: [],
 };
+
+// How many entries to request per /api/logbook page for infinite scroll.
+const PAGE_SIZE = 20;
 
 // Sub-Component: Horizontal Date Strip
 const DateStrip: React.FC<{
@@ -228,23 +234,19 @@ const GlucoseTrackSlider: React.FC<{
   );
 };
 
-// Sub-Component: Summary Stats
-const SummaryStats: React.FC<{ entries: any[]; profile: any }> = ({ entries, profile }) => {
+// Sub-Component: Summary Stats — driven by the server's aggregate stats for the whole
+// (filtered) result set, not just the entries loaded into the current page.
+const SummaryStats: React.FC<{ stats: LogbookStats | null }> = ({ stats }) => {
   const { C } = useTheme();
-  
+
   const statsData = useMemo(() => {
-    const measurements = entries.filter((e) => e.type === "measurement");
-    const meals = entries.filter((e) => e.type === "meal");
-    const injections = entries.filter((e) => e.type === "injection");
-    const activities = entries.filter((e) => e.type === "activity");
-    
     return [
-      { label: "Scans", value: String(measurements.length), icon: Activity, color: C.red, sub: "" },
-      { label: "Meals", value: String(meals.length), icon: Utensils, color: C.amber, sub: "" },
-      { label: "Doses", value: String(injections.length), icon: Syringe, color: C.blue, sub: "" },
-      { label: "Active", value: String(activities.length), icon: Zap, color: C.green, sub: "" },
+      { label: "Scans", value: String(stats?.totalScans ?? 0), icon: Activity, color: C.red, sub: "" },
+      { label: "Meals", value: String(stats?.totalMeals ?? 0), icon: Utensils, color: C.amber, sub: "" },
+      { label: "Doses", value: String(stats?.totalInjections ?? 0), icon: Syringe, color: C.blue, sub: "" },
+      { label: "Active", value: String(stats?.totalActivities ?? 0), icon: Zap, color: C.green, sub: "" },
     ];
-  }, [entries, C]);
+  }, [stats, C]);
 
   return (
     <View style={styles.statsRowGrid}>
@@ -293,7 +295,11 @@ const MeasurementCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry
       style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
     >
       <View style={styles.gridCardTopGlucometer}>
-        <Activity size={48} color={C.red} strokeWidth={1} style={{ opacity: 0.15 }} />
+        {entry.image ? (
+          <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+        ) : (
+          <Activity size={48} color={C.red} strokeWidth={1} style={{ opacity: 0.15 }} />
+        )}
         <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: sc.border }]}>
           <View style={[styles.statusBadgeDot, { backgroundColor: sc.color }]} />
           <Text style={[styles.statusBadgeText, { color: sc.color }]}>{entry.status}</Text>
@@ -402,8 +408,12 @@ const InjectionCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, 
       onPress={onSelect}
       style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
     >
-      <View style={[styles.gridCardTopGlucometer, { backgroundColor: C.redBg }]}>
-        <Syringe size={48} color={C.red} strokeWidth={1} style={{ opacity: 0.15 }} />
+      <View style={[styles.gridCardTopGlucometer, { backgroundColor: C.redBg, overflow: 'hidden' }]}>
+        {entry.image ? (
+          <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+        ) : (
+          <Syringe size={48} color={C.red} strokeWidth={1} style={{ opacity: 0.15 }} />
+        )}
         <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: C.redBorder }]}>
           <Text style={[styles.statusBadgeText, { color: C.red, textTransform: 'capitalize' }]}>{entry.site}</Text>
         </View>
@@ -447,8 +457,12 @@ const ActivityCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, o
       onPress={onSelect}
       style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
     >
-      <View style={[styles.gridCardTopGlucometer, { backgroundColor: intensityColor + '10' }]}>
-        <Activity size={48} color={intensityColor} strokeWidth={1} style={{ opacity: 0.15 }} />
+      <View style={[styles.gridCardTopGlucometer, { backgroundColor: intensityColor + '10', overflow: 'hidden' }]}>
+        {entry.image ? (
+          <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+        ) : (
+          <Activity size={48} color={intensityColor} strokeWidth={1} style={{ opacity: 0.15 }} />
+        )}
         <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: intensityColor + '30' }]}>
           <Text style={[styles.statusBadgeText, { color: intensityColor, textTransform: 'capitalize' }]}>{entry.intensity}</Text>
         </View>
@@ -556,19 +570,36 @@ const EntryGroup: React.FC<{
 interface LogbookScreenProps {
   onNavigateDetail: (entry: any) => void;
   initialTypeFilter?: 'all' | 'measurements' | 'meals' | 'injections' | 'activities';
+  isActive?: boolean;
 }
 
-const LogbookScreen: React.FC<LogbookScreenProps> = ({ onNavigateDetail, initialTypeFilter }) => {
+const LogbookScreen: React.FC<LogbookScreenProps> = ({ onNavigateDetail, initialTypeFilter, isActive }) => {
   const { C, isDark } = useTheme();
-  const { logs, refreshData } = useData();
   const { profile } = useUser();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [filters, setFilters] = useState<Filters>(() => ({
     ...defaultFilters,
     typeFilter: initialTypeFilter || "all"
   }));
+
+  // Paginated, server-filtered feed state (replaces the previous client-side filtering of the
+  // global DataContext logs, which was capped at 50 entries and ignored the API's filters).
+  const [entries, setEntries] = useState<LogEntry[]>([]);
+  const [stats, setStats] = useState<LogbookStats | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Guards against out-of-order responses: only the latest request may commit to state.
+  const requestIdRef = useRef(0);
+  // Synchronous in-flight guard so rapid scroll events can't fire overlapping page loads
+  // (the loadingMore state updates a tick too late to gate them).
+  const fetchingRef = useRef(false);
 
   useEffect(() => {
     if (initialTypeFilter) {
@@ -579,7 +610,13 @@ const LogbookScreen: React.FC<LogbookScreenProps> = ({ onNavigateDetail, initial
     }
   }, [initialTypeFilter]);
 
-  const mockToday = useMemo(() => new Date(), []);
+  // Debounce the free-text search so each keystroke doesn't fire a request.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const today = useMemo(() => new Date(), []);
 
   const activeFilterCount = useMemo(() => {
     return [
@@ -590,91 +627,140 @@ const LogbookScreen: React.FC<LogbookScreenProps> = ({ onNavigateDetail, initial
     ].filter(Boolean).length;
   }, [filters]);
 
-  const filteredEntries = useMemo(() => {
-    let result = logs;
+  // Translate the local filter UI state into the documented /api/logbook query contract.
+  const baseParams = useMemo<LogbookQueryParams>(() => {
+    const p: LogbookQueryParams = { perPage: PAGE_SIZE };
 
-    if (filters.typeFilter === "measurements") {
-      result = result.filter((e) => e.type === "measurement");
-    } else if (filters.typeFilter === "meals") {
-      result = result.filter((e) => e.type === "meal");
-    } else if (filters.typeFilter === "injections") {
-      result = result.filter((e) => e.type === "injection");
-    } else if (filters.typeFilter === "activities") {
-      result = result.filter((e) => e.type === "activity");
+    switch (filters.typeFilter) {
+      case "measurements": p.entryTypes = ["measurement"]; break;
+      case "meals": p.entryTypes = ["meal"]; break;
+      case "injections": p.entryTypes = ["injection"]; break;
+      case "activities": p.entryTypes = ["activity"]; break;
+      default: break; // "all" → omit entry_types[] so the server returns every type
     }
 
-    // Date filter
-    if (filters.rangeStart && filters.rangeEnd) {
+    if (debouncedSearch) p.search = debouncedSearch;
+
+    // A custom range maps to date_from/date_to; the presets map to date_preset.
+    if (filters.datePreset === "custom" && filters.rangeStart && filters.rangeEnd) {
       const s = isBefore(filters.rangeStart, filters.rangeEnd) ? filters.rangeStart : filters.rangeEnd;
       const e = isAfter(filters.rangeStart, filters.rangeEnd) ? filters.rangeStart : filters.rangeEnd;
-      result = result.filter((entry) => {
-        const d = parseISO(entry.date);
-        return (isSameDay(d, s) || isAfter(d, s)) && (isSameDay(d, e) || isBefore(d, e));
-      });
+      p.dateFrom = format(s, "yyyy-MM-dd");
+      p.dateTo = format(e, "yyyy-MM-dd");
+    } else if (filters.datePreset === "today") {
+      p.datePreset = "today";
+    } else if (filters.datePreset === "7days") {
+      p.datePreset = "last_7_days";
+    } else if (filters.datePreset === "30days") {
+      p.datePreset = "last_30_days";
     }
 
-    // Glucose range (only measurements)
-    if (filters.glucoseMin !== 40 || filters.glucoseMax !== 300) {
-      result = result.filter((e) => {
-        if (e.type !== "measurement") return true;
-        return e.value >= filters.glucoseMin && e.value <= filters.glucoseMax;
-      });
+    // An explicit Low/Normal/High preset maps cleanly to health_status; a hand-dragged slider
+    // range maps to the numeric value_min/max bounds (stored in mg/dL).
+    if (filters.glucosePreset) {
+      p.healthStatus = filters.glucosePreset;
+    } else if (filters.glucoseMin !== 40 || filters.glucoseMax !== 300) {
+      p.valueMinMgDl = filters.glucoseMin;
+      p.valueMaxMgDl = filters.glucoseMax;
     }
 
-    // Meal type filter
-    if (filters.mealTypes.length > 0) {
-      result = result.filter((e) => {
-        if (e.type !== "meal") return true;
-        return filters.mealTypes.includes(e.mealType as MealTypeFilter);
-      });
+    // The API's meal_type is single-select; only forward it when exactly one type is chosen.
+    if (filters.mealTypes.length === 1) {
+      p.mealType = filters.mealTypes[0];
     }
 
-    // Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((e) => {
-        if (e.type === "meal") {
-          return e.name.toLowerCase().includes(q) || e.mealType.toLowerCase().includes(q);
-        }
-        if (e.type === "injection") {
-          return (e.insulinType?.toLowerCase().includes(q) || false) || 
-                 (e.reason?.toLowerCase().includes(q) || false) || 
-                 (e.site?.toLowerCase().includes(q) || false);
-        }
-        if (e.type === "activity") {
-          return e.activityType.toLowerCase().includes(q) || e.intensity.toLowerCase().includes(q);
-        }
-        return String(e.value).includes(q) || e.status.toLowerCase().includes(q) || (e.tag && e.tag.toLowerCase().includes(q));
-      });
-    }
+    return p;
+  }, [filters, debouncedSearch]);
 
-    return result;
-  }, [logs, filters, searchQuery]);
+  const paramsKey = useMemo(() => JSON.stringify(baseParams), [baseParams]);
 
-  const groupedEntries = useMemo(() => {
-    const todayGroup: any[] = [];
-    const yesterdayGroup: any[] = [];
-    const earlierGroup: any[] = [];
-
-    const yesterday = subDays(mockToday, 1);
-
-    filteredEntries.forEach((e) => {
-      const d = parseISO(e.date);
-      if (isSameDay(d, mockToday)) {
-        todayGroup.push(e);
-      } else if (isSameDay(d, yesterday)) {
-        yesterdayGroup.push(e);
-      } else {
-        earlierGroup.push(e);
+  const loadPage = useCallback(async (pageNum: number, mode: "replace" | "append") => {
+    const reqId = ++requestIdRef.current;
+    fetchingRef.current = true;
+    if (mode === "append") setLoadingMore(true);
+    setLoadError(null);
+    try {
+      const res = await apiService.fetchLogbookPage({ ...baseParams, page: pageNum });
+      if (reqId !== requestIdRef.current) return; // a newer request superseded this one
+      setCurrentPage(res.meta.currentPage);
+      setLastPage(res.meta.lastPage);
+      setTotal(res.meta.total);
+      // Stats reflect the whole filtered result set and are returned on every page.
+      setStats(res.stats);
+      setEntries(prev => (mode === "append" ? [...prev, ...res.entries] : res.entries));
+    } catch (e: any) {
+      if (reqId !== requestIdRef.current) return;
+      setLoadError(e?.message || "Failed to load logbook");
+      if (mode === "replace") setEntries([]);
+    } finally {
+      // Only the latest request resets shared flags; a superseded one must not clear the
+      // in-flight guard out from under the newer request that replaced it.
+      if (reqId === requestIdRef.current) {
+        setLoadingInitial(false);
+        setLoadingMore(false);
+        setRefreshing(false);
+        fetchingRef.current = false;
       }
+    }
+  }, [baseParams]);
+
+  // Reload from page 1 whenever the effective query changes (filters / debounced search).
+  useEffect(() => {
+    setLoadingInitial(true);
+    loadPage(1, "replace");
+  }, [paramsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The tab host keeps this screen mounted (hidden via display:none), so re-fetch page 1
+  // silently each time the Logbook tab becomes active to surface entries added elsewhere.
+  useEffect(() => {
+    if (isActive) loadPage(1, "replace");
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadMore = useCallback(() => {
+    if (fetchingRef.current) return;
+    if (currentPage >= lastPage) return;
+    loadPage(currentPage + 1, "append");
+  }, [currentPage, lastPage, loadPage]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadPage(1, "replace");
+  }, [loadPage]);
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    if (distanceFromBottom < 400) loadMore();
+  }, [loadMore]);
+
+  // Group entries into one section per calendar day, preserving the server's newest-first
+  // order. Because entries arrive sorted descending and are appended in order, keying by day
+  // naturally merges a day that spans a page boundary into a single header (no duplicates).
+  const sections = useMemo(() => {
+    const todayStart = startOfDay(new Date());
+    const yesterdayStart = subDays(todayStart, 1);
+    const groups: { key: string; label: string; sublabel: string; entries: any[] }[] = [];
+    const indexByKey = new Map<string, number>();
+
+    entries.forEach((e) => {
+      const d = startOfDay(parseISO(e.date));
+      const key = format(d, "yyyy-MM-dd");
+      let idx = indexByKey.get(key);
+      if (idx === undefined) {
+        const label = isSameDay(d, todayStart)
+          ? "Today"
+          : isSameDay(d, yesterdayStart)
+            ? "Yesterday"
+            : format(d, "EEEE, MMMM d");
+        idx = groups.length;
+        groups.push({ key, label, sublabel: format(d, "MMMM d, yyyy"), entries: [] });
+        indexByKey.set(key, idx);
+      }
+      groups[idx].entries.push(e);
     });
 
-    return {
-      today: todayGroup,
-      yesterday: yesterdayGroup,
-      earlier: earlierGroup,
-    };
-  }, [filteredEntries, mockToday]);
+    return groups;
+  }, [entries]);
 
   const handleApplyFilters = (applied: Filters) => {
     setFilters(applied);
@@ -777,8 +863,8 @@ const LogbookScreen: React.FC<LogbookScreenProps> = ({ onNavigateDetail, initial
                         key={p.id}
                         onPress={() => {
                           if (p.id !== 'custom') {
-                            const rangeStart = p.id === 'today' ? mockToday : subDays(mockToday, p.id === '7days' ? 6 : 29);
-                            setFilters(f => ({ ...f, datePreset: p.id, rangeStart, rangeEnd: mockToday }));
+                            const rangeStart = p.id === 'today' ? today : subDays(today, p.id === '7days' ? 6 : 29);
+                            setFilters(f => ({ ...f, datePreset: p.id, rangeStart, rangeEnd: today }));
                           } else {
                             setFilters(f => ({ ...f, datePreset: 'custom', rangeStart: null, rangeEnd: null }));
                           }
@@ -956,7 +1042,7 @@ const LogbookScreen: React.FC<LogbookScreenProps> = ({ onNavigateDetail, initial
     );
   };
 
-  const hasResults = filteredEntries.length > 0;
+  const hasResults = entries.length > 0;
 
   return (
     <View style={[styles.container, { backgroundColor: C.bg }]}>
@@ -1072,42 +1158,69 @@ const LogbookScreen: React.FC<LogbookScreenProps> = ({ onNavigateDetail, initial
 
       {/* Summary Stats Row Grid */}
       <View style={styles.summaryStatsArea}>
-        {/* Stats Grid */}
-        <SummaryStats entries={filteredEntries} profile={profile} />
+        {/* Stats Grid (reflects the whole filtered result set, per the API stats object) */}
+        <SummaryStats stats={stats} />
       </View>
 
       {/* Results Count Line */}
       <View style={styles.resultsCountLine}>
         <Text style={[styles.resultsCountText, { color: C.textSm }]}>
-          {filteredEntries.length} result{filteredEntries.length !== 1 ? 's' : ''} found
+          {total} result{total !== 1 ? 's' : ''} found
         </Text>
       </View>
 
       {/* Timeline listings */}
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollListContainer}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.red} colors={[C.red]} />
+        }
       >
-        {hasResults ? (
+        {loadingInitial ? (
+          <View style={styles.centeredState}>
+            <ActivityIndicator size="large" color={C.red} />
+            <Text style={[styles.emptySubtext, { color: C.textSm, marginTop: 12 }]}>Loading your logbook…</Text>
+          </View>
+        ) : loadError && !hasResults ? (
+          <View style={styles.emptyContainer}>
+            <View style={[styles.emptyIconFrame, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
+              <X size={28} color={C.red} />
+            </View>
+            <Text style={[styles.emptyText, { color: C.textDark }]}>Couldn't load logbook</Text>
+            <Text style={[styles.emptySubtext, { color: C.textSm }]}>{loadError}</Text>
+            <TouchableOpacity
+              onPress={onRefresh}
+              style={[styles.emptyClearBtn, { backgroundColor: C.red }]}
+            >
+              <Text style={styles.emptyClearBtnText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        ) : hasResults ? (
           <View style={styles.groupsTimelineWrap}>
-            <EntryGroup 
-              label="Today" 
-              sublabel="March 31, 2026" 
-              entries={groupedEntries.today} 
-              onSelectEntry={onNavigateDetail} 
-            />
-            <EntryGroup 
-              label="Yesterday" 
-              sublabel="March 30" 
-              entries={groupedEntries.yesterday} 
-              onSelectEntry={onNavigateDetail} 
-            />
-            <EntryGroup 
-              label="Earlier" 
-              sublabel="Older entries" 
-              entries={groupedEntries.earlier} 
-              onSelectEntry={onNavigateDetail} 
-            />
+            {sections.map((sec) => (
+              <EntryGroup
+                key={sec.key}
+                label={sec.label}
+                sublabel={sec.sublabel}
+                entries={sec.entries}
+                onSelectEntry={onNavigateDetail}
+              />
+            ))}
+
+            {/* Infinite-scroll footer */}
+            {loadingMore && (
+              <View style={styles.footerLoading}>
+                <ActivityIndicator size="small" color={C.red} />
+              </View>
+            )}
+            {!loadingMore && currentPage >= lastPage && total > 0 && (
+              <Text style={[styles.footerEndText, { color: C.textXs }]}>
+                You've reached the end · {total} total
+              </Text>
+            )}
           </View>
         ) : (
           <View style={styles.emptyContainer}>
@@ -1504,6 +1617,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 40,
     paddingTop: 80,
+  },
+  centeredState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 80,
+  },
+  footerLoading: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  footerEndText: {
+    textAlign: 'center',
+    fontSize: 10.5,
+    fontWeight: '600',
+    paddingVertical: 16,
   },
   emptyIconFrame: {
     width: 60,

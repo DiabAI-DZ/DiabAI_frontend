@@ -98,8 +98,147 @@ export const convertGlucose = (value: number, toUnit: string, fromUnit: string):
   return parseFloat(converted.toFixed(2));
 };
 
+// The API returns asset URLs that aren't always reachable as-is from a device/emulator:
+//  - relative paths like "/storage/placeholder/meal_placeholder.jpg", or
+//  - absolute URLs built from the backend's APP_URL (e.g. http://localhost:8000/storage/...),
+//    whose host the device can't reach (it talks to the dev-host IP instead).
+// Normalise anything from "/storage/" onward onto the current API origin so <Image> can load it.
+// URLs without a "/storage/" segment (e.g. the Unsplash default avatar) pass through untouched.
+export const resolveStorageUrl = (url?: string | null): string => {
+  if (!url) return '';
+  if (url.startsWith('/storage/')) return `${authApi.baseUrl}${url}`;
+  const idx = url.indexOf('/storage/');
+  if (idx >= 0 && /^https?:\/\//i.test(url)) {
+    return `${authApi.baseUrl}${url.slice(idx)}`;
+  }
+  return url;
+};
+
+// Slow AI endpoints (glucose patterns + recommendations + insulin estimate) legitimately
+// run for up to ~4 minutes on a cold (uncached) call; the backend caches results in Redis so
+// repeat calls return in milliseconds. Give the client a generous ceiling so it never cancels
+// a cold call early. NOTE: a free trycloudflare tunnel enforces its own ~100s edge limit, so
+// over such a tunnel the effective ceiling is the tunnel, not this value.
+export const AI_TIMEOUT_MS = 240000;
+
+interface FetchConfig {
+  // When set, the request is aborted after this many ms (via AbortController).
+  // Omitted for fast endpoints so their behaviour is unchanged (no timeout, no abort).
+  timeoutMs?: number;
+  // External signal so callers can cancel a request on unmount / supersession.
+  signal?: AbortSignal;
+}
+
+// Maps a single raw /api/logbook row (discriminated by entry_type) into the client LogEntry
+// union. Shared by fetchLogs (recent feed) and fetchLogbookPage (paginated, filtered feed).
+const mapLogRow = (row: any): LogEntry | null => {
+  if (row.entry_type === 'measurement') {
+    return {
+      id: row.id,
+      type: 'measurement',
+      value: parseFloat(row.value_mg_dl) || 0,
+      unit: 'mg/dL',
+      status: mapStatus(row.health_status),
+      time: formatTime(row.recorded_at),
+      date: row.recorded_at,
+      tag: mapTag(row.measurement_type),
+      trend: mapTrend(row.trend),
+      image: resolveStorageUrl(row.image_url),
+    };
+  } else if (row.entry_type === 'meal') {
+    return {
+      id: row.id,
+      type: 'meal',
+      name: row.title || 'Logged Meal',
+      mealType: row.meal_type || 'snack',
+      time: formatTime(row.recorded_at),
+      date: row.recorded_at,
+      carbs: row.carbohydrates_g || 0,
+      calories: row.calories || 0,
+      protein: row.protein_g,
+      fat: row.fat_g,
+      fiber: row.fiber_g,
+      impact: row.glucose_impact_mg_dl ? `+${Math.round(row.glucose_impact_mg_dl)} mg/dL` : '',
+      impactLevel: mapImpactLevel(row.impact_level),
+      image: resolveStorageUrl(row.image_url),
+      tags: row.tags || [],
+    };
+  } else if (row.entry_type === 'injection') {
+    return {
+      id: row.id,
+      type: 'injection',
+      insulinType: row.insulin_type,
+      dose: row.dose_units,
+      site: row.injection_site,
+      reason: row.reason,
+      time: formatTime(row.recorded_at),
+      date: row.recorded_at,
+      notes: row.notes,
+      image: resolveStorageUrl(row.image_url),
+    };
+  } else if (row.entry_type === 'activity') {
+    return {
+      id: row.id,
+      type: 'activity',
+      activityType: row.activity_type,
+      duration: row.duration_minutes,
+      intensity: row.intensity,
+      calories: row.calories_burned,
+      distance: row.distance_km,
+      steps: row.steps,
+      heartRate: row.heart_rate_avg,
+      impact: row.glucose_impact,
+      time: formatTime(row.recorded_at),
+      date: row.recorded_at,
+      notes: row.notes,
+      image: resolveStorageUrl(row.image_url),
+    };
+  }
+  return null;
+};
+
+// Query parameters for the unified /api/logbook feed, mirroring the documented API contract.
+export interface LogbookQueryParams {
+  entryTypes?: Array<'measurement' | 'meal' | 'activity' | 'injection'>;
+  search?: string;
+  // date_preset is mutually exclusive with date_from/date_to (date range wins when both given).
+  datePreset?: 'today' | 'last_7_days' | 'last_30_days';
+  dateFrom?: string; // YYYY-MM-DD
+  dateTo?: string;   // YYYY-MM-DD
+  healthStatus?: 'low' | 'normal' | 'high';
+  valueMinMgDl?: number;
+  valueMaxMgDl?: number;
+  mealType?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  impactLevel?: 'low' | 'moderate' | 'high';
+  activityType?: string;
+  insulinType?: string;
+  page?: number;
+  perPage?: number;
+}
+
+export interface LogbookMeta {
+  currentPage: number;
+  lastPage: number;
+  total: number;
+  perPage: number;
+}
+
+// Aggregate counts for the whole (filtered) result set, returned alongside every page.
+export interface LogbookStats {
+  totalScans: number;
+  averageMgDl: number;
+  inRangePercentage: number;
+  totalMeals: number;
+  totalActivities: number;
+  totalInjections: number;
+}
+
 // A helper for doing authenticated requests
-const authenticatedFetch = async (path: string, options: RequestInit = {}): Promise<Response> => {
+const authenticatedFetch = async (
+  path: string,
+  options: RequestInit = {},
+  config: FetchConfig = {}
+): Promise<Response> => {
   const token = authApi.getToken();
   const baseUrl = authApi.baseUrl;
   const url = `${baseUrl}${path}`;
@@ -111,10 +250,45 @@ const authenticatedFetch = async (path: string, options: RequestInit = {}): Prom
     ...(options.headers || {}),
   };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  const { timeoutMs, signal: externalSignal } = config;
+
+  // Only spin up a timeout-driven controller when a timeout is requested. Fast endpoints
+  // pass no config and keep their original behaviour (no timeout, no abort).
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  let fetchSignal = externalSignal;
+
+  if (timeoutMs) {
+    const controller = new AbortController();
+    fetchSignal = controller.signal;
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    // Chain the caller's signal so an unmount/supersession also aborts the live fetch.
+    if (externalSignal) {
+      if (externalSignal.aborted) controller.abort();
+      else externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+      signal: fetchSignal,
+    });
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      // Distinguish our own timeout from a caller-initiated cancel so the UI can react.
+      if (timedOut) throw new Error(`AI_TIMEOUT: ${path} exceeded ${timeoutMs}ms`);
+      throw err; // caller cancelled (unmount / cancel-previous) — propagate the AbortError
+    }
+    throw err;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 
   if (response.status === 401) {
     console.warn("[API] Request unauthorized (401).");
@@ -150,73 +324,78 @@ export const apiService = {
       }
 
       return result.data
-        .map((row: any): LogEntry | null => {
-          if (row.entry_type === 'measurement') {
-            return {
-              id: row.id,
-              type: 'measurement',
-              value: parseFloat(row.value_mg_dl) || 0,
-              unit: 'mg/dL',
-              status: mapStatus(row.health_status),
-              time: formatTime(row.recorded_at),
-              date: row.recorded_at,
-              tag: mapTag(row.measurement_type),
-              trend: mapTrend(row.trend),
-            };
-          } else if (row.entry_type === 'meal') {
-            return {
-              id: row.id,
-              type: 'meal',
-              name: row.title || 'Logged Meal',
-              mealType: row.meal_type || 'snack',
-              time: formatTime(row.recorded_at),
-              date: row.recorded_at,
-              carbs: row.carbohydrates_g || 0,
-              calories: row.calories || 0,
-              protein: row.protein_g,
-              fat: row.fat_g,
-              fiber: row.fiber_g,
-              impact: row.glucose_impact_mg_dl ? `+${Math.round(row.glucose_impact_mg_dl)} mg/dL` : '',
-              impactLevel: mapImpactLevel(row.impact_level),
-              image: row.image_url || '',
-              tags: row.tags || [],
-            };
-          } else if (row.entry_type === 'injection') {
-            return {
-              id: row.id,
-              type: 'injection',
-              insulinType: row.insulin_type,
-              dose: row.dose_units,
-              site: row.injection_site,
-              reason: row.reason,
-              time: formatTime(row.recorded_at),
-              date: row.recorded_at,
-              notes: row.notes
-            };
-          } else if (row.entry_type === 'activity') {
-            return {
-              id: row.id,
-              type: 'activity',
-              activityType: row.activity_type,
-              duration: row.duration_minutes,
-              intensity: row.intensity,
-              calories: row.calories_burned,
-              distance: row.distance_km,
-              steps: row.steps,
-              heartRate: row.heart_rate_avg,
-              impact: row.glucose_impact,
-              time: formatTime(row.recorded_at),
-              date: row.recorded_at,
-              notes: row.notes
-            };
-          }
-          return null;
-        })
+        .map(mapLogRow)
         .filter((entry: LogEntry | null): entry is LogEntry => entry !== null);
     } catch (error) {
       console.error("fetchLogs failed:", error);
       throw error;
     }
+  },
+
+  // Paginated + server-filtered logbook feed. Builds the query string per the documented
+  // /api/logbook contract (entry_types[], search, date_preset|date_from/date_to, health_status,
+  // value_min/max_mg_dl, meal_type, impact_level, activity_type, insulin_type, page, per_page)
+  // and returns the mapped entries alongside normalized pagination meta.
+  async fetchLogbookPage(
+    params: LogbookQueryParams = {}
+  ): Promise<{ entries: LogEntry[]; meta: LogbookMeta; stats: LogbookStats }> {
+    const parts: string[] = [];
+    const add = (key: string, value: string | number) =>
+      parts.push(`${key}=${encodeURIComponent(String(value))}`);
+
+    (params.entryTypes ?? []).forEach((t) => parts.push(`entry_types[]=${encodeURIComponent(t)}`));
+    if (params.search) add('search', params.search);
+
+    // date_preset is mutually exclusive with date_from/date_to — prefer an explicit range.
+    if (params.dateFrom || params.dateTo) {
+      if (params.dateFrom) add('date_from', params.dateFrom);
+      if (params.dateTo) add('date_to', params.dateTo);
+    } else if (params.datePreset) {
+      add('date_preset', params.datePreset);
+    }
+
+    if (params.healthStatus) add('health_status', params.healthStatus);
+    if (params.valueMinMgDl != null) add('value_min_mg_dl', params.valueMinMgDl);
+    if (params.valueMaxMgDl != null) add('value_max_mg_dl', params.valueMaxMgDl);
+    if (params.mealType) add('meal_type', params.mealType);
+    if (params.impactLevel) add('impact_level', params.impactLevel);
+    if (params.activityType) add('activity_type', params.activityType);
+    if (params.insulinType) add('insulin_type', params.insulinType);
+
+    const perPage = params.perPage ?? 20;
+    const page = params.page ?? 1;
+    add('per_page', perPage);
+    add('page', page);
+
+    const query = parts.join('&');
+    console.log(`[API] Fetching logbook page: /api/logbook?${query}`);
+
+    const response = await authenticatedFetch(`/api/logbook?${query}`);
+    const result = await response.json();
+
+    const entries = Array.isArray(result?.data)
+      ? result.data.map(mapLogRow).filter((e: LogEntry | null): e is LogEntry => e !== null)
+      : [];
+
+    const m = result?.meta ?? {};
+    const meta: LogbookMeta = {
+      currentPage: m.current_page ?? page,
+      lastPage: m.last_page ?? 1,
+      total: m.total ?? entries.length,
+      perPage: m.per_page ?? perPage,
+    };
+
+    const s = result?.stats ?? {};
+    const stats: LogbookStats = {
+      totalScans: s.total_scans ?? 0,
+      averageMgDl: s.average_mg_dl ?? 0,
+      inRangePercentage: s.in_range_percentage ?? 0,
+      totalMeals: s.total_meals ?? 0,
+      totalActivities: s.total_activities ?? 0,
+      totalInjections: s.total_injections ?? 0,
+    };
+
+    return { entries, meta, stats };
   },
 
   async createLog(log: Omit<LogEntry, "id">): Promise<LogEntry> {
@@ -465,7 +644,24 @@ export const apiService = {
     return result.data || result;
   },
 
-  async fetchRecommendations(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string): Promise<any> {
+  // Single aggregate insights call — one LLM pass, hits the backend Redis cache. Preferred over
+  // the four split endpoints below (which, fired in parallel against a single-threaded dev
+  // server, serialize and overload the LLM, inflating latency and forcing heuristic fallbacks).
+  async fetchInsights(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string, signal?: AbortSignal): Promise<any> {
+    const params = new URLSearchParams();
+    const today = new Date().toISOString().split('T')[0];
+    params.append('date_from', dateFrom || today);
+    params.append('date_to', dateTo || today);
+    if (selectedDate) params.append('selected_date', selectedDate);
+    if (model) params.append('model', model);
+
+    console.log(`[API] Fetching aggregate insights (model: ${model})`);
+    const response = await authenticatedFetch(`/api/insights?${params.toString()}`, {}, { timeoutMs: AI_TIMEOUT_MS, signal });
+    const result = await response.json();
+    return result?.data ?? result;
+  },
+
+  async fetchRecommendations(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string, signal?: AbortSignal): Promise<any> {
     const params = new URLSearchParams();
     const today = new Date().toISOString().split('T')[0];
     params.append('date_from', dateFrom || today);
@@ -474,7 +670,7 @@ export const apiService = {
     if (model) params.append('model', model);
 
     console.log(`[API] Fetching recommendations with model: ${model}`);
-    const response = await authenticatedFetch(`/api/insights/recommendations?${params.toString()}`);
+    const response = await authenticatedFetch(`/api/insights/recommendations?${params.toString()}`, {}, { timeoutMs: AI_TIMEOUT_MS, signal });
     const result = await response.json();
     return result;
   },
@@ -486,7 +682,7 @@ export const apiService = {
     return result.data || result;
   },
 
-  async fetchPatterns(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string): Promise<any> {
+  async fetchPatterns(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string, signal?: AbortSignal): Promise<any> {
     const params = new URLSearchParams();
     const today = new Date().toISOString().split('T')[0];
     params.append('date_from', dateFrom || today);
@@ -495,12 +691,12 @@ export const apiService = {
     if (model) params.append('model', model);
 
     console.log(`[API] Fetching patterns with model: ${model}`);
-    const response = await authenticatedFetch(`/api/insights/patterns?${params.toString()}`);
+    const response = await authenticatedFetch(`/api/insights/patterns?${params.toString()}`, {}, { timeoutMs: AI_TIMEOUT_MS, signal });
     const result = await response.json();
     return result;
   },
 
-  async fetchPredictions(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string): Promise<any> {
+  async fetchPredictions(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string, signal?: AbortSignal): Promise<any> {
     const params = new URLSearchParams();
     const today = new Date().toISOString().split('T')[0];
     params.append('date_from', dateFrom || today);
@@ -509,12 +705,12 @@ export const apiService = {
     if (model) params.append('model', model);
 
     console.log(`[API] Fetching predictions with model: ${model}`);
-    const response = await authenticatedFetch(`/api/insights/prediction?${params.toString()}`);
+    const response = await authenticatedFetch(`/api/insights/prediction?${params.toString()}`, {}, { timeoutMs: AI_TIMEOUT_MS, signal });
     const result = await response.json();
     return result;
   },
 
-  async fetchInsulinEstimate(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string): Promise<any> {
+  async fetchInsulinEstimate(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string, signal?: AbortSignal): Promise<any> {
     const params = new URLSearchParams();
     const today = new Date().toISOString().split('T')[0];
     params.append('date_from', dateFrom || today);
@@ -523,7 +719,7 @@ export const apiService = {
     if (model) params.append('model', model);
 
     console.log(`[API] Fetching insulin estimate with model: ${model}`);
-    const response = await authenticatedFetch(`/api/insights/insulin-estimate?${params.toString()}`);
+    const response = await authenticatedFetch(`/api/insights/insulin-estimate?${params.toString()}`, {}, { timeoutMs: AI_TIMEOUT_MS, signal });
     const result = await response.json();
     return result;
   },
@@ -566,6 +762,8 @@ export const apiService = {
       age: p.age !== null && p.age !== undefined ? parseInt(p.age) : undefined,
       sex: p.sex || undefined,
       isPremium: !!settings.subscription?.is_premium || !!settings.user?.is_premium || !!p.is_premium,
+      // avatar_url may be a relative /storage/ path — resolve it to an absolute URL so <Image> loads it.
+      avatar_url: p.avatar_url ? resolveStorageUrl(p.avatar_url) : null,
     };
   },
 
@@ -626,6 +824,46 @@ export const apiService = {
       return await this.fetchProfile();
     } catch (error) {
       console.error("updateProfile failed:", error);
+      throw error;
+    }
+  },
+
+  async uploadAvatar(imageUri: string): Promise<UserProfile> {
+    console.log(`[API] Uploading avatar:`, imageUri);
+
+    const formData = new FormData();
+    const rawFilename = imageUri.split('/').pop() || 'avatar.jpg';
+    const filename = /\.(jpg|jpeg|png)$/i.test(rawFilename) ? rawFilename : `${rawFilename}.jpg`;
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `image/${match[1].toLowerCase()}` : `image/jpeg`;
+
+    formData.append('avatar', {
+      uri: Platform.OS === 'android' ? imageUri : imageUri.replace('file://', ''),
+      name: filename,
+      type: type,
+    } as any);
+    // Laravel method spoofing: PHP only populates uploaded files on POST, so the
+    // PATCH /api/profile route must be reached via POST + _method=PATCH.
+    formData.append('_method', 'PATCH');
+
+    try {
+      const response = await authenticatedFetch('/api/profile', {
+        method: 'POST',
+        body: formData,
+      });
+      const result = await response.json();
+      console.log(`[API] avatar upload response:`, JSON.stringify(result));
+
+      // Pull the fresh avatar_url straight from the ProfileResource response, then
+      // merge it over a full profile refresh so the rest of the profile stays in sync
+      // even if /api/settings doesn't surface avatar_url.
+      const rawAvatarUrl =
+        result?.data?.avatar_url ?? result?.avatar_url ?? result?.profile?.avatar_url ?? null;
+      const avatarUrl = rawAvatarUrl ? resolveStorageUrl(rawAvatarUrl) : null;
+      const profile = await this.fetchProfile();
+      return avatarUrl ? { ...profile, avatar_url: avatarUrl } : profile;
+    } catch (error) {
+      console.error("uploadAvatar failed:", error);
       throw error;
     }
   },
@@ -692,34 +930,17 @@ export const apiService = {
     }
   },
 
+  // NOTE: /api/recommendations and /api/predict/glucose are NOT registered on the backend (404).
+  // They previously spammed the logs with full 404 stack traces on every refresh and always
+  // returned []. The equivalent data now comes from the aggregate /api/insights endpoint
+  // (its `recommendations` array and `prediction`), so these are short-circuited to avoid the
+  // dead round-trips. Re-wire to the real route if/when the backend adds it.
   async fetchPremiumRecommendations(): Promise<any[]> {
-    console.log(`[API] Fetching premium home recommendations`);
-    try {
-      const response = await authenticatedFetch('/api/recommendations', {
-        method: 'POST',
-        body: JSON.stringify({ count: 3 })
-      });
-      const result = await response.json();
-      return result.recommendations || [];
-    } catch (error) {
-      console.warn("Premium recommendations failed:", error);
-      return [];
-    }
+    return [];
   },
 
   async fetchGlucoseForecast(): Promise<any[]> {
-    console.log(`[API] Fetching heavy glucose forecast`);
-    try {
-      const response = await authenticatedFetch('/api/predict/glucose', {
-        method: 'POST',
-        body: JSON.stringify({ hours: 24 })
-      });
-      const result = await response.json();
-      return result.forecast || [];
-    } catch (error) {
-      console.warn("Glucose forecast failed:", error);
-      return [];
-    }
+    return [];
   },
 
   async scanMeasurementImage(imageUri: string): Promise<{ detected_value: number; confidence: number; preliminary_health_status: string; image_path: string; detected_unit?: string; is_fallback?: boolean }> {

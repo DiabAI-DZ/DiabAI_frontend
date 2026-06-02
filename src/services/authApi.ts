@@ -1,5 +1,8 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const TOKEN_STORAGE_KEY = 'auth.accessToken';
 
 const getDevHostIp = (): string => {
   const hostUri = Constants.expoConfig?.hostUri;
@@ -59,10 +62,27 @@ export const authApi = {
 
   setToken(newToken: string | null) {
     this.token = newToken;
+    // Persist so the session (and the post-login insights prefetch) survives an app restart.
+    if (newToken) {
+      AsyncStorage.setItem(TOKEN_STORAGE_KEY, newToken).catch(() => {});
+    } else {
+      AsyncStorage.removeItem(TOKEN_STORAGE_KEY).catch(() => {});
+    }
   },
 
   getToken(): string | null {
     return this.token;
+  },
+
+  /** Restore a persisted token into memory on app start. Returns the token (or null). */
+  async restoreToken(): Promise<string | null> {
+    try {
+      const stored = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
+      if (stored) this.token = stored;
+      return stored;
+    } catch {
+      return null;
+    }
   },
 
   async login(email: string, password: string) {

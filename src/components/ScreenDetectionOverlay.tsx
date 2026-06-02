@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Image, Dimensions, ActivityIndicator } from 'react-native';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import { Rectangle } from '../services/CVService';
+import type { Rectangle } from '../services/CVService';
 import { Check, RotateCcw, X } from 'lucide-react-native';
 
 interface Props {

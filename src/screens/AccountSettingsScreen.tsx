@@ -7,12 +7,14 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { 
+import {
   User, Mail, Phone, MapPin, ChevronLeft, Camera, Lock, Calendar, Scale, Ruler, Star, Zap
 } from 'lucide-react-native';
 import { Alert } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../context/ThemeContext';
 import { authApi } from '../services/authApi';
@@ -23,9 +25,11 @@ interface AccountSettingsScreenProps {
   onBack: () => void;
 }
 
+const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200';
+
   const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({ onBack }) => {
   const { C } = useTheme();
-  const { profile: userProfile, updateProfile } = useUser();
+  const { profile: userProfile, updateProfile, uploadAvatar } = useUser();
   const [form, setForm] = useState({
     fullName: userProfile?.name || "",
     email: userProfile?.email || "",
@@ -50,6 +54,38 @@ interface AccountSettingsScreenProps {
   });
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarUri = userProfile?.avatar_url || DEFAULT_AVATAR;
+
+  const handlePickAvatar = async () => {
+    if (uploadingAvatar) return;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          'Permission needed',
+          'Please allow photo library access to update your profile picture.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      setUploadingAvatar(true);
+      await uploadAvatar(result.assets[0].uri);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to update profile picture. Please try again.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%?&.])[A-Za-z\d@$!%?&.]{8,}$/;
 
@@ -198,10 +234,20 @@ interface AccountSettingsScreenProps {
         <View style={styles.avatarContainer}>
           <View style={[styles.avatarWrapper, { borderColor: C.redBorder }]}>
             <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200' }}
+              source={{ uri: avatarUri }}
               style={styles.avatarImage}
             />
-            <TouchableOpacity style={[styles.cameraButton, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
+            {uploadingAvatar && (
+              <View style={styles.avatarOverlay}>
+                <ActivityIndicator color="#FFF" />
+              </View>
+            )}
+            <TouchableOpacity
+              onPress={handlePickAvatar}
+              disabled={uploadingAvatar}
+              activeOpacity={0.85}
+              style={[styles.cameraButton, { backgroundColor: C.redBg, borderColor: C.redBorder }]}
+            >
               <Camera size={14} color={C.red} strokeWidth={2} />
             </TouchableOpacity>
           </View>
@@ -565,6 +611,13 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 60,
+  },
+  avatarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   cameraButton: {
     position: 'absolute',

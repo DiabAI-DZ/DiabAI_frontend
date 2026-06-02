@@ -18,6 +18,7 @@ export interface MeasurementEntry {
   dailyAvg?: number;
   notes?: string;
   imagePath?: string;
+  image?: string;
 }
 
 export interface MealEntry {
@@ -64,6 +65,7 @@ export interface InsulinInjectionEntry {
   time: string;
   date: string;
   notes?: string;
+  image?: string;
 }
 
 export interface ActivityEntry {
@@ -80,6 +82,7 @@ export interface ActivityEntry {
   time: string;
   date: string;
   notes?: string;
+  image?: string;
 }
 
 export type LogEntry = MeasurementEntry | MealEntry | InsulinInjectionEntry | ActivityEntry;
@@ -100,6 +103,7 @@ export interface UserProfile {
   age?: number;
   sex?: 'male' | 'female';
   isPremium?: boolean;
+  avatar_url?: string | null;
   remindersEnabled?: boolean;
   glucoseAlertsEnabled?: boolean;
   hypoAlertsEnabled?: boolean;
