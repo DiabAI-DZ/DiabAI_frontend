@@ -157,6 +157,12 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
   const [recList, setRecList] = useState<any[]>([]);
   const [insulinEstimate, setInsulinEstimate] = useState<any>(null);
   const [isMockData, setIsMockData] = useState(false);
+
+  const [selectedModel, setSelectedModel] = useState<'kaggle' | 'local' | 'fallback'>('kaggle');
+  const [usedModel, setUsedModel] = useState<'kaggle' | 'local' | 'fallback' | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const scrollViewRef = useRef<ScrollView>(null);
   const dayScrollRef = useRef<ScrollView>(null);
 
@@ -184,14 +190,15 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
       const selDateStr = formatDateStr(clampedDate);
 
       const [recsResult, patternsResult, predsResult, insulinResult] = await Promise.all([
-        apiService.fetchRecommendations(dateFrom, dateTo, selDateStr).catch(e => { console.warn(e); return null; }),
-        apiService.fetchPatterns(dateFrom, dateTo, selDateStr).catch(e => { console.warn(e); return null; }),
-        apiService.fetchPredictions(dateFrom, dateTo, selDateStr).catch(e => { console.warn(e); return null; }),
-        apiService.fetchInsulinEstimate(dateFrom, dateTo, selDateStr).catch(e => { console.warn(e); return null; }),
+        apiService.fetchRecommendations(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
+        apiService.fetchPatterns(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
+        apiService.fetchPredictions(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
+        apiService.fetchInsulinEstimate(dateFrom, dateTo, selDateStr, selectedModel).catch(e => { console.warn(e); return null; }),
       ]);
 
-      const mockDetected = !!(recsResult?.is_mock || patternsResult?.is_mock || predsResult?.is_mock || insulinResult?.is_mock);
-      setIsMockData(mockDetected);
+      const actualModel = patternsResult?.model_used || recsResult?.model_used || 'fallback';
+      setUsedModel(actualModel);
+      setIsMockData(actualModel === 'fallback');
 
       if (recsResult?.calendar?.days) {
         setCalendarDays(recsResult.calendar.days);
@@ -304,7 +311,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
     } finally {
       setInsightsLoading(false);
     }
-  }, [selectedDate, logs, setSelectedDate, profile]);
+  }, [selectedDate, logs, setSelectedDate, profile, selectedModel]);
 
   useEffect(() => {
     if (calendarDays.length > 0) {
@@ -325,6 +332,27 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
   useEffect(() => {
     fetchInsights();
   }, [fetchInsights]);
+
+  useEffect(() => {
+    if (insightsLoading) {
+      setElapsedTime(0);
+      const startTime = Date.now();
+      timerRef.current = setInterval(() => {
+        setElapsedTime((Date.now() - startTime) / 1000);
+      }, 100);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [insightsLoading]);
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -758,7 +786,96 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
       */}
 
       {activeSegment === 'dashboard' ? (
-        <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <>
+          {/* Model Selector and Status Banner */}
+          <View style={styles.modelSelectorContainer}>
+            <Text style={[styles.modelSelectorLabel, { color: C.textSm }]}>AI RECOMMENDATION ENGINE MODEL</Text>
+            <View style={[styles.modelSelectorBg, { backgroundColor: C.redBg || '#FDE8E8' }]}>
+              <TouchableOpacity
+                style={[styles.modelSegment, selectedModel === 'kaggle' && [styles.activeModelSegment, { backgroundColor: C.red }]]}
+                onPress={() => setSelectedModel('kaggle')}
+              >
+                <Text style={[styles.modelSegmentText, { color: selectedModel === 'kaggle' ? '#FFF' : C.textSm }]}>
+                  Cloud Qwen
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modelSegment, selectedModel === 'local' && [styles.activeModelSegment, { backgroundColor: C.red }]]}
+                onPress={() => setSelectedModel('local')}
+              >
+                <Text style={[styles.modelSegmentText, { color: selectedModel === 'local' ? '#FFF' : C.textSm }]}>
+                  Local PC
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modelSegment, selectedModel === 'fallback' && [styles.activeModelSegment, { backgroundColor: C.red }]]}
+                onPress={() => setSelectedModel('fallback')}
+              >
+                <Text style={[styles.modelSegmentText, { color: selectedModel === 'fallback' ? '#FFF' : C.textSm }]}>
+                  Heuristics
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Diagnostic Status Banner */}
+            <View style={[
+              styles.statusBanner,
+              {
+                backgroundColor: insightsLoading
+                  ? (C.blueBg || '#EFF6FF')
+                  : (usedModel === 'fallback' ? (C.amberBg || '#FEF3C7') : (C.greenBg || '#F0FDF4')),
+                borderColor: insightsLoading
+                  ? (C.blueBorder || '#BFDBFE')
+                  : (usedModel === 'fallback' ? (C.amberBorder || '#FDE68A') : (C.greenBorder || '#BBF7D0'))
+              }
+            ]}>
+              <View style={styles.statusBannerLeft}>
+                <View style={[
+                  styles.statusIndicator,
+                  {
+                    backgroundColor: insightsLoading
+                      ? '#3B82F6'
+                      : (usedModel === 'fallback' ? '#F59E0B' : '#10B981')
+                  }
+                ]} />
+                <Text style={[
+                  styles.statusBannerText,
+                  {
+                    color: insightsLoading
+                      ? '#1E40AF'
+                      : (usedModel === 'fallback' ? '#92400E' : '#166534')
+                  }
+                ]}>
+                  {insightsLoading ? (
+                    `Querying ${selectedModel === 'kaggle' ? 'Kaggle Cloud' : selectedModel === 'local' ? 'Local PC' : 'PHP Fallback'}...`
+                  ) : (
+                    `Response from: ${usedModel === 'kaggle' ? 'Kaggle Cloud (Qwen)' : usedModel === 'local' ? 'Local PC (Qwen)' : 'PHP Heuristic/Fallback'}`
+                  )}
+                </Text>
+              </View>
+              <View style={styles.statusBannerRight}>
+                <Clock size={12} color={
+                  insightsLoading
+                    ? '#1E40AF'
+                    : (usedModel === 'fallback' ? '#92400E' : '#166534')
+                } style={{ marginRight: 4 }} />
+                <Text style={[
+                  styles.timerText,
+                  {
+                    color: insightsLoading
+                      ? '#1E40AF'
+                      : (usedModel === 'fallback' ? '#92400E' : '#166534')
+                  }
+                ]}>
+                  {insightsLoading ? `${elapsedTime.toFixed(1)}s` : `${elapsedTime.toFixed(2)}s`}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
           {/* Card 1: Glucose Control Summary */}
           <View style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder }]}>
@@ -1136,6 +1253,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
 
           <View style={{ height: 24 }} />
         </ScrollView>
+      </>
       ) : (
         /* Conversation Mode (Chat Assistant) */
         <View style={styles.chatContainer}>
@@ -2005,6 +2123,78 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  modelSelectorContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  modelSelectorLabel: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  modelSelectorBg: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
+  modelSegment: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeModelSegment: {
+    shadowColor: '#C41E26',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  modelSegmentText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  statusBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 10,
+    borderWidth: 1,
+  },
+  statusBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  statusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  statusBannerText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  statusBannerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  timerText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
 });
 

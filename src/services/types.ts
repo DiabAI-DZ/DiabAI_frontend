@@ -112,6 +112,7 @@ export interface ScanResult {
   timestamp: string;
   imageUri: string;
   imagePath?: string;
+  isFallback?: boolean;
 }
 
 export interface MealScanResult {

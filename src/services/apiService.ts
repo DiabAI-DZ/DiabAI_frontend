@@ -465,14 +465,15 @@ export const apiService = {
     return result.data || result;
   },
 
-  async fetchRecommendations(dateFrom?: string, dateTo?: string, selectedDate?: string): Promise<any> {
+  async fetchRecommendations(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string): Promise<any> {
     const params = new URLSearchParams();
     const today = new Date().toISOString().split('T')[0];
     params.append('date_from', dateFrom || today);
     params.append('date_to', dateTo || today);
     if (selectedDate) params.append('selected_date', selectedDate);
+    if (model) params.append('model', model);
 
-    console.log(`[API] Fetching recommendations`);
+    console.log(`[API] Fetching recommendations with model: ${model}`);
     const response = await authenticatedFetch(`/api/insights/recommendations?${params.toString()}`);
     const result = await response.json();
     return result;
@@ -485,40 +486,43 @@ export const apiService = {
     return result.data || result;
   },
 
-  async fetchPatterns(dateFrom?: string, dateTo?: string, selectedDate?: string): Promise<any> {
+  async fetchPatterns(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string): Promise<any> {
     const params = new URLSearchParams();
     const today = new Date().toISOString().split('T')[0];
     params.append('date_from', dateFrom || today);
     params.append('date_to', dateTo || today);
     if (selectedDate) params.append('selected_date', selectedDate);
+    if (model) params.append('model', model);
 
-    console.log(`[API] Fetching patterns`);
+    console.log(`[API] Fetching patterns with model: ${model}`);
     const response = await authenticatedFetch(`/api/insights/patterns?${params.toString()}`);
     const result = await response.json();
     return result;
   },
 
-  async fetchPredictions(dateFrom?: string, dateTo?: string, selectedDate?: string): Promise<any> {
+  async fetchPredictions(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string): Promise<any> {
     const params = new URLSearchParams();
     const today = new Date().toISOString().split('T')[0];
     params.append('date_from', dateFrom || today);
     params.append('date_to', dateTo || today);
     if (selectedDate) params.append('selected_date', selectedDate);
+    if (model) params.append('model', model);
 
-    console.log(`[API] Fetching predictions`);
+    console.log(`[API] Fetching predictions with model: ${model}`);
     const response = await authenticatedFetch(`/api/insights/prediction?${params.toString()}`);
     const result = await response.json();
     return result;
   },
 
-  async fetchInsulinEstimate(dateFrom?: string, dateTo?: string, selectedDate?: string): Promise<any> {
+  async fetchInsulinEstimate(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string): Promise<any> {
     const params = new URLSearchParams();
     const today = new Date().toISOString().split('T')[0];
     params.append('date_from', dateFrom || today);
     params.append('date_to', dateTo || today);
     if (selectedDate) params.append('selected_date', selectedDate);
+    if (model) params.append('model', model);
 
-    console.log(`[API] Fetching insulin estimate`);
+    console.log(`[API] Fetching insulin estimate with model: ${model}`);
     const response = await authenticatedFetch(`/api/insights/insulin-estimate?${params.toString()}`);
     const result = await response.json();
     return result;
@@ -718,7 +722,7 @@ export const apiService = {
     }
   },
 
-  async scanMeasurementImage(imageUri: string): Promise<{ detected_value: number; confidence: number; preliminary_health_status: string; image_path: string; detected_unit?: string }> {
+  async scanMeasurementImage(imageUri: string): Promise<{ detected_value: number; confidence: number; preliminary_health_status: string; image_path: string; detected_unit?: string; is_fallback?: boolean }> {
     console.log(`[API] Uploading measurement image for scan:`, imageUri);
 
     const formData = new FormData();
