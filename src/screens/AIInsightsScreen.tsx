@@ -164,6 +164,8 @@ const ProgressRing: React.FC<{ value: number; max: number; size: number; strokeW
 
 interface AIInsightsScreenProps {
   onNavigateAlerts?: () => void;
+  /** When this screen is mounted in a hidden tab container, disable network loading. */
+  isActive?: boolean;
 }
 
 const formatDateStr = (d: Date): string => {
@@ -173,7 +175,7 @@ const formatDateStr = (d: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
-const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts }) => {
+const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts, isActive = true }) => {
   const { C, isDark } = useTheme();
   const { logs, alerts, getAIInsight, glucoseForecast, selectedDate, setSelectedDate, loading: dataLoading } = useData();
   const { profile } = useUser();
@@ -430,13 +432,17 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts })
 
   useEffect(() => {
     mountedRef.current = true;
-    loadInsights();
+
+    if (isActive) {
+      loadInsights();
+    }
+
     // On unmount we only stop listening for results — we deliberately do NOT abort the network
     // request, so a slow in-flight/prefetch call keeps running while the user is on another tab.
     return () => {
       mountedRef.current = false;
     };
-  }, [loadInsights]);
+  }, [loadInsights, isActive]);
 
   const handleRetryInsights = useCallback(() => {
     loadInsights(true);

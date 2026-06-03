@@ -122,7 +122,10 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
         </View>
 
         <View style={[styles.screenWrapper, { display: activeTab === 'ai' ? 'flex' : 'none' }]}>
-          <MemoizedAIInsightsScreen onNavigateAlerts={onNavigateAlerts} />
+          <MemoizedAIInsightsScreen
+            onNavigateAlerts={onNavigateAlerts}
+            isActive={activeTab === 'ai'}
+          />
         </View>
 
         <View style={[styles.screenWrapper, { display: activeTab === 'settings' ? 'flex' : 'none' }]}>
