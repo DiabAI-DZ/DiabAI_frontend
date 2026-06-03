@@ -342,6 +342,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
 
       let rawText = "";
       let configConfidence = 0.0;
+      let scanImagePath: string | undefined;
       
       if (ocrModel === 'tflite') {
         const ocrResult = await tfliteService.recognize(finalUri);
@@ -353,6 +354,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
         const backendResult = await scanImage(finalUri);
         rawText = String(backendResult.value).trim();
         configConfidence = backendResult.confidence;
+        scanImagePath = backendResult.imagePath;
         console.log(`[ScanFlow] Backend OCR Result:`, backendResult);
       }
 
@@ -366,6 +368,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           date: new Date().toISOString().split('T')[0],
           imageUri: finalUri,
+          imagePath: scanImagePath,
         });
         setState('confirm');
         return;
@@ -379,6 +382,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           date: new Date().toISOString().split('T')[0],
           imageUri: finalUri,
+          imagePath: scanImagePath,
         });
         setState('confirm');
         return;
@@ -404,6 +408,7 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         date: new Date().toISOString().split('T')[0],
         imageUri: finalUri,
+        imagePath: scanImagePath,
       });
       setState('confirm');
     } catch (err: any) {
@@ -702,7 +707,18 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
 
             {/* Food photo */}
             <View style={styles.foodImageContainer}>
-              <Image source={{ uri: photo || '' }} style={styles.foodImageLarge} />
+              {photo ? (
+                <Image
+                  source={{ uri: photo }}
+                  style={styles.foodImageLarge}
+                  onError={() => console.warn('[ScanFlow] Failed to load meal photo preview')}
+                />
+              ) : (
+                <View style={[styles.foodImageLarge, { alignItems: 'center', justifyContent: 'center', backgroundColor: C.redBg }]}>
+                  <CameraIcon size={40} color={C.textXs} />
+                  <Text style={{ color: C.textXs, fontSize: 11, marginTop: 6 }}>No photo available</Text>
+                </View>
+              )}
               <LinearGradient
                 colors={['transparent', 'rgba(0,0,0,0.55)']}
                 style={styles.foodImageOverlay}
@@ -935,6 +951,41 @@ const ScanFlow: React.FC<ScanFlowProps> = ({ mode, onBack, onComplete }) => {
             contentContainerStyle={[styles.sheetScrollContent, { paddingBottom: SHEET_HEIGHT * 0.32 + 40 }]}
             showsVerticalScrollIndicator={false}
           >
+            {/* Glucometer photo preview with fallback */}
+            <View style={{
+              width: '100%', height: 160, borderRadius: 16,
+              overflow: 'hidden', marginBottom: 16,
+              backgroundColor: C.redBg,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              {photo ? (
+                <Image
+                  source={{ uri: photo }}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="cover"
+                  onError={() => console.warn('[ScanFlow] Failed to load scan photo preview')}
+                />
+              ) : (
+                <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                  <CameraIcon size={40} color={C.textXs} />
+                  <Text style={{ color: C.textXs, fontSize: 11, marginTop: 6 }}>No photo available</Text>
+                </View>
+              )}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.45)']}
+                style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 60 }}
+              />
+              {scanResult?.confidence !== undefined && (
+                <View style={{
+                  position: 'absolute', bottom: 8, right: 8,
+                  backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+                }}>
+                  <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>
+                    {Math.round(scanResult.confidence * 100)}% Confidence
+                  </Text>
+                </View>
+              )}
+            </View>
 
             {/* Detected value card */}
             <View style={[styles.detectedCard, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>

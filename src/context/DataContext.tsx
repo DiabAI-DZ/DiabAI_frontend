@@ -103,10 +103,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // which may generate new alert notifications. Just refresh alerts so any new
       // ones surface — no separate /api/analyze call is needed.
       try {
-        const newAlerts = await apiService.fetchAlerts();
+        // Show fresh predictions on the Insights tab after new data is added.
+        insightsService.resetInsightsSession();
+
+        // Refresh alerts + forecast as they may have changed (the backend already
+        // ran AnalyzeEntryJob on creation — no separate /api/analyze call needed).
+        const [newAlerts, newForecast] = await Promise.all([
+          apiService.fetchAlerts().catch(() => []),
+          apiService.fetchGlucoseForecast().catch(() => []),
+        ]);
         setAlerts(newAlerts);
+        setGlucoseForecast(newForecast);
       } catch (ae) {
-        console.warn("[DataContext] Failed to refresh alerts after creating log:", ae);
+        console.warn("[DataContext] post-log refresh failed:", ae);
       }
     } catch (error) {
       console.error("DataContext: Failed to add log:", error);

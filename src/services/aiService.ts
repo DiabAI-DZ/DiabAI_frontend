@@ -83,6 +83,7 @@ export const aiService = {
         confidence: response.confidence || 0.9,
         timestamp: new Date().toISOString(),
         imageUri: imageUri,
+        imagePath: response.image_path,
         isFallback: response.is_fallback,
       };
     } catch (apiErr: any) {

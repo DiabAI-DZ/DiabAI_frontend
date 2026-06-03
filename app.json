@@ -6,12 +6,10 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-
     "hostUri": "http://192.168.1.7:8000",
     "extra": {
       "apiBaseUrl": "http://192.168.1.7:8000"
     },
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.DiabAI",
@@ -39,7 +37,9 @@
       [
         "expo-build-properties",
         {
-          "ios": { "useFrameworks": "static" }
+          "ios": {
+            "useFrameworks": "static"
+          }
         }
       ]
     ]
