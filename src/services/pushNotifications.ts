@@ -142,6 +142,13 @@ export async function requestPushPermission(): Promise<boolean> {
 
     return true;
   } catch (error: any) {
+    const msg = String(error?.message || error || '');
+    // Firebase may not be initialized in this build (e.g. Expo Go),
+    // which used to crash the app. Fail gracefully.
+    if (msg.includes("No Firebase App '[DEFAULT]'") || msg.toLowerCase().includes('no firebase app')) {
+      console.warn('[push] Firebase not initialized — skipping push.', msg);
+      return false;
+    }
     console.warn('[push] requestPushPermission error:', error?.message);
     return false;
   }
@@ -154,6 +161,11 @@ export async function getFcmToken(): Promise<string | null> {
   try {
     return await messaging().getToken();
   } catch (error: any) {
+    const msg = String(error?.message || error || '');
+    if (msg.includes("No Firebase App '[DEFAULT]'") || msg.toLowerCase().includes('no firebase app')) {
+      console.warn('[push] Firebase not initialized — cannot get FCM token.', msg);
+      return null;
+    }
     console.warn('[push] getToken error:', error?.message);
     return null;
   }
@@ -175,6 +187,11 @@ export async function registerDeviceToken(): Promise<void> {
     await apiService.registerDevice(token, currentPlatform(), buildDeviceName());
     console.log('[push] device token registered with backend.');
   } catch (error: any) {
+    const msg = String(error?.message || error || '');
+    if (msg.includes("No Firebase App '[DEFAULT]'") || msg.toLowerCase().includes('no firebase app')) {
+      console.warn('[push] Firebase not initialized — skipping device token registration.', msg);
+      return;
+    }
     console.warn('[push] registerDevice failed:', error?.message);
   }
 }
@@ -192,6 +209,11 @@ export async function unregisterDeviceToken(): Promise<void> {
     await messaging().deleteToken();
     console.log('[push] device token unregistered.');
   } catch (error: any) {
+    const msg = String(error?.message || error || '');
+    if (msg.includes("No Firebase App '[DEFAULT]'") || msg.toLowerCase().includes('no firebase app')) {
+      console.warn('[push] Firebase not initialized — skipping unregister.', msg);
+      return;
+    }
     console.warn('[push] unregisterDeviceToken failed:', error?.message);
   }
 }
@@ -211,7 +233,21 @@ export function initPushNotifications(opts: InitPushOptions): () => void {
   const messaging = getMessaging();
   if (!messaging) return () => {};
 
+  // In some builds the native messaging module exists but Firebase itself
+  // is not initialized yet. Guard so we never crash the app.
+  try {
+    const _test = messaging();
+  } catch (error: any) {
+    const msg = String(error?.message || error || '');
+    if (msg.includes("No Firebase App '[DEFAULT]'") || msg.toLowerCase().includes('no firebase app')) {
+      console.warn('[push] Firebase not initialized — push handlers disabled.', msg);
+      return () => {};
+    }
+    throw error;
+  }
+
   const unsubscribers: Array<() => void> = [];
+
 
   // Foreground messages: surface an in-app banner (FCM won't show a system notification here).
   unsubscribers.push(

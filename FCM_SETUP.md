@@ -65,11 +65,38 @@ already uses `expo-dev-client`).
 
 ## 4. Backend networking (device can't reach `localhost`)
 
-The base URL is already centralised and auto-detected in
-[`src/services/authApi.ts`](src/services/authApi.ts) via `Constants.expoConfig.hostUri`
-(`AUTH_BASE_URL`) — it resolves to your dev-host IP on a device and `10.0.2.2` on the Android
-emulator. You can also override it at runtime via Settings (it calls `setApiBaseUrl`). No
-hardcoded `localhost`. If you prefer, run `adb reverse tcp:8000 tcp:8000` and keep `localhost`.
+### 4.1 Base URL + common port mismatch (fix for “Cannot reach server”)
+
+The client builds `AUTH_BASE_URL` from your Expo `hostUri`:
+[`src/services/authApi.ts`](src/services/authApi.ts) via `Constants.expoConfig.hostUri`.
+
+**Important:** your current `DiabAI_frontend/app.json` has an example `hostUri` like:
+`http://192.168.1.13:19000`
+
+But the Laravel backend API is exposed on **`:8000`** (per your Docker Compose / backend docs).
+If the port doesn’t match, you’ll see client errors like:
+**“Cannot reach server / Network request failed / check API base URL”**.
+
+✅ Fix:
+- Update `DiabAI_frontend/app.json` to use the backend port:
+  - `hostUri: "http://<your-computer-ip>:8000"`
+- Rebuild/run the dev client so `Constants.expoConfig.hostUri` reflects the new value.
+
+### 4.2 Emulator vs device mapping
+
+- **Android Emulator:** the default mapping is `http://10.0.2.2:8000`
+- **iOS Simulator:** `http://localhost:8000`
+- **Physical device (Expo dev build):** must use your computer’s LAN IP + `:8000` (same Wi‑Fi)
+
+You can also override the base URL at runtime via Settings (it calls `setApiBaseUrl`), which helps if your network/IP changes.
+
+### 4.3 Optional workaround: adb reverse (Android)
+
+If you prefer to keep `localhost`, run:
+- `adb reverse tcp:8000 tcp:8000`
+
+Then `localhost:8000` on the device emulator will forward to the host machine.
+
 
 ---
 

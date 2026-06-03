@@ -1,22 +1,10 @@
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getDefaultBaseUrl, initApiBaseUrl } from './apiBaseUrl';
 
 const TOKEN_STORAGE_KEY = 'auth.accessToken';
 
-const getDevHostIp = (): string => {
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (!hostUri) {
-    return Platform.select({
-      android: '10.0.2.2',
-      default: 'localhost',
-    }) || 'localhost';
-  }
-  return hostUri.split(':')[0];
-};
-
-// Dynamically detect developer host IP address for local mobile-backend networking
-export const AUTH_BASE_URL = `http://${getDevHostIp()}:8000`;
+// Export kept for compatibility; use the same sync resolver as the rest of the app.
+export const AUTH_BASE_URL = getDefaultBaseUrl();
 
 export class AuthApiException extends Error {
   statusCode?: number;
@@ -32,11 +20,14 @@ export class AuthApiException extends Error {
   }
 }
 
-const timeoutFetch = (url: string, options: RequestInit, timeoutMs = 12000): Promise<Response> => {
+const timeoutFetch = (url: string, options: RequestInit, timeoutMs = 30000): Promise<Response> => {
   return Promise.race([
     fetch(url, options),
     new Promise<Response>((_, reject) =>
-      setTimeout(() => reject(new AuthApiException('Request timed out. Check backend connection.')), timeoutMs)
+      setTimeout(() => {
+        console.warn('[API][auth] timeoutFetch timed out after', timeoutMs, 'ms for url:', url);
+        reject(new AuthApiException(`Request timed out after ${timeoutMs}ms. Check backend connection / endpoint responsiveness.`));
+      }, timeoutMs)
     ),
   ]);
 };
@@ -55,6 +46,21 @@ const normalizeBaseUrl = (value: string): string => {
 export const authApi = {
   baseUrl: AUTH_BASE_URL,
   token: null as string | null,
+  _initInFlight: null as Promise<void> | null,
+
+  async initBaseUrl(): Promise<void> {
+    if (!this._initInFlight) {
+      this._initInFlight = (async () => {
+        try {
+          const resolved = await initApiBaseUrl();
+          this.baseUrl = normalizeBaseUrl(resolved);
+        } catch {
+          // keep existing baseUrl
+        }
+      })();
+    }
+    return this._initInFlight;
+  },
 
   setBaseUrl(newUrl: string) {
     this.baseUrl = normalizeBaseUrl(newUrl);
@@ -86,7 +92,12 @@ export const authApi = {
   },
 
   async login(email: string, password: string) {
+    await this.initBaseUrl();
     const url = `${this.baseUrl}/api/auth/login`;
+    console.log('[API][auth] login using baseUrl:', this.baseUrl, 'url:', url);
+
+    const payload = { email, password };
+    console.log('[API][auth] login payload keys:', Object.keys(payload));
 
     let response: Response;
     try {
@@ -96,7 +107,7 @@ export const authApi = {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(payload),
       });
     } catch (e: any) {
       if (e instanceof AuthApiException) {
@@ -111,6 +122,11 @@ export const authApi = {
       body = JSON.parse(rawText);
     } catch (_) {}
 
+    if (!response.ok) {
+      console.warn('[API][auth] login failed status:', response.status, 'content-type:', response.headers.get('content-type'));
+      console.warn('[API][auth] login failed first200:', rawText.slice(0, 200));
+    }
+
     if (response.status >= 200 && response.status < 300) {
       return body;
     }
@@ -120,7 +136,9 @@ export const authApi = {
   },
 
   async register(name: string, email: string, password: string) {
+    await this.initBaseUrl();
     const url = `${this.baseUrl}/api/auth/register`;
+    console.log('[API][auth] register using baseUrl:', this.baseUrl, 'url:', url);
 
     let response: Response;
     try {
@@ -154,7 +172,9 @@ export const authApi = {
   },
 
   async sendResetOtp(email: string) {
+    await this.initBaseUrl();
     const url = `${this.baseUrl}/api/auth/send-reset-otp`;
+    console.log('[API][auth] sendResetOtp using baseUrl:', this.baseUrl, 'url:', url);
 
     let response: Response;
     try {
@@ -188,6 +208,7 @@ export const authApi = {
   },
 
   async resetPassword(email: string, otp: string, password: string, passwordConfirmation: string) {
+    await this.initBaseUrl();
     const url = `${this.baseUrl}/api/auth/reset-password`;
 
     let response: Response;
@@ -227,6 +248,7 @@ export const authApi = {
   },
 
   async changePassword(currentPassword: string, password: string, passwordConfirmation: string) {
+    await this.initBaseUrl();
     const url = `${this.baseUrl}/api/auth/change-password`;
 
     let response: Response;
@@ -269,6 +291,7 @@ export const authApi = {
   },
 
   async logout(deviceToken?: string) {
+    await this.initBaseUrl();
     const token = this.token;
     if (!token) {
       return null;

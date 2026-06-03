@@ -98,8 +98,11 @@ const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    position: 'relative',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   backgroundContent: {
     ...StyleSheet.absoluteFillObject,

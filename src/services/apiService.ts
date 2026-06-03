@@ -610,7 +610,7 @@ export const apiService = {
           desc: row.body || '',
           time: formatTime(row.created_at),
           date: row.created_at,
-          tag: row.source === 'ai' ? 'AI Detected' : 'System',
+          tag: ['ai', 'ai_detected'].includes(row.source) ? 'AI Detected' : 'System',
           read: !!row.is_read
         };
       });

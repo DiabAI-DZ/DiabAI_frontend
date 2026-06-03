@@ -125,6 +125,24 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     authApi.setBaseUrl(apiBaseUrl);
   }, [apiBaseUrl]);
 
+  // Resolve any persisted baseUrl override (api.baseUrl) before first requests
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await authApi.initBaseUrl();
+      } catch (e) {
+        // If init fails, keep whatever baseUrl UserContext already has.
+      }
+      if (!cancelled) {
+        setApiBaseUrlState(authApi.baseUrl);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Restore a persisted session on cold start: load the saved token, then fetch the profile.
   // Setting the profile triggers the post-login data + insights prefetch in DataContext.
   useEffect(() => {

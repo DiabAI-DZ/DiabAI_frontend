@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Linking } from 'react-native';
+import { Linking, Modal } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { UserProvider } from './src/context/UserContext';
@@ -83,14 +83,19 @@ export default function App() {
                 onCancel={handleCancel}
                 onOpenSettings={handleOpenSettings}
               />
-              {premiumVisible && (
+              <Modal
+                visible={premiumVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={handleDismissPremium}
+              >
                 <PremiumOverlay
                   onUpgrade={handleUpgrade}
                   onDismiss={handleDismissPremium}
                 >
                   <></>
                 </PremiumOverlay>
-              )}
+              </Modal>
               <StatusBar style="auto" />
             </DataProvider>
           </UserProvider>
