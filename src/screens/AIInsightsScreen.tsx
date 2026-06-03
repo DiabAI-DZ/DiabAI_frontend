@@ -1178,24 +1178,6 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts, i
                       </View>
                       <Text style={[styles.recDesc, { color: C.textMd }]}>{rec.desc}</Text>
                       
-                      {/* Recommendation Image with Fallback */}
-                      {rec.imageUrl ? (
-                        <View style={[styles.recImageContainer, { borderColor: C.divider }]}>
-                          <Image 
-                            source={{ uri: rec.imageUrl }} 
-                            style={styles.recImage} 
-                            resizeMode="cover"
-                          />
-                        </View>
-                      ) : (
-                        <View style={[styles.recImageFallback, { backgroundColor: C.redBg + '10', borderColor: C.divider }]}>
-                          <Image 
-                            source={DefaultImageService.getDefaultImage('meal')} 
-                            style={[styles.recImage, { opacity: 0.6 }]} 
-                            resizeMode="cover"
-                          />
-                        </View>
-                      )}
                     </View>
                   </View>
                 );
