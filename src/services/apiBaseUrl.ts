@@ -70,30 +70,26 @@ const isLoopbackHost = (host: string): boolean => {
  * which breaks physical devices. The `extra.apiBaseUrl` field gives us a stable host.
  */
 export const getDefaultBaseUrl = (): string => {
-  const hostUri = Constants.expoConfig?.hostUri;
+  // 1. Check for manual override in AsyncStorage (Dev Menu usage)
+  // (Note: This is handled in initApiBaseUrl to keep this sync)
 
+  // 2. Check for hardcoded app.json config (extra.apiBaseUrl)
   const extraApiBaseUrl: string | undefined = (Constants.expoConfig as any)?.extra?.apiBaseUrl;
-
-  // If we have an explicit API base URL in `extra`, use it.
-  // (We also force port to 8000 to guarantee it hits the Laravel API.)
   if (extraApiBaseUrl) {
     return forceBackendPort8000(normalizeBaseUrl(extraApiBaseUrl));
   }
 
-  // If expoConfig.hostUri is provided, it might already represent the correct LAN hostname,
-  // but in your logs it is coming as 127.0.0.1:8081 (loopback) which is not reachable.
+  // 3. Dynamic Discovery from Expo Manifest (Metro Bundler Host)
+  // This is the "Magic" way: Expo knows which IP it's serving from.
+  const hostUri = Constants.expoConfig?.hostUri;
   if (hostUri) {
-    try {
-      const u = new URL(normalizeBaseUrl(hostUri));
-      if (!isLoopbackHost(u.hostname)) {
-        return forceBackendPort8000(normalizeBaseUrl(hostUri));
-      }
-    } catch {
-      // fall through to emulator mapping
+    const host = hostUri.split(':')[0];
+    if (!isLoopbackHost(host)) {
+      return `http://${host}:8000`;
     }
   }
 
-  // Fallback: assume Android emulator and map localhost -> 10.0.2.2.
+  // 4. Platform Fallbacks (Emulators)
   const base = `http://${defaultEmulatorHost()}:8000`;
   return mapLocalhostForPlatform(base);
 };

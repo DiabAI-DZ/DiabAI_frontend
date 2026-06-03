@@ -6,9 +6,9 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "hostUri": "http://192.168.1.7:8000",
+    "hostUri": null,
     "extra": {
-      "apiBaseUrl": "http://192.168.1.7:8000"
+      "apiBaseUrl": null
     },
     "ios": {
       "supportsTablet": true,
