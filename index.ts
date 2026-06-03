@@ -1,5 +1,6 @@
 import { registerRootComponent } from 'expo';
 
+
 import App from './App';
 
 // FCM background/quit-state messages must be handled at the JS entry point, before the app

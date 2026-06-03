@@ -103,11 +103,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         console.log(`[DataContext] Triggering AI analyzer for new log ${newLog.id}`);
         await apiService.runEntryAnalyzer(newLog.id, newLog.type);
-        // Refresh alerts as the analyzer might have generated new ones
-        const newAlerts = await apiService.fetchAlerts();
+        
+        // IMPORTANT: Reset the insights session cache so the user sees fresh predictions
+        // on the Insights tab after adding new data.
+        insightsService.resetInsightsSession();
+        
+        // Refresh alerts and forecast as they might have changed
+        const [newAlerts, newForecast] = await Promise.all([
+          apiService.fetchAlerts().catch(() => []),
+          apiService.fetchGlucoseForecast().catch(() => []),
+        ]);
         setAlerts(newAlerts);
+        setGlucoseForecast(newForecast);
       } catch (ae) {
-        console.warn("[DataContext] AI Analyzer failed:", ae);
+        console.warn("[DataContext] post-log refresh failed:", ae);
       }
     } catch (error) {
       console.error("DataContext: Failed to add log:", error);

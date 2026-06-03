@@ -1,6 +1,7 @@
 import { Platform, PermissionsAndroid } from 'react-native';
 import Constants from 'expo-constants';
 import { apiService } from './apiService';
+import firebase from '@react-native-firebase/app';
 
 /**
  * Firebase Cloud Messaging (FCM) client integration for the DiabAI backend.
@@ -18,12 +19,22 @@ let _messaging: any | null | undefined;
 function getMessaging(): any | null {
   if (_messaging !== undefined) return _messaging;
   try {
-    // Loaded lazily so a missing native module never crashes JS startup.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // 1. Ensure Firebase App is initialized
+    if (!firebase.apps.length) {
+      firebase.initializeApp({
+        apiKey: "AIzaSyAN7F_RyLeb7puBnon97qlHK9_ev-YfxcQ",
+        appId: "1:681286713860:android:e71b3f7909d54ea8a8eb51",
+        projectId: "diabai-c2fb6",
+        messagingSenderId: "681286713860",
+        storageBucket: "diabai-c2fb6.firebasestorage.app"
+      });
+      console.log('[push] Firebase manually initialized in service');
+    }
+    // 2. Load messaging
     _messaging = require('@react-native-firebase/messaging').default;
-  } catch {
+  } catch (error) {
     _messaging = null;
-    console.warn('[push] @react-native-firebase/messaging unavailable — push disabled in this build.');
+    console.warn('[push] @react-native-firebase/messaging unavailable — push disabled in this build.', error);
   }
   return _messaging;
 }

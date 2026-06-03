@@ -1,4 +1,21 @@
 import React, { useEffect, useState } from 'react';
+// Ensure Firebase is initialized.
+try {
+  const firebase = require('@react-native-firebase/app').default;
+  if (firebase && !firebase.apps.length) {
+    firebase.initializeApp({
+      apiKey: "AIzaSyAN7F_RyLeb7puBnon97qlHK9_ev-YfxcQ",
+      appId: "1:681286713860:android:e71b3f7909d54ea8a8eb51",
+      projectId: "diabai-c2fb6",
+      messagingSenderId: "681286713860",
+      storageBucket: "diabai-c2fb6.firebasestorage.app"
+    });
+    console.log('[Firebase] Manual initialization successful (App.tsx)');
+  }
+} catch (e) {
+  console.warn('[Firebase] Initialization error (App.tsx):', e);
+}
+
 import { StatusBar } from 'expo-status-bar';
 import { Linking, Modal } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';

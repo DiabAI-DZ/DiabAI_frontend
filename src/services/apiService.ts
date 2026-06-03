@@ -1052,8 +1052,25 @@ export const apiService = {
     return [];
   },
 
-  async fetchGlucoseForecast(): Promise<any[]> {
-    return [];
+  async fetchGlucoseForecast(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string, signal?: AbortSignal): Promise<any[]> {
+    const params = new URLSearchParams();
+    const today = new Date().toISOString().split('T')[0];
+    params.append('date_from', dateFrom || today);
+    params.append('date_to', dateTo || today);
+    if (selectedDate) params.append('selected_date', selectedDate);
+    if (model) params.append('model', model);
+
+    console.log(`[API] Fetching glucose forecast with model: ${model}`);
+    try {
+      const response = await authenticatedFetch(`/api/insights/prediction?${params.toString()}`, {}, { timeoutMs: AI_TIMEOUT_MS, signal });
+      const result = await response.json();
+      // The backend returns { calendar: ..., prediction: { ... } }
+      // The frontend DataContext expects an array for state.setGlucoseForecast
+      return result.prediction ? [result.prediction] : [];
+    } catch (error) {
+      console.warn("[API] fetchGlucoseForecast failed:", error);
+      return [];
+    }
   },
 
   async scanMeasurementImage(imageUri: string): Promise<{ detected_value: number; confidence: number; preliminary_health_status: string; image_path: string; detected_unit?: string; is_fallback?: boolean }> {
