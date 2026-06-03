@@ -19,6 +19,9 @@ export interface MeasurementEntry {
   notes?: string;
   imagePath?: string;
   image?: string;
+  imageSource?: string;
+  imageCredit?: string;
+  imageCreditUrl?: string;
 }
 
 export interface MealEntry {
@@ -36,6 +39,9 @@ export interface MealEntry {
   impact: string;
   impactLevel: ImpactLevel;
   image: string;
+  imageSource?: string;
+  imageCredit?: string;
+  imageCreditUrl?: string;
   tags?: string[];
   notes?: string;
   predicted_label?: string;
@@ -66,6 +72,9 @@ export interface InsulinInjectionEntry {
   date: string;
   notes?: string;
   image?: string;
+  imageSource?: string;
+  imageCredit?: string;
+  imageCreditUrl?: string;
 }
 
 export interface ActivityEntry {
@@ -83,6 +92,9 @@ export interface ActivityEntry {
   date: string;
   notes?: string;
   image?: string;
+  imageSource?: string;
+  imageCredit?: string;
+  imageCreditUrl?: string;
 }
 
 export type LogEntry = MeasurementEntry | MealEntry | InsulinInjectionEntry | ActivityEntry;
@@ -107,6 +119,9 @@ export interface UserProfile {
   remindersEnabled?: boolean;
   glucoseAlertsEnabled?: boolean;
   hypoAlertsEnabled?: boolean;
+  inRangePercentage?: number;
+  averageGlucose?: number;
+  dailyProgress?: number;
 }
 
 export interface ScanResult {
@@ -141,6 +156,22 @@ export interface AISummary {
   status: "Normal" | "High" | "Low";
 }
 
+export interface HomeTrendPoint {
+  date: string;
+  value: number;
+}
+
+export interface HomeData {
+  profile: UserProfile;
+  measurements: MeasurementEntry[];
+  recentMeals: MealEntry[];
+  recentActivities: ActivityEntry[];
+  recentInjections: InsulinInjectionEntry[];
+  alerts: AlertItem[];
+  trendData: HomeTrendPoint[];
+  dailyInsight?: AISummary;
+}
+
 export interface HomeRecommendation {
   id: number;
   title: string;
@@ -152,36 +183,4 @@ export interface HomeRecommendation {
   impact_label: string;
   calories: number;
   estimated_glucose_impact_mg_dl: number;
-}
-
-export interface HomeTrendPoint {
-  date: string;
-  label: string;
-  avg_value: number | null;
-}
-
-export interface HomeData {
-  greeting: {
-    name: string;
-    date: string;
-  };
-  latest_reading?: {
-    id: number;
-    value_mg_dl: number;
-    health_status: "low" | "normal" | "high";
-    trend: "stable" | "rising" | "falling" | null;
-    delta_since_last: number | null;
-    measured_at: string;
-    target: {
-      min: number;
-      max: number;
-    };
-  } | null;
-  glucose_trend: {
-    period: "7d" | "30d";
-    target_min: number;
-    target_max: number;
-    points: HomeTrendPoint[];
-  };
-  recommendations: HomeRecommendation[];
 }
