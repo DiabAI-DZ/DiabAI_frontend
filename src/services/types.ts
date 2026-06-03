@@ -145,6 +145,9 @@ export interface HomeRecommendation {
   id: number;
   title: string;
   image_url: string | null;
+  image_source?: string | null;
+  image_credit?: string | null;
+  image_credit_url?: string | null;
   impact_level: "low" | "moderate" | "high";
   impact_label: string;
   calories: number;

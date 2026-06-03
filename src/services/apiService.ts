@@ -106,12 +106,26 @@ export const convertGlucose = (value: number, toUnit: string, fromUnit: string):
 // URLs without a "/storage/" segment (e.g. the Unsplash default avatar) pass through untouched.
 export const resolveStorageUrl = (url?: string | null): string => {
   if (!url) return '';
-  if (url.startsWith('/storage/')) return `${authApi.baseUrl}${url}`;
-  const idx = url.indexOf('/storage/');
-  if (idx >= 0 && /^https?:\/\//i.test(url)) {
-    return `${authApi.baseUrl}${url.slice(idx)}`;
+  
+  // 1. If it's already a full absolute URL (like Pexels or Unsplash)
+  if (/^https?:\/\//i.test(url)) {
+    // Check if it's a backend URL that needs adjustment (e.g. http://localhost/storage/...)
+    const idx = url.indexOf('/storage/');
+    if (idx >= 0) {
+      return `${authApi.baseUrl}${url.slice(idx)}`;
+    }
+    return url;
   }
-  return url;
+
+  // 2. If it's a relative storage path starting with /storage/
+  if (url.startsWith('/storage/')) {
+    return `${authApi.baseUrl}${url}`;
+  }
+
+  // 3. If it's a relative path that doesn't start with /storage/ (like 'measurements/...' or 'tmp/...')
+  // We assume these are served via the public storage symlink or a generic storage route.
+  // Many DiabAI resources store relative internal keys.
+  return `${authApi.baseUrl}/storage/${url}`;
 };
 
 // Slow AI endpoints (glucose patterns + recommendations + insulin estimate) legitimately

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'rea
 import { Utensils } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { HomeRecommendation } from '../services/types';
+import { resolveStorageUrl } from '../services/apiService';
 
 interface RecommendedMealsProps {
   recommendations: HomeRecommendation[];
@@ -64,7 +65,7 @@ const RecommendedMeals: React.FC<RecommendedMealsProps> = ({ recommendations, lo
               <View key={rec.id} style={[styles.card, { backgroundColor: C.white, borderColor: C.redBorder }]}>
                 <View style={styles.imageWrap}>
                   {rec.image_url ? (
-                    <Image source={{ uri: rec.image_url }} style={styles.image} resizeMode="cover" />
+                    <Image source={{ uri: resolveStorageUrl(rec.image_url) }} style={styles.image} resizeMode="cover" />
                   ) : (
                     <View style={[styles.image, styles.imageFallback, { backgroundColor: C.redBg }]}>
                       <Utensils size={26} color={C.redMuted} />
@@ -73,6 +74,11 @@ const RecommendedMeals: React.FC<RecommendedMealsProps> = ({ recommendations, lo
                   <View style={[styles.impactBadge, { backgroundColor: impact.bg }]}>
                     <Text style={styles.impactText} numberOfLines={1}>{impact.text}</Text>
                   </View>
+                  {rec.image_credit ? (
+                    <View style={styles.creditBadge}>
+                      <Text style={styles.creditText} numberOfLines={1}>📷 {rec.image_credit}</Text>
+                    </View>
+                  ) : null}
                 </View>
                 <View style={styles.cardBody}>
                   <Text style={[styles.foodName, { color: C.text }]} numberOfLines={2}>{rec.title}</Text>
@@ -140,6 +146,20 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 11,
     fontWeight: '800',
+  },
+  creditBadge: {
+    position: 'absolute',
+    bottom: 4,
+    right: 6,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  creditText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 8,
+    fontWeight: '600',
   },
   cardBody: {
     padding: 12,
