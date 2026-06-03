@@ -45,6 +45,7 @@ import { convertGlucose, apiService, LogbookQueryParams, LogbookStats } from '..
 import { LogEntry } from '../services/types';
 import { format, isSameDay, isAfter, isBefore, subDays, parseISO, startOfDay } from 'date-fns';
 import { DefaultImageService } from '../services/DefaultImageService';
+import { MealImageEnrichmentService } from '../services/MealImageEnrichmentService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -339,7 +340,14 @@ const MeasurementCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry
 // Sub-Component: Meal Grid Card
 const MealCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, onSelect }) => {
   const { C } = useTheme();
+  const [enrichedImage, setEnrichedImage] = useState<string | null>(null);
   
+  useEffect(() => {
+    if (!entry.image && entry.name) {
+      MealImageEnrichmentService.getEnrichedImage(entry.name).then(setEnrichedImage);
+    }
+  }, [entry.image, entry.name]);
+
   const ic = useMemo(() => {
     switch (entry.impactLevel) {
       case 'high': return { color: C.red, bg: C.redBg, label: "High impact" };
@@ -357,7 +365,7 @@ const MealCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, onSel
     >
       <View style={styles.gridCardTopMeal}>
         <Image
-          source={entry.image ? { uri: entry.image } : DefaultImageService.getDefaultImage('meal')}
+          source={entry.image ? { uri: entry.image } : (enrichedImage ? { uri: enrichedImage } : DefaultImageService.getDefaultImage('meal'))}
           style={{ width: '100%', height: '100%' }}
           resizeMode="cover"
         />
