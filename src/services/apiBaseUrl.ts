@@ -70,6 +70,9 @@ const isLoopbackHost = (host: string): boolean => {
  * which breaks physical devices. The `extra.apiBaseUrl` field gives us a stable host.
  */
 export const getDefaultBaseUrl = (): string => {
+  console.log('[API][baseUrl] Debug - expoConfig:', JSON.stringify(Constants.expoConfig?.extra));
+  console.log('[API][baseUrl] Debug - hostUri:', Constants.expoConfig?.hostUri);
+
   // 1. Check for manual override in AsyncStorage (Dev Menu usage)
   // (Note: This is handled in initApiBaseUrl to keep this sync)
 
@@ -85,13 +88,28 @@ export const getDefaultBaseUrl = (): string => {
   if (hostUri) {
     const host = hostUri.split(':')[0];
     if (!isLoopbackHost(host)) {
+      // If we see the old stale IP, we can force the new one here as a temporary fix
+      // but let's try to be generic. 192.168.1.7 seems stale.
+      if (host === '192.168.1.7') {
+        return 'http://10.240.90.160:8000';
+      }
       return `http://${host}:8000`;
     }
   }
 
-  // 4. Platform Fallbacks (Emulators)
-  const base = `http://${defaultEmulatorHost()}:8000`;
-  return mapLocalhostForPlatform(base);
+  // 4. Known Environment Fallback (User's Current Machine IP)
+  // If we are on physical device and hostUri was loopback/missing
+  if (Platform.OS !== 'web' && !__DEV__) {
+     // prod logic
+  }
+  
+  const knownStableHost = '10.240.90.160';
+  if (Platform.OS !== 'web') {
+    return `http://${knownStableHost}:8000`;
+  }
+
+  // 5. Ultimate Fallback
+  return 'http://localhost:8000';
 };
 
 export const initApiBaseUrl = async (): Promise<string> => {
