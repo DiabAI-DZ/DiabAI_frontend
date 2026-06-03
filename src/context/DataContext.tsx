@@ -189,7 +189,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
           }
           insightsService
-            .fetchInsightsBundle(params)
+            .fetchInsightsBundle(params, { emitPremiumUi: false })
             .then(bundle => setRecommendations(bundle?.recommendations?.recommendations ?? []))
             .catch(() => {});
         });
