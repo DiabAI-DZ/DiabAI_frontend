@@ -46,7 +46,7 @@ import {
 import { MeasurementEntry } from '../services/types';
 import { apiService, resolveStorageUrl } from '../services/apiService';
 import { LogEntry } from '../services/types';
-import DefaultImageService from '../services/DefaultImageService';
+import { DefaultImageService } from '../services/DefaultImageService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { 
   insightsService, 

@@ -19,9 +19,6 @@ export interface MeasurementEntry {
   notes?: string;
   imagePath?: string;
   image?: string;
-  imageSource?: string;
-  imageCredit?: string;
-  imageCreditUrl?: string;
 }
 
 export interface MealEntry {
@@ -39,9 +36,6 @@ export interface MealEntry {
   impact: string;
   impactLevel: ImpactLevel;
   image: string;
-  imageSource?: string;
-  imageCredit?: string;
-  imageCreditUrl?: string;
   tags?: string[];
   notes?: string;
   predicted_label?: string;
@@ -72,9 +66,6 @@ export interface InsulinInjectionEntry {
   date: string;
   notes?: string;
   image?: string;
-  imageSource?: string;
-  imageCredit?: string;
-  imageCreditUrl?: string;
 }
 
 export interface ActivityEntry {
@@ -92,9 +83,6 @@ export interface ActivityEntry {
   date: string;
   notes?: string;
   image?: string;
-  imageSource?: string;
-  imageCredit?: string;
-  imageCreditUrl?: string;
 }
 
 export type LogEntry = MeasurementEntry | MealEntry | InsulinInjectionEntry | ActivityEntry;
@@ -156,6 +144,17 @@ export interface AISummary {
   status: "Normal" | "High" | "Low";
 }
 
+export interface HomeRecommendation {
+  id: number;
+  title: string;
+  image_url: string | null;
+  image_credit?: string;
+  impact_level: "low" | "moderate" | "high";
+  impact_label: string;
+  calories: number;
+  estimated_glucose_impact_mg_dl: number;
+}
+
 export interface HomeTrendPoint {
   date: string;
   value: number;
@@ -170,17 +169,4 @@ export interface HomeData {
   alerts: AlertItem[];
   trendData: HomeTrendPoint[];
   dailyInsight?: AISummary;
-}
-
-export interface HomeRecommendation {
-  id: number;
-  title: string;
-  image_url: string | null;
-  image_source?: string | null;
-  image_credit?: string | null;
-  image_credit_url?: string | null;
-  impact_level: "low" | "moderate" | "high";
-  impact_label: string;
-  calories: number;
-  estimated_glucose_impact_mg_dl: number;
 }

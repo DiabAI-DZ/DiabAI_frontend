@@ -1,40 +1,44 @@
 /**
  * DefaultImageService
- * 
- * Provides local premium assets for various health data categories to ensure
- * a high-quality visual experience even when user-specific images are missing.
+ * Provides local premium assets as fallbacks when user-uploaded or enriched 
+ * images are missing.
  */
+export const DefaultImageService = {
+  assets: {
+    walking: require('../../assets/images/walking.jpeg'),
+    running: require('../../assets/images/running.jpeg'),
+    cycling: require('../../assets/images/cycling.jpeg'),
+    swimming: require('../../assets/images/swimming.jpg'),
+    gym: require('../../assets/images/gym.jpg'),
+    yoga: require('../../assets/images/yoga.jpeg'),
+    football: require('../../assets/images/football.jpeg'),
+    basketball: require('../../assets/images/basketball.png'),
+    injection: require('../../assets/images/injection.jpeg'),
+    meal: require('../../assets/images/meal.jpeg'),
+    glucometer: require('../../assets/images/glucometer.jpg'),
+  },
 
-const DefaultAssets = {
-  walking: require('../assets/defaults/walking.png'),
-  running: require('../assets/defaults/running.png'),
-  cycling: require('../assets/defaults/cycling.png'),
-  activity: require('../assets/defaults/running.png'), // Generic activity fallback
-  injection: require('../assets/defaults/injection.png'),
-  meal: require('../assets/defaults/meal.png'),
-  glucose: null, // Scans rely on icons or photos
-};
+  /**
+   * Returns a require() asset based on the category and optional sub-type
+   */
+  getDefaultImage(category: 'activity' | 'injection' | 'meal' | 'measurement', subType?: string) {
+    if (category === 'activity') {
+      const type = (subType || '').toLowerCase();
+      if (type.includes('walk')) return this.assets.walking;
+      if (type.includes('run')) return this.assets.running;
+      if (type.includes('cycl') || type.includes('bike')) return this.assets.cycling;
+      if (type.includes('swim')) return this.assets.swimming;
+      if (type.includes('gym') || type.includes('lift')) return this.assets.gym;
+      if (type.includes('yoga')) return this.assets.yoga;
+      if (type.includes('foot') || type.includes('soccer')) return this.assets.football;
+      if (type.includes('basket')) return this.assets.basketball;
+      return this.assets.running; // Fallback activity
+    }
 
-export type AssetType = keyof typeof DefaultAssets;
+    if (category === 'injection') return this.assets.injection;
+    if (category === 'meal') return this.assets.meal;
+    if (category === 'measurement') return this.assets.glucometer;
 
-export const getDefaultImage = (type: string, subType?: string): any => {
-  const normalizedType = type.toLowerCase();
-  
-  if (normalizedType === 'activity' && subType) {
-    const normalizedSub = subType.toLowerCase();
-    if (normalizedSub.includes('walk')) return DefaultAssets.walking;
-    if (normalizedSub.includes('run') || normalizedSub.includes('jog')) return DefaultAssets.running;
-    if (normalizedSub.includes('cycl') || normalizedSub.includes('bike')) return DefaultAssets.cycling;
-    return DefaultAssets.activity;
+    return this.assets.meal; // Global fallback
   }
-
-  if (normalizedType === 'injection') return DefaultAssets.injection;
-  if (normalizedType === 'meal') return DefaultAssets.meal;
-  
-  return (DefaultAssets as any)[normalizedType] || null;
-};
-
-export default {
-  getDefaultImage,
-  Assets: DefaultAssets
 };

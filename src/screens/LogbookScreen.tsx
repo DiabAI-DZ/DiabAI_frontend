@@ -44,7 +44,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { convertGlucose, apiService, LogbookQueryParams, LogbookStats } from '../services/apiService';
 import { LogEntry } from '../services/types';
 import { format, isSameDay, isAfter, isBefore, subDays, parseISO, startOfDay } from 'date-fns';
-import DefaultImageService from '../services/DefaultImageService';
+import { DefaultImageService } from '../services/DefaultImageService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -299,9 +299,7 @@ const MeasurementCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry
         {entry.image ? (
           <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         ) : (
-          <View style={[styles.defaultImageContainer, { backgroundColor: C.redBg }]}>
-            <Activity size={48} color={C.red} strokeWidth={1} style={{ opacity: 0.15 }} />
-          </View>
+          <Image source={DefaultImageService.getDefaultImage('measurement')} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         )}
         <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: sc.border }]}>
           <View style={[styles.statusBadgeDot, { backgroundColor: sc.color }]} />
@@ -369,12 +367,6 @@ const MealCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, onSel
         <View style={[styles.statusBadgeFloatingRight, { backgroundColor: 'rgba(255,255,255,0.93)' }]}>
           <Text style={[styles.statusBadgeText, { color: mealTypeColor, textTransform: 'capitalize' }]}>{entry.mealType}</Text>
         </View>
-
-        {entry.imageCredit && (
-          <View style={styles.creditBadge}>
-            <Text style={styles.creditText}>{entry.imageCredit}</Text>
-          </View>
-        )}
       </View>
 
       <LinearGradient
@@ -1580,20 +1572,6 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     marginTop: 2,
     height: 28,
-  },
-  creditBadge: {
-    position: 'absolute',
-    bottom: 6,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  creditText: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 9,
-    fontWeight: '500',
   },
   gridCardBottomInfo: {
     padding: 8,

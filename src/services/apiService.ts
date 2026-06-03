@@ -161,9 +161,6 @@ const mapLogRow = (row: any): LogEntry | null => {
       tag: mapTag(row.measurement_type),
       trend: mapTrend(row.trend),
       image: resolveStorageUrl(row.image_url),
-      imageSource: row.image_source,
-      imageCredit: row.image_credit,
-      imageCreditUrl: row.image_credit_url,
     };
   } else if (row.entry_type === 'meal') {
     return {
@@ -181,9 +178,6 @@ const mapLogRow = (row: any): LogEntry | null => {
       impact: row.glucose_impact_mg_dl ? `+${Math.round(row.glucose_impact_mg_dl)} mg/dL` : '',
       impactLevel: mapImpactLevel(row.impact_level),
       image: resolveStorageUrl(row.image_url),
-      imageSource: row.image_source,
-      imageCredit: row.image_credit,
-      imageCreditUrl: row.image_credit_url,
       tags: row.tags || [],
     };
   } else if (row.entry_type === 'injection') {
@@ -198,9 +192,6 @@ const mapLogRow = (row: any): LogEntry | null => {
       date: row.recorded_at,
       notes: row.notes,
       image: resolveStorageUrl(row.image_url),
-      imageSource: row.image_source,
-      imageCredit: row.image_credit,
-      imageCreditUrl: row.image_credit_url,
     };
   } else if (row.entry_type === 'activity') {
     return {
@@ -218,9 +209,6 @@ const mapLogRow = (row: any): LogEntry | null => {
       date: row.recorded_at,
       notes: row.notes,
       image: resolveStorageUrl(row.image_url),
-      imageSource: row.image_source,
-      imageCredit: row.image_credit,
-      imageCreditUrl: row.image_credit_url,
     };
   }
   return null;
@@ -230,10 +218,6 @@ const mapLogRow = (row: any): LogEntry | null => {
 export interface LogbookQueryParams {
   entryTypes?: Array<'measurement' | 'meal' | 'activity' | 'injection'>;
   search?: string;
-  image?: string;
-  imageSource?: string;
-  imageCredit?: string;
-  imageCreditUrl?: string;
   // date_preset is mutually exclusive with date_from/date_to (date range wins when both given).
   datePreset?: 'today' | 'last_7_days' | 'last_30_days';
   dateFrom?: string; // YYYY-MM-DD
