@@ -70,46 +70,42 @@ const isLoopbackHost = (host: string): boolean => {
  * which breaks physical devices. The `extra.apiBaseUrl` field gives us a stable host.
  */
 export const getDefaultBaseUrl = (): string => {
-  console.log('[API][baseUrl] Debug - expoConfig:', JSON.stringify(Constants.expoConfig?.extra));
-  console.log('[API][baseUrl] Debug - hostUri:', Constants.expoConfig?.hostUri);
-
-  // 1. Check for manual override in AsyncStorage (Dev Menu usage)
-  // (Note: This is handled in initApiBaseUrl to keep this sync)
-
-  // 2. Check for hardcoded app.json config (extra.apiBaseUrl)
-  const extraApiBaseUrl: string | undefined = (Constants.expoConfig as any)?.extra?.apiBaseUrl;
-  if (extraApiBaseUrl) {
-    return forceBackendPort8000(normalizeBaseUrl(extraApiBaseUrl));
-  }
-
-  // 3. Dynamic Discovery from Expo Manifest (Metro Bundler Host)
-  // This is the "Magic" way: Expo knows which IP it's serving from.
   const hostUri = Constants.expoConfig?.hostUri;
+  const extraApiBaseUrl: string | undefined = (Constants.expoConfig as any)?.extra?.apiBaseUrl;
+
+  console.log('[API][baseUrl] Debug - manifest.hostUri:', hostUri);
+  console.log('[API][baseUrl] Debug - extra.apiBaseUrl:', extraApiBaseUrl);
+
+  // 1. Dynamic Discovery from Expo Manifest (Metro Bundler Host)
+  // We prioritize THIS because it's set by Metro/Expo at runtime based on the Network IP.
   if (hostUri) {
     const host = hostUri.split(':')[0];
     if (!isLoopbackHost(host)) {
-      // If we see the old stale IP, we can force the new one here as a temporary fix
-      // but let's try to be generic. 192.168.1.7 seems stale.
-      if (host === '192.168.1.7') {
-        return 'http://10.240.90.160:8000';
-      }
+      // If hostUri gives a LAN IP, that is almost certainly where the developer is.
       return `http://${host}:8000`;
     }
   }
 
-  // 4. Known Environment Fallback (User's Current Machine IP)
-  // If we are on physical device and hostUri was loopback/missing
-  if (Platform.OS !== 'web' && !__DEV__) {
-     // prod logic
+  // 2. Clear known stale IPs from extra config
+  const STALE_IPS = ['192.168.1.7'];
+  if (extraApiBaseUrl) {
+    const isStale = STALE_IPS.some(ip => extraApiBaseUrl.includes(ip));
+    if (!isStale) {
+      return forceBackendPort8000(normalizeBaseUrl(extraApiBaseUrl));
+    } else {
+      console.warn('[API][baseUrl] Skipping STALE extraApiBaseUrl:', extraApiBaseUrl);
+    }
   }
-  
+
+  // 3. Fallback to current verified machine IP
   const knownStableHost = '10.240.90.160';
   if (Platform.OS !== 'web') {
     return `http://${knownStableHost}:8000`;
   }
 
-  // 5. Ultimate Fallback
-  return 'http://localhost:8000';
+  // 4. Ultimate Fallbacks (Emulators)
+  const base = `http://${defaultEmulatorHost()}:8000`;
+  return mapLocalhostForPlatform(base);
 };
 
 export const initApiBaseUrl = async (): Promise<string> => {
