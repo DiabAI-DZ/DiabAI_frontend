@@ -11,6 +11,7 @@ import {
   Alert,
   ActivityIndicator,
   Dimensions,
+  Image,
 } from 'react-native';
 import Svg, { Path, Line, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { useTheme } from '../context/ThemeContext';
@@ -43,6 +44,7 @@ import {
   Bell,
 } from 'lucide-react-native';
 import { MeasurementEntry } from '../services/types';
+import { resolveStorageUrl } from '../services/apiService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { insightsService, InsightsBundle, DEFAULT_WINDOW_DAYS } from '../services/insightsService';
 import DateStrip, { DateRange } from '../components/DateStrip';
@@ -757,7 +759,8 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts, i
         priority: r.priority_label || r.priority,
         color: r.priority === 'high' ? '#EF4444' : C.amber,
         bg: r.priority === 'high' ? '#FEF2F2' : C.amberBg,
-        border: r.priority === 'high' ? '#FECACA' : C.amberBorder
+        border: r.priority === 'high' ? '#FECACA' : C.amberBorder,
+        imageUrl: r.image_url ? resolveStorageUrl(r.image_url) : null
       }));
     }
     return [];
@@ -1168,6 +1171,26 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts, i
                         </View>
                       </View>
                       <Text style={[styles.recDesc, { color: C.textMd }]}>{rec.desc}</Text>
+                      
+                      {/* Recommendation Image with Fallback */}
+                      {rec.imageUrl ? (
+                        <View style={[styles.recImageContainer, { borderColor: C.divider }]}>
+                          <Image 
+                            source={{ uri: rec.imageUrl }} 
+                            style={styles.recImage} 
+                            resizeMode="cover"
+                            onError={(e) => {
+                              console.warn('[Insights] Rec image failed to load:', rec.imageUrl);
+                              // We can't easily change the state inside a map during render without a component
+                              // But we can rely on standard image error handling or just show icon fallback
+                            }}
+                          />
+                        </View>
+                      ) : (
+                        <View style={[styles.recImageFallback, { backgroundColor: C.redBg + '40', borderColor: C.redBorder + '40' }]}>
+                          <RecIcon size={24} color={rec.color} opacity={0.5} />
+                        </View>
+                      )}
                     </View>
                   </View>
                 );
@@ -1953,6 +1976,29 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     marginTop: 2,
     paddingRight: 24,
+  },
+  recImageContainer: {
+    width: '100%',
+    height: 120,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginTop: 10,
+    backgroundColor: '#FFF',
+  },
+  recImage: {
+    width: '100%',
+    height: '100%',
+  },
+  recImageFallback: {
+    width: '100%',
+    height: 80,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    marginTop: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   insulinHeaderStrip: {
     flexDirection: 'row',
