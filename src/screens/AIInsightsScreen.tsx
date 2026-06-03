@@ -44,9 +44,15 @@ import {
   Bell,
 } from 'lucide-react-native';
 import { MeasurementEntry } from '../services/types';
-import { resolveStorageUrl } from '../services/apiService';
+import { apiService, resolveStorageUrl } from '../services/apiService';
+import { LogEntry } from '../services/types';
+import DefaultImageService from '../services/DefaultImageService';
 import { LinearGradient } from 'expo-linear-gradient';
-import { insightsService, InsightsBundle, DEFAULT_WINDOW_DAYS } from '../services/insightsService';
+import { 
+  insightsService, 
+  InsightsBundle, 
+  DEFAULT_WINDOW_DAYS 
+} from '../services/insightsService';
 import DateStrip, { DateRange } from '../components/DateStrip';
 
 const { width } = Dimensions.get('window');
@@ -1179,16 +1185,15 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts, i
                             source={{ uri: rec.imageUrl }} 
                             style={styles.recImage} 
                             resizeMode="cover"
-                            onError={(e) => {
-                              console.warn('[Insights] Rec image failed to load:', rec.imageUrl);
-                              // We can't easily change the state inside a map during render without a component
-                              // But we can rely on standard image error handling or just show icon fallback
-                            }}
                           />
                         </View>
                       ) : (
-                        <View style={[styles.recImageFallback, { backgroundColor: C.redBg + '40', borderColor: C.redBorder + '40' }]}>
-                          <RecIcon size={24} color={rec.color} opacity={0.5} />
+                        <View style={[styles.recImageFallback, { backgroundColor: C.redBg + '10', borderColor: C.divider }]}>
+                          <Image 
+                            source={DefaultImageService.getDefaultImage('meal')} 
+                            style={[styles.recImage, { opacity: 0.6 }]} 
+                            resizeMode="cover"
+                          />
                         </View>
                       )}
                     </View>

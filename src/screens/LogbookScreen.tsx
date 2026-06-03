@@ -44,6 +44,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { convertGlucose, apiService, LogbookQueryParams, LogbookStats } from '../services/apiService';
 import { LogEntry } from '../services/types';
 import { format, isSameDay, isAfter, isBefore, subDays, parseISO, startOfDay } from 'date-fns';
+import DefaultImageService from '../services/DefaultImageService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -298,7 +299,9 @@ const MeasurementCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry
         {entry.image ? (
           <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         ) : (
-          <Activity size={48} color={C.red} strokeWidth={1} style={{ opacity: 0.15 }} />
+          <View style={[styles.defaultImageContainer, { backgroundColor: C.redBg }]}>
+            <Activity size={48} color={C.red} strokeWidth={1} style={{ opacity: 0.15 }} />
+          </View>
         )}
         <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: sc.border }]}>
           <View style={[styles.statusBadgeDot, { backgroundColor: sc.color }]} />
@@ -356,9 +359,9 @@ const MealCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, onSel
     >
       <View style={styles.gridCardTopMeal}>
         {entry.image ? (
-          <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} />
+          <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         ) : (
-          <Utensils size={40} color={C.amber} style={{ opacity: 0.2 }} />
+          <Image source={DefaultImageService.getDefaultImage('meal')} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         )}
         <View style={[styles.statusBadgeFloatingLeft, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: ic.color + '30' }]}>
           <Text style={[styles.statusBadgeText, { color: ic.color }]}>{ic.label}</Text>
@@ -412,7 +415,7 @@ const InjectionCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, 
         {entry.image ? (
           <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         ) : (
-          <Syringe size={48} color={C.red} strokeWidth={1} style={{ opacity: 0.15 }} />
+          <Image source={DefaultImageService.getDefaultImage('injection')} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         )}
         <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: C.redBorder }]}>
           <Text style={[styles.statusBadgeText, { color: C.red, textTransform: 'capitalize' }]}>{entry.site}</Text>
@@ -461,7 +464,7 @@ const ActivityCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, o
         {entry.image ? (
           <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         ) : (
-          <Activity size={48} color={intensityColor} strokeWidth={1} style={{ opacity: 0.15 }} />
+          <Image source={DefaultImageService.getDefaultImage('activity', entry.activityType)} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         )}
         <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: intensityColor + '30' }]}>
           <Text style={[styles.statusBadgeText, { color: intensityColor, textTransform: 'capitalize' }]}>{entry.intensity}</Text>
@@ -1479,11 +1482,16 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   gridCardTopGlucometer: {
+    width: '100%',
     height: 120,
-    backgroundColor: '#FAFAFA',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+  },
+  defaultImageContainer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   gridCardTopMeal: {
     height: 120,
