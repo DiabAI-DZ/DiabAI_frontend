@@ -294,18 +294,42 @@ const authenticatedFetch = async (
     console.warn("[API] Request unauthorized (401).");
   }
 
+let premiumRequiredLastEmitAt = 0;
+
   if (response.status === 403) {
     console.warn("[API] Premium feature required (403).");
-    try {
-      // emit a UI-level event so the app can show the Premium overlay immediately
-      // without relying on every caller to propagate the error.
-      // Import here to avoid circular import issues at module init time.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { emitPremiumRequired } = require('./uiEvents');
-      emitPremiumRequired();
-    } catch (e) {
-      // ignore emitter failures
+    // IMPORTANT: This endpoint-level gating must be restricted.
+    // Otherwise, free users can trigger the overlay during background prefetch
+    // (randomly) on unrelated 403s.
+    //
+    // Only emit for:
+    //  - Alerts: /api/notifications and /api/notifications/*
+    //  - Insights: /api/insights and /api/insights/*
+    //
+    // `path` is the route path passed into authenticatedFetch, usually like:
+    //   '/api/notifications/read-all'
+    //   '/api/insights?date_from=...'
+    const shouldGatePremiumUI =
+      path.startsWith('/api/notifications') ||
+      path.startsWith('/api/insights') ||
+      path.includes('/api/notifications') ||
+      path.includes('/api/insights');
+
+    if (shouldGatePremiumUI) {
+      try {
+        // small guard to avoid rapid repeated emits from multiple quick prefetch calls
+        const now = Date.now();
+        if (!premiumRequiredLastEmitAt || now - premiumRequiredLastEmitAt > 750) {
+          premiumRequiredLastEmitAt = now;
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { emitPremiumRequired } = require('./uiEvents');
+          emitPremiumRequired();
+        }
+      } catch (e) {
+        // ignore emitter failures
+      }
     }
+
     throw new Error("PREMIUM_REQUIRED");
   }
 
