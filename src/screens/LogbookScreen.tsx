@@ -296,11 +296,11 @@ const MeasurementCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry
       style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
     >
       <View style={styles.gridCardTopGlucometer}>
-        {entry.image ? (
-          <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        ) : (
-          <Image source={DefaultImageService.getDefaultImage('measurement')} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        )}
+        <Image
+          source={entry.image ? { uri: entry.image } : DefaultImageService.getDefaultImage('measurement')}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="cover"
+        />
         <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: sc.border }]}>
           <View style={[styles.statusBadgeDot, { backgroundColor: sc.color }]} />
           <Text style={[styles.statusBadgeText, { color: sc.color }]}>{entry.status}</Text>
@@ -356,11 +356,11 @@ const MealCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, onSel
       style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
     >
       <View style={styles.gridCardTopMeal}>
-        {entry.image ? (
-          <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        ) : (
-          <Image source={DefaultImageService.getDefaultImage('meal')} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        )}
+        <Image
+          source={entry.image ? { uri: entry.image } : DefaultImageService.getDefaultImage('meal')}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="cover"
+        />
         <View style={[styles.statusBadgeFloatingLeft, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: ic.color + '30' }]}>
           <Text style={[styles.statusBadgeText, { color: ic.color }]}>{ic.label}</Text>
         </View>
@@ -410,11 +410,11 @@ const InjectionCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, 
       style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
     >
       <View style={[styles.gridCardTopGlucometer, { backgroundColor: C.redBg, overflow: 'hidden' }]}>
-        {entry.image ? (
-          <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        ) : (
-          <Image source={DefaultImageService.getDefaultImage('injection')} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        )}
+        <Image
+          source={entry.image ? { uri: entry.image } : DefaultImageService.getDefaultImage('injection')}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="cover"
+        />
         <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: C.redBorder }]}>
           <Text style={[styles.statusBadgeText, { color: C.red, textTransform: 'capitalize' }]}>{entry.site}</Text>
         </View>
@@ -459,11 +459,11 @@ const ActivityCard: React.FC<{ entry: any; onSelect: () => void }> = ({ entry, o
       style={[styles.gridCardWrapper, { borderColor: C.redBorder }]}
     >
       <View style={[styles.gridCardTopGlucometer, { backgroundColor: intensityColor + '10', overflow: 'hidden' }]}>
-        {entry.image ? (
-          <Image source={{ uri: entry.image }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        ) : (
-          <Image source={DefaultImageService.getDefaultImage('activity', entry.activityType)} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        )}
+        <Image
+          source={entry.image ? { uri: entry.image } : DefaultImageService.getDefaultImage('activity', entry.activityType)}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="cover"
+        />
         <View style={[styles.statusBadgeFloating, { backgroundColor: 'rgba(255,255,255,0.93)', borderColor: intensityColor + '30' }]}>
           <Text style={[styles.statusBadgeText, { color: intensityColor, textTransform: 'capitalize' }]}>{entry.intensity}</Text>
         </View>
@@ -1485,6 +1485,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    overflow: 'hidden',
   },
   defaultImageContainer: {
     ...StyleSheet.absoluteFillObject,
