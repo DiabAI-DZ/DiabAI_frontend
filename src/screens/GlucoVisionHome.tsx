@@ -48,6 +48,11 @@ interface GlucoVisionHomeProps {
   onNavigateDetail: (entry: any) => void;
   onNavigateAccountSettings: () => void;
   onNavigatePayment: (planId: string) => void;
+  // Tab to start on when (re)mounting — lets the navigator restore the previously
+  // active tab after returning from a detail page.
+  initialTab?: 'home' | 'log' | 'ai' | 'settings';
+  // Notifies the navigator whenever the active tab changes so it can be restored later.
+  onTabChange?: (tab: 'home' | 'log' | 'ai' | 'settings') => void;
 }
 
 const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
@@ -55,11 +60,18 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   onNavigateDetail,
   onNavigateAccountSettings,
   onNavigatePayment,
+  initialTab = 'home',
+  onTabChange,
 }) => {
   const { C, isDark } = useTheme();
   const { addLog } = useData();
   const [isPending, startTransition] = useTransition();
-  const [activeTab, setActiveTab] = useState<'home' | 'log' | 'ai' | 'settings'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'log' | 'ai' | 'settings'>(initialTab);
+
+  // Report tab changes up so the navigator can restore this tab after a detail page.
+  React.useEffect(() => {
+    onTabChange?.(activeTab);
+  }, [activeTab, onTabChange]);
   const [showScan, setShowScan] = useState(false);
   const [scanMode, setScanMode] = useState<'glucose' | 'meal'>('glucose');
   const [showActionPopup, setShowActionPopup] = useState(false);

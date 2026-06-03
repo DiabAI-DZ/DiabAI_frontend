@@ -34,6 +34,10 @@ import {
   Maximize2,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import MeasurementDetailScreen from './MeasurementDetailScreen';
+import MealDetailScreen from './MealDetailScreen';
+import InjectionDetailScreen from './InjectionDetailScreen';
+import ActivityDetailScreen from './ActivityDetailScreen';
 
 const { width } = Dimensions.get('window');
 
@@ -95,7 +99,10 @@ const NutritionRingDetail: React.FC<{ label: string; value: number; unit: string
   );
 };
 
-const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
+// Legacy combined detail renderer. Now only handles injection / activity (and acts as the
+// ultimate fallback). Measurement and meal entries are dispatched to their dedicated,
+// pixel-perfect screens by the wrapper exported at the bottom of this file.
+const LegacyDetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
   const { C, isDark } = useTheme();
   const { profile } = useUser();
 
@@ -1161,5 +1168,20 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
+
+// Dispatcher: routes a tapped logbook entry to the right detail screen by entry type.
+//   measurement -> MeasurementDetailScreen
+//   meal        -> MealDetailScreen
+//   injection   -> InjectionDetailScreen
+//   activity    -> ActivityDetailScreen
+//   unknown     -> LegacyDetailScreen (safety fallback)
+const DetailScreen: React.FC<DetailScreenProps> = ({ entry, onBack }) => {
+  if (!entry) return null;
+  if (entry.type === 'measurement') return <MeasurementDetailScreen entry={entry} onBack={onBack} />;
+  if (entry.type === 'meal') return <MealDetailScreen entry={entry} onBack={onBack} />;
+  if (entry.type === 'injection') return <InjectionDetailScreen entry={entry} onBack={onBack} />;
+  if (entry.type === 'activity') return <ActivityDetailScreen entry={entry} onBack={onBack} />;
+  return <LegacyDetailScreen entry={entry} onBack={onBack} />;
+};
 
 export default DetailScreen;

@@ -99,15 +99,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       setLogs((prev) => [newLog, ...prev]);
 
-      // Trigger Heavy AI Analyzer (Checkpoint 4)
+      // The backend analyzes each entry automatically on creation (AnalyzeEntryJob),
+      // which may generate new alert notifications. Just refresh alerts so any new
+      // ones surface — no separate /api/analyze call is needed.
       try {
-        console.log(`[DataContext] Triggering AI analyzer for new log ${newLog.id}`);
-        await apiService.runEntryAnalyzer(newLog.id, newLog.type);
-        // Refresh alerts as the analyzer might have generated new ones
         const newAlerts = await apiService.fetchAlerts();
         setAlerts(newAlerts);
       } catch (ae) {
-        console.warn("[DataContext] AI Analyzer failed:", ae);
+        console.warn("[DataContext] Failed to refresh alerts after creating log:", ae);
       }
     } catch (error) {
       console.error("DataContext: Failed to add log:", error);

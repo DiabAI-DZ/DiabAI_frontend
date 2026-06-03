@@ -851,6 +851,66 @@ export const apiService = {
     return result.data || result;
   },
 
+  async fetchInjectionDetail(id: number): Promise<any> {
+    console.log(`[API] Fetching injection detail for ${id}`);
+    const response = await authenticatedFetch(`/api/injections/${id}`);
+    const result = await response.json();
+    return result.data || result;
+  },
+
+  async fetchActivityDetail(id: number): Promise<any> {
+    console.log(`[API] Fetching activity detail for ${id}`);
+    const response = await authenticatedFetch(`/api/activities/${id}`);
+    const result = await response.json();
+    return result.data || result;
+  },
+
+  // Partial update of a measurement (used by the detail screen's inline notes editor).
+  // Backed by Laravel's apiResource update route (PATCH /api/measurements/{id}).
+  async updateMeasurement(id: number, payload: Record<string, any>): Promise<any> {
+    console.log(`[API] Updating measurement ${id}`, payload);
+    const response = await authenticatedFetch(`/api/measurements/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
+    return result?.data || result;
+  },
+
+  // Partial update of a meal (used by the meal detail screen's inline notes editor).
+  // Backed by Laravel's apiResource update route (PATCH /api/meals/{id}).
+  async updateMeal(id: number, payload: Record<string, any>): Promise<any> {
+    console.log(`[API] Updating meal ${id}`, payload);
+    const response = await authenticatedFetch(`/api/meals/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
+    return result?.data || result;
+  },
+
+  // Partial update of an injection (inline notes editor). PATCH /api/injections/{id}.
+  async updateInjection(id: number, payload: Record<string, any>): Promise<any> {
+    console.log(`[API] Updating injection ${id}`, payload);
+    const response = await authenticatedFetch(`/api/injections/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
+    return result?.data || result;
+  },
+
+  // Partial update of an activity (inline notes editor). PATCH /api/activities/{id}.
+  async updateActivity(id: number, payload: Record<string, any>): Promise<any> {
+    console.log(`[API] Updating activity ${id}`, payload);
+    const response = await authenticatedFetch(`/api/activities/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
+    return result?.data || result;
+  },
+
   async fetchProfile(): Promise<UserProfile> {
     console.log(`[API] Fetching settings from ${authApi.baseUrl}/api/settings`);
     const response = await authenticatedFetch('/api/settings');
@@ -1025,21 +1085,6 @@ export const apiService = {
     } catch (error) {
       console.error("upgradeAccount failed:", error);
       throw error;
-    }
-  },
-
-  // Heavy AI Models (Checkpoint 4)
-  async runEntryAnalyzer(logId: number, logType: string): Promise<any> {
-    console.log(`[API] Running entry analyzer for ${logType} ${logId}`);
-    try {
-      const response = await authenticatedFetch('/api/analyze', {
-        method: 'POST',
-        body: JSON.stringify({ entry_id: logId, entry_type: logType })
-      });
-      return await response.json();
-    } catch (error) {
-      console.warn("Entry analyzer failed:", error);
-      return null;
     }
   },
 

@@ -44,10 +44,32 @@ const MainNavigation: React.FC = () => {
   const [paymentPlan, setPaymentPlan] = useState<any>(null);
   const [pushBanner, setPushBanner] = useState<{ title?: string; body?: string; data?: Record<string, string> } | null>(null);
 
-  const navigateToDetail = (entry: any) => {
+  // Back-stack: each push records the screen we're leaving (and, for details, which entry was
+  // shown) so goBack() can return to the *previous* page instead of always jumping to home.
+  const [navStack, setNavStack] = useState<Array<{ screen: Screen; entry?: any }>>([]);
+  // The home tab that was active when we left it, so returning home restores Logbook/Insights/etc
+  // instead of resetting to the Home tab (GlucoVisionHome unmounts while a detail is open).
+  const [homeTab, setHomeTab] = useState<'home' | 'log' | 'ai' | 'settings'>('home');
+
+  // Refs mirror the latest screen/entry so the (mount-once) push-deeplink + navigate listeners
+  // can push onto the stack without capturing stale state.
+  const currentScreenRef = React.useRef(currentScreen);
+  const detailEntryRef = React.useRef(detailEntry);
+  React.useEffect(() => { currentScreenRef.current = currentScreen; }, [currentScreen]);
+  React.useEffect(() => { detailEntryRef.current = detailEntry; }, [detailEntry]);
+
+  // Open a detail page, remembering where we came from. Tapping a related entry from inside a
+  // detail (meal -> measurement, injection -> meal, ...) stacks the current detail so back works.
+  const navigateToDetail = React.useCallback((entry: any) => {
+    const from = currentScreenRef.current;
+    if (from === 'detail' && detailEntryRef.current) {
+      setNavStack((s) => [...s, { screen: 'detail', entry: detailEntryRef.current }]);
+    } else if (from === 'home') {
+      setNavStack((s) => [...s, { screen: 'home' }]);
+    }
     setDetailEntry(entry);
     setCurrentScreen('detail');
-  };
+  }, []);
 
   // Route from a tapped/parsed push to the entry it references, falling back to the
   // notifications list when the entry can't be resolved.
@@ -56,13 +78,12 @@ const MainNavigation: React.FC = () => {
       const entry = await apiService.fetchEntryByRef(target.entryType, target.entryId);
       if (entry) {
         if (target.notificationId) apiService.markAlertRead(target.notificationId);
-        setDetailEntry(entry);
-        setCurrentScreen('detail');
+        navigateToDetail(entry);
         return;
       }
     }
     setCurrentScreen('alerts');
-  }, []);
+  }, [navigateToDetail]);
 
   // Initialise FCM handlers once the user is authenticated; tear down on logout. Self-guards
   // when the native module is absent (Expo Go / pre-dev-build).
@@ -83,6 +104,21 @@ const MainNavigation: React.FC = () => {
   }, [pushBanner]);
 
   const goBack = () => {
+    // Pop the previous page off the back-stack if there is one.
+    if (navStack.length > 0) {
+      const prev = navStack[navStack.length - 1];
+      setNavStack((s) => s.slice(0, -1));
+      setPaymentPlan(null);
+      if (prev.screen === 'detail') {
+        setDetailEntry(prev.entry);
+        setCurrentScreen('detail');
+      } else {
+        setDetailEntry(null);
+        setCurrentScreen(prev.screen);
+      }
+      return;
+    }
+    // Nothing to go back to -> home (restores the last-active home tab via homeTab).
     setCurrentScreen('home');
     setDetailEntry(null);
     setPaymentPlan(null);
@@ -94,8 +130,13 @@ const MainNavigation: React.FC = () => {
       // Only accept known screens to avoid surprises
       const known: Screen[] = ['home','alerts','detail','accountSettings','payment','signIn','signUp','forgotPassword','resetPassword','onboarding','splash'];
       if (known.includes(screen as Screen)) {
+        // Route detail navigations through the stack-aware helper so back works
+        // when one detail opens another (e.g. a related entry).
+        if (screen === 'detail' && payload) {
+          navigateToDetail(payload);
+          return;
+        }
         setCurrentScreen(screen as Screen);
-        if (screen === 'detail' && payload) setDetailEntry(payload);
         if (screen === 'payment' && payload) setPaymentPlan(payload);
       }
     });
@@ -198,6 +239,8 @@ const MainNavigation: React.FC = () => {
       case 'home':
         return (
           <GlucoVisionHome
+            initialTab={homeTab}
+            onTabChange={setHomeTab}
             onNavigateAlerts={() => setCurrentScreen('alerts')}
             onNavigateDetail={navigateToDetail}
             onNavigateAccountSettings={() => setCurrentScreen('accountSettings')}
