@@ -127,6 +127,9 @@ interface FetchConfig {
   timeoutMs?: number;
   // External signal so callers can cancel a request on unmount / supersession.
   signal?: AbortSignal;
+  // Controls whether a 403 premium-gating should emit a UI event (Premium overlay).
+  // Used to prevent background prefetch from popping the overlay.
+  emitPremiumUi?: boolean;
 }
 
 // Maps a single raw /api/logbook row (discriminated by entry_type) into the client LogEntry
@@ -315,7 +318,11 @@ let premiumRequiredLastEmitAt = 0;
       path.includes('/api/notifications') ||
       path.includes('/api/insights');
 
-    if (shouldGatePremiumUI) {
+    // Default: emit premium overlay events.
+    // Background prefetch can pass { emitPremiumUi: false } to prevent "random" overlay pops.
+    const shouldEmitPremiumUI = config.emitPremiumUi !== false;
+
+    if (shouldGatePremiumUI && shouldEmitPremiumUI) {
       try {
         // small guard to avoid rapid repeated emits from multiple quick prefetch calls
         const now = Date.now();
@@ -638,7 +645,9 @@ export const apiService = {
           read: !!row.is_read
         };
       });
-    } catch (error) {
+    } catch (error: any) {
+      // Premium-gated (expected for free users): don't spam the console/error boundary.
+      if (error?.message === 'PREMIUM_REQUIRED') return [];
       console.error("fetchAlerts failed:", error);
       return [];
     }
@@ -740,7 +749,14 @@ export const apiService = {
   // Single aggregate insights call — one LLM pass, hits the backend Redis cache. Preferred over
   // the four split endpoints below (which, fired in parallel against a single-threaded dev
   // server, serialize and overload the LLM, inflating latency and forcing heuristic fallbacks).
-  async fetchInsights(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string, signal?: AbortSignal): Promise<any> {
+  async fetchInsights(
+    dateFrom?: string,
+    dateTo?: string,
+    selectedDate?: string,
+    model?: string,
+    signal?: AbortSignal,
+    fetchConfig: FetchConfig = {}
+  ): Promise<any> {
     const params = new URLSearchParams();
     const today = new Date().toISOString().split('T')[0];
     params.append('date_from', dateFrom || today);
@@ -749,7 +765,11 @@ export const apiService = {
     if (model) params.append('model', model);
 
     console.log(`[API] Fetching aggregate insights (model: ${model})`);
-    const response = await authenticatedFetch(`/api/insights?${params.toString()}`, {}, { timeoutMs: AI_TIMEOUT_MS, signal });
+    const response = await authenticatedFetch(
+      `/api/insights?${params.toString()}`,
+      {},
+      { timeoutMs: AI_TIMEOUT_MS, signal, ...fetchConfig }
+    );
     const result = await response.json();
     return result?.data ?? result;
   },

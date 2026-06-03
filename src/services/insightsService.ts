@@ -138,19 +138,30 @@ export function isStale(bundle: InsightsBundle): boolean {
  * caches + persists the result. Throws only when ALL four fail with a genuine (non-403) error,
  * so partial/premium-gated results still render via the screen's mock fallbacks.
  */
-export function fetchInsightsBundle(params: InsightsParams): Promise<InsightsBundle> {
+export function fetchInsightsBundle(
+  params: InsightsParams,
+  opts: { emitPremiumUi?: boolean } = {}
+): Promise<InsightsBundle> {
   const key = keyOf(params);
   const existing = inflight.get(key);
   if (existing) return existing;
 
   const { dateFrom, dateTo, selectedDate, model } = params;
   const signal = sessionController.signal;
+  const emitPremiumUi = opts.emitPremiumUi !== false;
 
   const run = (async (): Promise<InsightsBundle> => {
     // ONE aggregate call (not four parallel) — see apiService.fetchInsights for why.
     let agg: any = null;
     try {
-      agg = await apiService.fetchInsights(dateFrom, dateTo, selectedDate, model, signal);
+      agg = await apiService.fetchInsights(
+        dateFrom,
+        dateTo,
+        selectedDate,
+        model,
+        signal,
+        { emitPremiumUi }
+      );
     } catch (e: any) {
       // A 403 (premium-gated) is an expected "offline" state → return an empty bundle so the
       // screen shows its mock/demo fallback. Any other failure is genuine → propagate so the
@@ -207,7 +218,7 @@ export function prefetchInsights(params: InsightsParams): void {
   hydrate().then(() => {
     const cached = getCached(params);
     if (cached && !isStale(cached)) return; // already fresh — nothing to do
-    fetchInsightsBundle(params).catch(() => {});
+    fetchInsightsBundle(params, { emitPremiumUi: false }).catch(() => {});
   });
 }
 
