@@ -14,6 +14,7 @@ import PaymentScreen, { PLANS } from './PaymentScreen';
 import PremiumOverlay from './PremiumOverlay';
 import { useUser } from '../context/UserContext';
 import { apiService } from '../services/apiService';
+import { authApi } from '../services/authApi';
 import {
   initPushNotifications,
   parseDeepLink,
@@ -40,6 +41,11 @@ const MainNavigation: React.FC = () => {
   const { profile } = useUser();
   const [currentScreen, setCurrentScreen] = useState<Screen>('splash');
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
+  // Whether a persisted session token exists (null = not yet checked). Drives the splash route so
+  // a returning user goes straight to Home instead of flashing the sign-in screen.
+  const [hasToken, setHasToken] = useState<boolean | null>(null);
+  // Set once the splash animation finishes; lets us route as soon as the bootstrap reads land.
+  const splashDoneRef = React.useRef(false);
   const [resetEmail, setResetEmail] = useState('');
   const [detailEntry, setDetailEntry] = useState<any>(null);
   const [paymentPlan, setPaymentPlan] = useState<any>(null);
@@ -172,41 +178,58 @@ const MainNavigation: React.FC = () => {
       }
     });
 
-    const checkOnboarding = async () => {
-      const val = await AsyncStorage.getItem('hasSeenOnboarding');
-      setHasSeenOnboarding(val === 'true');
+    // Cold-start bootstrap: read the onboarding flag AND restore the persisted token in parallel,
+    // so the splash can route correctly (Home if logged in) without flashing sign-in/onboarding.
+    const bootstrap = async () => {
+      const [seen, token] = await Promise.all([
+        AsyncStorage.getItem('hasSeenOnboarding'),
+        authApi.restoreToken(),
+      ]);
+      setHasSeenOnboarding(seen === 'true');
+      setHasToken(!!token);
     };
-    checkOnboarding();
+    bootstrap();
     return () => { if (unsubscribe) unsubscribe(); };
   }, []);
 
-  // Navigation sync based on auth state
+  // Where to go once the splash finishes and the bootstrap reads are in: Home if a token exists,
+  // otherwise sign-in (returning user) or onboarding (brand-new user).
+  const bootReady = hasSeenOnboarding !== null && hasToken !== null;
+  const routeFromSplash = React.useCallback(() => {
+    if (hasToken) setCurrentScreen('home');
+    else if (hasSeenOnboarding) setCurrentScreen('signIn');
+    else setCurrentScreen('onboarding');
+  }, [hasToken, hasSeenOnboarding]);
+
+  // Navigation sync based on auth state.
   React.useEffect(() => {
-    if (hasSeenOnboarding === null) return;
+    if (!bootReady) return;
 
     const isAuthScreen = ['signIn', 'signUp', 'forgotPassword', 'resetPassword'].includes(currentScreen);
     const isPublicScreen = ['splash', 'onboarding'].includes(currentScreen);
 
-    if (currentScreen === 'splash' && hasSeenOnboarding) {
-      // Skip onboarding if already seen
-      // We still wait for splash to "complete" via its own callback,
-      // but we handle the destination here.
-    }
-
     if (profile && isAuthScreen) {
       setCurrentScreen('home');
-    } else if (!profile && !isAuthScreen && !isPublicScreen) {
+    } else if (!profile && !authApi.getToken() && !isAuthScreen && !isPublicScreen) {
+      // Only kick to sign-in when there's genuinely no session. While a token is present and the
+      // profile is still loading (cold-start restore), stay put so we don't flash the login page.
       setCurrentScreen('signIn');
     }
-  }, [profile, currentScreen, hasSeenOnboarding]);
+  }, [profile, currentScreen, bootReady]);
 
   const handleSplashComplete = () => {
-    if (hasSeenOnboarding) {
-      setCurrentScreen('signIn');
-    } else {
-      setCurrentScreen('onboarding');
-    }
+    splashDoneRef.current = true;
+    // If the bootstrap reads already landed, route now; otherwise the effect below routes once
+    // they do. Either ordering is handled, so the splash never routes on a stale (null) value.
+    if (bootReady) routeFromSplash();
   };
+
+  // Splash finished before the bootstrap reads resolved → route as soon as they do.
+  React.useEffect(() => {
+    if (bootReady && splashDoneRef.current && currentScreen === 'splash') {
+      routeFromSplash();
+    }
+  }, [bootReady, currentScreen, routeFromSplash]);
 
   const handleOnboardingComplete = async () => {
     console.log('[MainNavigation] handleOnboardingComplete triggered');

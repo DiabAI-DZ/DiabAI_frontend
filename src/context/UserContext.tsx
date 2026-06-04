@@ -3,6 +3,7 @@ import { UserProfile } from '../services/types';
 import { apiService } from '../services/apiService';
 import { authApi, AUTH_BASE_URL } from '../services/authApi';
 import { registerDeviceToken, unregisterDeviceToken } from '../services/pushNotifications';
+import { emitNavigate } from '../services/uiEvents';
 
 interface UserContextType {
   profile: UserProfile | null;
@@ -158,8 +159,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
           void registerDeviceToken();
         }
       } catch {
-        // Token invalid/expired — drop it so the app falls back to the sign-in screen.
+        // Token invalid/expired — drop it and force sign-in. The navigate event covers the case
+        // where the splash already routed to Home on the assumption a session existed.
         authApi.setToken(null);
+        if (!cancelled) emitNavigate('signIn');
       }
     })();
     return () => {
