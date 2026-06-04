@@ -639,10 +639,18 @@ export const apiService = {
   },
 
   // Alerts
-  async fetchAlerts(): Promise<AlertItem[]> {
+  // `emitPremiumUi` defaults to false so background callers (post-login refresh, post-log
+  // refresh, the unread-count badge) never pop the premium overlay on Home. Only the Alerts
+  // screen itself opts in (emitPremiumUi: true) so the blocker appears when the user actually
+  // opens Notifications.
+  async fetchAlerts(opts: { emitPremiumUi?: boolean } = {}): Promise<AlertItem[]> {
     console.log(`[API] Fetching alerts from ${authApi.baseUrl}/api/notifications`);
     try {
-      const response = await authenticatedFetch('/api/notifications');
+      const response = await authenticatedFetch(
+        '/api/notifications',
+        {},
+        { emitPremiumUi: opts.emitPremiumUi === true }
+      );
       const result = await response.json();
       if (!result || !Array.isArray(result.data)) {
         return [];

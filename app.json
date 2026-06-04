@@ -41,7 +41,8 @@
             "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "@stripe/stripe-react-native"
     ]
   }
 }

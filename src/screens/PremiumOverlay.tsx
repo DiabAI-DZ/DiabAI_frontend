@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
+  BackHandler,
+  Platform,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Lock, Sparkles, Brain, Bell, Heart } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 
@@ -16,28 +18,49 @@ const features = [
 ];
 
 interface PremiumOverlayProps {
-  children: React.ReactNode;
+  visible: boolean;
   onUpgrade: () => void;
   onDismiss: () => void;
 }
 
 const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
-  children,
+  visible,
   onUpgrade,
   onDismiss,
 }) => {
   const { C } = useTheme();
 
-  return (
-    <View style={styles.container}>
-      {/* Blurred background content */}
-      <View style={[styles.backgroundContent, { pointerEvents: 'none' }]}>
-        {children}
-      </View>
+  // The overlay is a blocker: the user must pick Upgrade or "Maybe later". Trap the Android
+  // hardware back button so it can't silently close the gate — route it through "Maybe later"
+  // (which sends the user Home) instead of letting the underlying screen handle back.
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onDismiss();
+      return true; // consume the event
+    });
+    return () => sub.remove();
+  }, [visible, onDismiss]);
 
-      {/* Overlay Background */}
-      <View style={[styles.overlay, { backgroundColor: (C as any).overlayBg || 'rgba(98, 46, 46, 0.45)' }]}>
-        
+  if (!visible) return null;
+
+  return (
+    <View style={styles.container} pointerEvents="auto">
+      {/* Real blur of the live screen behind the overlay */}
+      <BlurView
+        intensity={Platform.OS === 'android' ? 40 : 60}
+        tint="light"
+        experimentalBlurMethod="dimezisBlurView"
+        style={StyleSheet.absoluteFill}
+      />
+
+      {/* Reddish tint on top of the blur, matching the design */}
+      <View
+        style={[
+          styles.overlay,
+          { backgroundColor: (C as any).overlayBg || 'rgba(98, 46, 46, 0.35)' },
+        ]}
+      >
         {/* Premium badge */}
         <View style={[styles.badge, { backgroundColor: C.redBg, borderColor: `${C.red}20` }]}>
           <Lock size={12} color={C.red} />
@@ -98,15 +121,9 @@ const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  backgroundContent: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.35,
+    zIndex: 1000,
+    elevation: 1000,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,

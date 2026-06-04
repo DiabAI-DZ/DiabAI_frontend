@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,12 @@ import {
   Share2, Cloud, FileDown
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import {
+  ChangePlanContent,
+  PaymentHistoryContent,
+  BillingMethodContent,
+} from '../components/SubscriptionPopups';
+import { subscriptionService, SubscriptionResource } from '../services/subscriptionService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -335,9 +341,47 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [targetMax, setTargetMax] = useState(profile?.goals?.max || 140);
   const [language, setLanguage] = useState("English");
   const [textSize, setTextSize] = useState("Medium");
-  const [selectedPlanId, setSelectedPlanId] = useState("premium");
+
+  // Live subscription summary for the Payment Settings rows (plan + default card).
+  const [sub, setSub] = useState<SubscriptionResource | null>(null);
+  const [defaultCard, setDefaultCard] = useState<string | null>(null);
+
+  const loadBillingSummary = useCallback(async () => {
+    if (!profile?.isPremium) return;
+    try {
+      const [s, cards] = await Promise.all([
+        subscriptionService.getSubscription().catch(() => null),
+        subscriptionService.getBillingMethods().catch(() => []),
+      ]);
+      if (s) setSub(s);
+      const def = cards.find((c) => c.is_default) || cards[0];
+      setDefaultCard(def ? def.masked_number : null);
+    } catch {
+      // Non-fatal: rows fall back to profile-based defaults.
+    }
+  }, [profile?.isPremium]);
+
+  useEffect(() => { loadBillingSummary(); }, [loadBillingSummary]);
 
   const iconProps = { size: 18, color: C.redMuted, strokeWidth: 1.8 };
+
+  // Human-readable current-plan label + status badge from the live subscription.
+  const planSubtitle = useMemo(() => {
+    if (sub?.plan_details) {
+      const pd = sub.plan_details;
+      const interval = pd.interval === 'month' ? 'Monthly' : pd.interval === 'year' ? 'Annual' : '';
+      const price = pd.price > 0 ? ` · €${pd.price.toFixed(2)}` : '';
+      return `${pd.name}${interval ? ' · ' + interval : ''}${price}`;
+    }
+    return profile?.isPremium ? 'Premium Plan · Monthly' : 'Basic Free Plan';
+  }, [sub, profile?.isPremium]);
+
+  const planBadge = useMemo(() => {
+    if (sub?.cancel_at_period_end) return { label: 'Ends soon', color: '#B45309', bg: isDark ? '#2A220F' : '#FEF3C7' };
+    if (sub?.status === 'past_due') return { label: 'Past due', color: C.red, bg: C.redBg };
+    if (profile?.isPremium) return { label: 'Active', color: '#16A34A', bg: isDark ? '#132A1B' : '#DCFCE7' };
+    return { label: 'Upgrade', color: C.red, bg: C.redBg };
+  }, [sub, profile?.isPremium, isDark, C]);
 
   const handleSignOut = () => {
     const performSignOut = () => {
@@ -478,11 +522,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <SettingRow
             icon={<Wallet {...iconProps} />}
             label="Current Plan"
-            subtitle={profile?.isPremium ? "Premium Plan · Monthly" : "Basic Free Plan"}
-            badge={profile?.isPremium
-              ? { label: "Active", color: "#16A34A", bg: isDark ? "#132A1B" : "#DCFCE7" }
-              : { label: "Upgrade", color: C.red, bg: C.redBg }
-            }
+            subtitle={planSubtitle}
+            badge={planBadge}
             onClick={!profile?.isPremium ? () => onNavigatePayment?.('premium') : undefined}
           />
           {!profile?.isPremium && (
@@ -510,7 +551,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <SettingRow
                 icon={<CreditCard {...iconProps} />}
                 label="Billing Method"
-                subtitle="Visa **** 4242"
+                subtitle={defaultCard || "Manage your saved cards"}
                 onClick={() => setBillingPopup(true)}
               />
             </>
@@ -644,84 +685,27 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
         ))}
       </CenterPopup>
 
-      {/* Choose Subscription Plan Popup */}
-      <CenterPopup open={planPopup} onClose={() => setPlanPopup(false)} title="Choose Subscription Plan">
-        {[
-          { id: "free", label: "Basic Plan", sub: "Glucose tracking only", price: "$0.00", icon: <Heart size={16} color={C.red} /> },
-          { id: "premium", label: "Premium Plan", sub: "AI Insights & Food Scanner", price: "$4.99/mo", icon: <CreditCard size={16} color={C.red} /> },
-          { id: "pro", label: "Pro Consultant Plan", sub: "Doctor sharing pipeline", price: "$9.99/mo", icon: <Shield size={16} color={C.red} /> },
-        ].map((p) => (
-          <SelectOption
-            key={p.id}
-            label={p.label}
-            subtitle={`${p.sub} · ${p.price}`}
-            selected={selectedPlanId === p.id}
-            onSelect={() => {
-              setSelectedPlanId(p.id);
-              setPlanPopup(false);
-              if (onNavigatePayment) {
-                onNavigatePayment(p.id);
-              }
-            }}
-            icon={p.icon}
-          />
-        ))}
+      {/* Choose Your Plan Popup (live available_plans + change-plan) */}
+      <CenterPopup
+        open={planPopup}
+        onClose={() => { setPlanPopup(false); loadBillingSummary(); }}
+        title="Choose Your Plan"
+      >
+        {planPopup && <ChangePlanContent onClose={() => { setPlanPopup(false); loadBillingSummary(); }} />}
       </CenterPopup>
 
-      {/* Payment Transactions History Popup */}
-      <CenterPopup open={historyPopup} onClose={() => setHistoryPopup(false)} title="Payment Transactions">
-        <View style={styles.transactionsWrap}>
-          {[
-            { date: "Mar 1, 2026", desc: "Premium Plan – Monthly", amount: "$4.99", status: "Paid" },
-            { date: "Feb 1, 2026", desc: "Premium Plan – Monthly", amount: "$4.99", status: "Paid" },
-            { date: "Jan 1, 2026", desc: "Premium Plan – Monthly", amount: "$4.99", status: "Paid" },
-          ].map((tx, i) => (
-            <View
-              key={i}
-              style={[
-                styles.transactionRow,
-                { borderBottomColor: C.divider, borderBottomWidth: i < 2 ? 1 : 0 }
-              ]}
-            >
-              <View style={styles.transactionLeft}>
-                <View style={[styles.transactionIcon, { backgroundColor: C.redBg }]}>
-                  <Receipt size={16} color={C.redMuted} />
-                </View>
-                <View>
-                  <Text style={[styles.transactionTitle, { color: C.text }]}>{tx.desc}</Text>
-                  <Text style={[styles.transactionDate, { color: C.textSm }]}>{tx.date}</Text>
-                </View>
-              </View>
-              <View style={styles.transactionRight}>
-                <Text style={[styles.transactionAmount, { color: C.text }]}>{tx.amount}</Text>
-                <View style={styles.transactionStatusRow}>
-                  <CheckCircle2 size={10} color={C.green} />
-                  <Text style={[styles.transactionStatusText, { color: C.green }]}>{tx.status}</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
+      {/* Payment History Popup (live payment-history) */}
+      <CenterPopup open={historyPopup} onClose={() => setHistoryPopup(false)} title="Payment History">
+        {historyPopup && <PaymentHistoryContent />}
       </CenterPopup>
 
-      {/* Billing Method Popup */}
-      <CenterPopup open={billingPopup} onClose={() => setBillingPopup(false)} title="Billing Method">
-        <View style={[styles.billingCard, { backgroundColor: C.redBg, borderColor: C.red }]}>
-          <View style={[styles.billingIcon, { backgroundColor: C.red }]}>
-            <CreditCard size={20} color="#FFF" />
-          </View>
-          <View style={styles.billingCardDetails}>
-            <Text style={[styles.billingCardTitle, { color: C.text }]}>Visa **** 4242</Text>
-            <Text style={[styles.billingCardSub, { color: C.textSm }]}>Expires 08 / 27</Text>
-          </View>
-          <View style={[styles.billingBadge, { backgroundColor: isDark ? "#132A1B" : "#DCFCE7" }]}>
-            <CheckCircle2 size={11} color={C.green} />
-            <Text style={[styles.billingBadgeText, { color: C.green }]}>Default</Text>
-          </View>
-        </View>
-        <TouchableOpacity style={[styles.addBillingBtn, { borderColor: C.divider }]}>
-          <Text style={[styles.addBillingText, { color: C.text }]}>Add New Card</Text>
-        </TouchableOpacity>
+      {/* Billing Method Popup (live cards + Stripe add card) */}
+      <CenterPopup
+        open={billingPopup}
+        onClose={() => { setBillingPopup(false); loadBillingSummary(); }}
+        title="Billing Method"
+      >
+        {billingPopup && <BillingMethodContent onClose={() => { setBillingPopup(false); loadBillingSummary(); }} />}
       </CenterPopup>
 
     </View>

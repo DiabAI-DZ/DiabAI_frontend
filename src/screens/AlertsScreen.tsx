@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
+import { apiService } from '../services/apiService';
 import { 
   AlertTriangle, 
   Zap, 
@@ -41,6 +42,12 @@ const AlertsScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { C, isDark } = useTheme();
   const { alerts, markAlertRead, markAllAlertsRead } = useData();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+
+  // Opening Notifications is a premium-gated action: hit /api/notifications with the overlay
+  // opt-in so free users get the blocker here (the background refresh on Home stays silent).
+  useEffect(() => {
+    apiService.fetchAlerts({ emitPremiumUi: true }).catch(() => {});
+  }, []);
 
   const filteredAlerts = useMemo(() => {
     return alerts.filter(a => activeFilter === 'all' || a.severity === activeFilter);

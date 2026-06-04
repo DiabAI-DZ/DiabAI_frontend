@@ -11,6 +11,7 @@ import AlertsScreen from './AlertsScreen';
 import DetailScreen from './DetailScreen';
 import AccountSettingsScreen from './AccountSettingsScreen';
 import PaymentScreen, { PLANS } from './PaymentScreen';
+import PremiumOverlay from './PremiumOverlay';
 import { useUser } from '../context/UserContext';
 import { apiService } from '../services/apiService';
 import {
@@ -20,7 +21,7 @@ import {
 } from '../services/pushNotifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
-import { onNavigate } from '../services/uiEvents';
+import { onNavigate, onPremiumRequired } from '../services/uiEvents';
 
 type Screen =
   | 'splash'
@@ -43,6 +44,8 @@ const MainNavigation: React.FC = () => {
   const [detailEntry, setDetailEntry] = useState<any>(null);
   const [paymentPlan, setPaymentPlan] = useState<any>(null);
   const [pushBanner, setPushBanner] = useState<{ title?: string; body?: string; data?: Record<string, string> } | null>(null);
+  // Premium blocker overlay: shown when a free user hits a premium-gated screen (Insights/Alerts).
+  const [premiumVisible, setPremiumVisible] = useState(false);
 
   // Back-stack: each push records the screen we're leaving (and, for details, which entry was
   // shown) so goBack() can return to the *previous* page instead of always jumping to home.
@@ -123,6 +126,31 @@ const MainNavigation: React.FC = () => {
     setDetailEntry(null);
     setPaymentPlan(null);
   };
+
+  // Show the premium blocker when a free user hits a gated screen (403 from Insights/Alerts).
+  React.useEffect(() => {
+    const unsub = onPremiumRequired(() => setPremiumVisible(true));
+    return () => { if (unsub) unsub(); };
+  }, []);
+
+  // "Upgrade to Premium" -> close the gate and go straight to the checkout (Payment) screen
+  // pre-filled with the Premium plan.
+  const handlePremiumUpgrade = React.useCallback(() => {
+    setPremiumVisible(false);
+    const plan = PLANS.find((p) => p.id === 'premium') || PLANS[1];
+    setPaymentPlan(plan);
+    setCurrentScreen('payment');
+  }, []);
+
+  // "Maybe later" (and the trapped back button) -> close the gate and return Home, so the gated
+  // screen doesn't immediately re-trigger the 403 and re-open the overlay.
+  const handlePremiumDismiss = React.useCallback(() => {
+    setPremiumVisible(false);
+    setHomeTab('home');
+    setDetailEntry(null);
+    setNavStack([]);
+    setCurrentScreen('home');
+  }, []);
 
   // Load onboarding state
   React.useEffect(() => {
@@ -301,6 +329,14 @@ const MainNavigation: React.FC = () => {
           )}
         </TouchableOpacity>
       )}
+
+      {/* Premium blocker — rendered in-tree (not in a Modal) so its BlurView actually blurs the
+          live screen behind it on both iOS and Android. */}
+      <PremiumOverlay
+        visible={premiumVisible}
+        onUpgrade={handlePremiumUpgrade}
+        onDismiss={handlePremiumDismiss}
+      />
     </View>
   );
 };

@@ -1,16 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   ScrollView,
-  Animated,
-  Switch,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  StripeProvider,
+  CardField,
+  useConfirmSetupIntent,
+  CardFieldInput,
+} from '@stripe/stripe-react-native';
 import {
   ChevronLeft,
   CreditCard,
@@ -19,9 +22,15 @@ import {
   Sparkles,
   Shield,
   Zap,
-  Star,
+  AlertTriangle,
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
+import { useUser } from '../context/UserContext';
+import {
+  subscriptionService,
+  SubscriptionApiError,
+  PlanKey,
+} from '../services/subscriptionService';
 
 export const PLANS = [
   {
@@ -37,7 +46,7 @@ export const PLANS = [
   {
     id: "premium",
     label: "Premium",
-    price: "$4.99",
+    price: "€4.99",
     amount: 4.99,
     period: "/month",
     sub: "Full AI insights · Unlimited history · Doctor sharing",
@@ -47,7 +56,7 @@ export const PLANS = [
   {
     id: "annual",
     label: "Annual Premium",
-    price: "$41.99",
+    price: "€41.99",
     amount: 41.99,
     period: "/year",
     sub: "Everything in Premium · Save 30%",
@@ -56,156 +65,20 @@ export const PLANS = [
   },
 ];
 
-type CardNetwork = "visa" | "mastercard" | "amex" | "discover" | "unknown";
+type PlanType = typeof PLANS[0];
 
-function detectNetwork(num: string): CardNetwork {
-  const raw = num.replace(/\s/g, "");
-  if (/^4/.test(raw)) return "visa";
-  if (/^5[1-5]/.test(raw) || /^2[2-7]/.test(raw)) return "mastercard";
-  if (/^3[47]/.test(raw)) return "amex";
-  if (/^6/.test(raw)) return "discover";
-  return "unknown";
-}
-
-// Subcomponent to render card network badges using simple Text styled tags.
-const NetworkBadge: React.FC<{ network: CardNetwork }> = ({ network }) => {
-  if (network === "visa") {
-    return <Text style={styles.networkVisa}>VISA</Text>;
-  }
-  if (network === "mastercard") {
-    return (
-      <View style={styles.mastercardDots}>
-        <View style={[styles.mCircle, { backgroundColor: '#EB001B' }]} />
-        <View style={[styles.mCircle, { backgroundColor: '#F79E1B', marginLeft: -8 }]} />
-      </View>
-    );
-  }
-  if (network === "amex") {
-    return <Text style={styles.networkAmex}>AMEX</Text>;
-  }
-  if (network === "discover") {
-    return <Text style={styles.networkDiscover}>DISCOVER</Text>;
-  }
-  return <CreditCard size={20} color="rgba(255,255,255,0.5)" strokeWidth={1.5} />;
+// Map the screen's plan ids to the backend plan keys.
+const PLAN_MAP: Record<string, PlanKey> = {
+  free: 'free',
+  premium: 'premium_monthly',
+  annual: 'premium_annual',
 };
 
-/* ─── Credit Card Visual Component with Native Animation ─── */
-const CardVisual: React.FC<{
-  number: string;
-  name: string;
-  expiry: string;
-  cvv: string;
-  flipped: boolean;
-  network: CardNetwork;
-}> = ({ number, name, expiry, cvv, flipped, network }) => {
-  const animatedValue = useRef(new Animated.Value(0)).current;
+// Optional env fallback if the backend's setup-intent response omits the publishable key.
+const ENV_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 
-  useEffect(() => {
-    Animated.spring(animatedValue, {
-      toValue: flipped ? 180 : 0,
-      friction: 8,
-      tension: 10,
-      useNativeDriver: true,
-    }).start();
-  }, [flipped]);
-
-  const frontInterpolate = animatedValue.interpolate({
-    inputRange: [0, 180],
-    outputRange: ['0deg', '180deg'],
-  });
-
-  const backInterpolate = animatedValue.interpolate({
-    inputRange: [0, 180],
-    outputRange: ['180deg', '360deg'],
-  });
-
-  const frontOpacity = animatedValue.interpolate({
-    inputRange: [89, 90],
-    outputRange: [1, 0],
-  });
-
-  const backOpacity = animatedValue.interpolate({
-    inputRange: [89, 90],
-    outputRange: [0, 1],
-  });
-
-  const displayNumber = number.replace(/\s/g, "").padEnd(16, "·").replace(/(.{4})/g, "$1 ").trim();
-  const groups = displayNumber.split(" ");
-
-  return (
-    <View style={styles.cardVisualContainer}>
-      {/* Front of Card */}
-      <Animated.View style={[
-        styles.cardSide,
-        styles.cardFront,
-        {
-          transform: [{ rotateY: frontInterpolate }],
-          opacity: frontOpacity,
-        }
-      ]}>
-        {/* EMV Chip */}
-        <View style={styles.chipRow}>
-          <View style={styles.emvChip}>
-            <View style={styles.chipGrid}>
-              {Array.from({ length: 9 }).map((_, i) => (
-                <View key={i} style={[styles.chipLine, i === 4 && { backgroundColor: 'transparent' }]} />
-              ))}
-            </View>
-          </View>
-          <NetworkBadge network={network} />
-        </View>
-
-        {/* Card Number */}
-        <View style={styles.cardNumberContainer}>
-          {groups.map((g, i) => (
-            <Text key={i} style={styles.cardNumberGroup}>{g}</Text>
-          ))}
-        </View>
-
-        {/* Cardholder & Expiry */}
-        <View style={styles.cardFooter}>
-          <View>
-            <Text style={styles.cardLabel}>CARD HOLDER</Text>
-            <Text style={styles.cardVal}>{name.trim() || "FULL NAME"}</Text>
-          </View>
-          <View style={styles.alignRight}>
-            <Text style={styles.cardLabel}>EXPIRES</Text>
-            <Text style={styles.cardVal}>{expiry || "MM/YY"}</Text>
-          </View>
-        </View>
-      </Animated.View>
-
-      {/* Back of Card */}
-      <Animated.View style={[
-        styles.cardSide,
-        styles.cardBack,
-        {
-          transform: [{ rotateY: backInterpolate }],
-          opacity: backOpacity,
-        }
-      ]}>
-        {/* Magnetic stripe */}
-        <View style={styles.magneticStripe} />
-
-        {/* CVV strip */}
-        <View style={styles.cvvStrip}>
-          <View style={styles.signatureStrip} />
-          <View style={styles.cvvBox}>
-            <Text style={styles.cvvLabel}>CVV</Text>
-            <Text style={styles.cvvVal}>{cvv || "···"}</Text>
-          </View>
-        </View>
-
-        <Text style={styles.backNote}>
-          This card is the property of Gluco-Vision Financial Services. If found, please return to nearest branch.
-        </Text>
-      </Animated.View>
-    </View>
-  );
-};
-
-/* ─── Success Screen Component ─── */
-const SuccessScreen: React.FC<{ plan: typeof PLANS[0]; onDone: () => void }> = ({ plan, onDone }) => {
+/* ─── Success Screen ─── */
+const SuccessScreen: React.FC<{ plan: PlanType; onDone: () => void }> = ({ plan, onDone }) => {
   const { C } = useTheme();
 
   return (
@@ -216,15 +89,16 @@ const SuccessScreen: React.FC<{ plan: typeof PLANS[0]; onDone: () => void }> = (
         </View>
       </View>
 
-      <Text style={[styles.successTitle, { color: C.text }]}>Payment Successful!</Text>
+      <Text style={[styles.successTitle, { color: C.text }]}>
+        {plan.amount > 0 ? 'Payment Successful!' : 'Plan Updated'}
+      </Text>
       <Text style={[styles.successSubtitle, { color: C.textMd }]}>
         Your <Text style={{ fontWeight: 'bold' }}>{plan.label}</Text> plan is now active.
       </Text>
       <Text style={[styles.successExtra, { color: C.textSm }]}>
-        {plan.amount > 0 ? `${plan.price}${plan.period} billed to your Visa **** 4242` : "You're on the Free plan."}
+        {plan.amount > 0 ? `${plan.price}${plan.period}, billed securely via Stripe.` : "You're on the Free plan."}
       </Text>
 
-      {/* Features List */}
       <View style={[styles.successCard, { backgroundColor: C.white, borderColor: C.divider }]}>
         <Text style={[styles.cardListTitle, { color: C.red }]}>PLAN INCLUDES</Text>
         {plan.features.map((f, i) => (
@@ -246,126 +120,18 @@ const SuccessScreen: React.FC<{ plan: typeof PLANS[0]; onDone: () => void }> = (
   );
 };
 
-import { useUser } from '../context/UserContext';
-
-export interface PaymentScreenProps {
-  plan: typeof PLANS[0];
+/* ─── Shared chrome: header + plan banner + footer pay button ─── */
+const CheckoutChrome: React.FC<{
+  plan: PlanType;
   onBack: () => void;
-  onSuccess?: () => void;
-}
-
-const PaymentScreen: React.FC<PaymentScreenProps> = ({ plan, onBack, onSuccess }) => {
+  payLabel: string;
+  onPay: () => void;
+  payDisabled: boolean;
+  isProcessing: boolean;
+  footerNote: string;
+  children: React.ReactNode;
+}> = ({ plan, onBack, payLabel, onPay, payDisabled, isProcessing, footerNote, children }) => {
   const { C } = useTheme();
-  const { upgradeToPremium } = useUser();
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardName, setCardName] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvv, setCvv] = useState("");
-  const [saveCard, setSaveCard] = useState(true);
-  const [focusedField, setFocusedField] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [paid, setPaid] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const network = detectNetwork(cardNumber);
-  const isFlipped = focusedField === "cvv";
-  const cvvLength = network === "amex" ? 4 : 3;
-
-  /* Form formatters */
-  const handleCardNumber = (v: string) => {
-    const digits = v.replace(/\D/g, "").slice(0, 16);
-    const formatted = digits.replace(/(.{4})/g, "$1 ").trim();
-    setCardNumber(formatted);
-    if (errors.cardNumber) setErrors((e) => ({ ...e, cardNumber: "" }));
-  };
-
-  const handleExpiry = (v: string) => {
-    const digits = v.replace(/\D/g, "").slice(0, 4);
-    let formatted = digits;
-    if (digits.length >= 3) {
-      formatted = digits.slice(0, 2) + "/" + digits.slice(2);
-    } else if (digits.length === 2 && expiry.length === 1) {
-      formatted = digits + "/";
-    }
-    setExpiry(formatted);
-    if (errors.expiry) setErrors((e) => ({ ...e, expiry: "" }));
-  };
-
-  const handleCvv = (v: string) => {
-    setCvv(v.replace(/\D/g, "").slice(0, cvvLength));
-    if (errors.cvv) setErrors((e) => ({ ...e, cvv: "" }));
-  };
-
-  const handleName = (v: string) => {
-    setCardName(v.toUpperCase());
-    if (errors.cardName) setErrors((e) => ({ ...e, cardName: "" }));
-  };
-
-  /* Validation */
-  const validate = () => {
-    const errs: Record<string, string> = {};
-    const rawNum = cardNumber.replace(/\s/g, "");
-    if (rawNum.length < 16) errs.cardNumber = "Enter a valid 16-digit card number";
-    if (!cardName.trim()) errs.cardName = "Enter the cardholder name";
-    
-    const [mm, yy] = expiry.split("/");
-    const nowYear = 26;
-    const nowMonth = 4;
-    if (!mm || !yy || parseInt(mm) < 1 || parseInt(mm) > 12 || parseInt(yy) < nowYear || (parseInt(yy) === nowYear && parseInt(mm) < nowMonth)) {
-      errs.expiry = "Enter a valid expiry date";
-    }
-    if (cvv.length < cvvLength) errs.cvv = `Enter ${cvvLength}-digit CVV`;
-    return errs;
-  };
-
-  const handlePay = async () => {
-    // Map frontend plan IDs to backend plan names
-    const planMap: Record<string, string> = {
-      'free': 'free',
-      'premium': 'premium_monthly',
-      'annual': 'premium_annual',
-    };
-    const backendPlan = planMap[plan.id] || 'premium_monthly';
-
-    if (plan.amount === 0) {
-      setIsProcessing(true);
-      try {
-        await upgradeToPremium('free');
-        setPaid(true);
-      } catch (err: any) {
-        console.error("Payment failed:", err);
-        setErrors({ general: err.message || "Failed to activate plan. Please try again." });
-      } finally {
-        setIsProcessing(false);
-      }
-      return;
-    }
-    const errs = validate();
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
-      return;
-    }
-    setIsProcessing(true);
-    try {
-      // Real backend call via UserContext with mapped plan
-      await upgradeToPremium(backendPlan);
-      setPaid(true);
-    } catch (err: any) {
-      console.error("Payment failed:", err);
-      setErrors({ general: err.message || "Payment failed. Please check your credentials." });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleDone = () => {
-    onSuccess?.();
-    onBack();
-  };
-
-  if (paid) {
-    return <SuccessScreen plan={plan} onDone={handleDone} />;
-  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: C.bg }]}>
@@ -388,7 +154,7 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ plan, onBack, onSuccess }
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {/* Plan Summary Banner */}
         <View style={[styles.planBanner, { backgroundColor: C.red }]}>
           <View style={styles.planBannerLeft}>
@@ -412,163 +178,16 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ plan, onBack, onSuccess }
           </View>
         </View>
 
-        {plan.amount > 0 ? (
-          <View style={styles.billingSection}>
-            {/* Visual Credit Card */}
-            <CardVisual
-              number={cardNumber}
-              name={cardName}
-              expiry={expiry}
-              cvv={cvv}
-              flipped={isFlipped}
-              network={network}
-            />
-
-            {/* Inputs Form */}
-            <View style={styles.formContainer}>
-              {/* Card Number */}
-              <View style={styles.inputContainer}>
-                <Text style={[styles.inputLabel, { color: C.text }]}>Card Number</Text>
-                <TextInput
-                  style={[
-                    styles.inputField,
-                    { 
-                      borderColor: focusedField === 'number' ? C.red : (C.redBorder || '#F2D0D0'),
-                      backgroundColor: focusedField === 'number' ? '#FFFAFA' : '#FDF9F9'
-                    }
-                  ]}
-                  value={cardNumber}
-                  onChangeText={handleCardNumber}
-                  placeholder="1234 5678 9012 3456"
-                  placeholderTextColor="#C88686"
-                  keyboardType="numeric"
-                  maxLength={19}
-                  onFocus={() => setFocusedField("number")}
-                  onBlur={() => setFocusedField(null)}
-                />
-                {errors.cardNumber && <Text style={styles.errorText}>{errors.cardNumber}</Text>}
-              </View>
-
-              {/* Cardholder Name */}
-              <View style={styles.inputContainer}>
-                <Text style={[styles.inputLabel, { color: C.text }]}>Cardholder Name</Text>
-                <TextInput
-                  style={[
-                    styles.inputField,
-                    { 
-                      borderColor: focusedField === 'name' ? C.red : (C.redBorder || '#F2D0D0'),
-                      backgroundColor: focusedField === 'name' ? '#FFFAFA' : '#FDF9F9'
-                    }
-                  ]}
-                  value={cardName}
-                  onChangeText={handleName}
-                  placeholder="SARAH JOHNSON"
-                  placeholderTextColor="#C88686"
-                  autoCapitalize="characters"
-                  maxLength={26}
-                  onFocus={() => setFocusedField("name")}
-                  onBlur={() => setFocusedField(null)}
-                />
-                {errors.cardName && <Text style={styles.errorText}>{errors.cardName}</Text>}
-              </View>
-
-              {/* Expiry / CVV Row */}
-              <View style={styles.rowInputs}>
-                <View style={[styles.inputContainer, { flex: 1 }]}>
-                  <Text style={[styles.inputLabel, { color: C.text }]}>Expiry Date</Text>
-                  <TextInput
-                    style={[
-                      styles.inputField,
-                      { 
-                        borderColor: focusedField === 'expiry' ? C.red : (C.redBorder || '#F2D0D0'),
-                        backgroundColor: focusedField === 'expiry' ? '#FFFAFA' : '#FDF9F9'
-                      }
-                    ]}
-                    value={expiry}
-                    onChangeText={handleExpiry}
-                    placeholder="MM/YY"
-                    placeholderTextColor="#C88686"
-                    keyboardType="numeric"
-                    maxLength={5}
-                    onFocus={() => setFocusedField("expiry")}
-                    onBlur={() => setFocusedField(null)}
-                  />
-                  {errors.expiry && <Text style={styles.errorText}>{errors.expiry}</Text>}
-                </View>
-
-                <View style={[styles.inputContainer, { flex: 1 }]}>
-                  <Text style={[styles.inputLabel, { color: C.text }]}>CVV</Text>
-                  <TextInput
-                    style={[
-                      styles.inputField,
-                      { 
-                        borderColor: focusedField === 'cvv' ? C.red : (C.redBorder || '#F2D0D0'),
-                        backgroundColor: focusedField === 'cvv' ? '#FFFAFA' : '#FDF9F9'
-                      }
-                    ]}
-                    value={cvv}
-                    onChangeText={handleCvv}
-                    placeholder={network === "amex" ? "····" : "···"}
-                    placeholderTextColor="#C88686"
-                    keyboardType="numeric"
-                    maxLength={cvvLength}
-                    onFocus={() => setFocusedField("cvv")}
-                    onBlur={() => setFocusedField(null)}
-                  />
-                  {errors.cvv && <Text style={styles.errorText}>{errors.cvv}</Text>}
-                </View>
-              </View>
-
-              {/* Save Card Toggle */}
-              <TouchableOpacity
-                style={[styles.toggleContainer, { borderColor: C.redBorder }]}
-                activeOpacity={0.9}
-                onPress={() => setSaveCard(!saveCard)}
-              >
-                <View>
-                  <Text style={[styles.toggleTitle, { color: C.text }]}>Save this card</Text>
-                  <Text style={[styles.toggleSub, { color: C.textSm }]}>For faster future payments</Text>
-                </View>
-                <Switch
-                  value={saveCard}
-                  onValueChange={setSaveCard}
-                  trackColor={{ false: '#D1D5DB', true: C.red }}
-                  thumbColor="#FFF"
-                />
-              </TouchableOpacity>
-
-              {/* SSL Note */}
-              <View style={styles.sslBanner}>
-                <Lock size={14} color="#16A34A" />
-                <Text style={styles.sslBannerText}>
-                  Your payment info is encrypted with 256-bit SSL. We never store your full card details.
-                </Text>
-              </View>
-            </View>
-          </View>
-        ) : (
-          <View style={[styles.freeSection, { backgroundColor: '#FFF', borderColor: C.redBorder }]}>
-            <Text style={[styles.freeTitle, { color: C.text }]}>What's included in Free Plan:</Text>
-            {plan.features.map((f, i) => (
-              <View key={i} style={styles.freeFeatureRow}>
-                <CheckCircle size={16} color={C.red} strokeWidth={2.5} />
-                <Text style={[styles.freeFeatureText, { color: C.text }]}>{f}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+        {children}
       </ScrollView>
 
-      {/* Pay CTA Button */}
+      {/* Pay CTA */}
       <View style={[styles.footer, { backgroundColor: C.white, borderTopColor: C.redBorder }]}>
         <TouchableOpacity
-          onPress={handlePay}
-          disabled={isProcessing}
+          onPress={onPay}
+          disabled={payDisabled}
           activeOpacity={0.85}
-          style={[
-            styles.payBtn,
-            { backgroundColor: isProcessing ? '#A05050' : C.red }
-          ]}
+          style={[styles.payBtn, { backgroundColor: payDisabled ? '#A05050' : C.red }]}
         >
           {isProcessing ? (
             <View style={styles.processingRow}>
@@ -578,19 +197,276 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ plan, onBack, onSuccess }
           ) : (
             <View style={styles.processingRow}>
               <Lock size={16} color="white" strokeWidth={2.5} />
-              <Text style={styles.payBtnText}>
-                {plan.amount === 0 ? "Activate Free Plan" : `Pay ${plan.price}${plan.period}`}
-              </Text>
+              <Text style={styles.payBtnText}>{payLabel}</Text>
             </View>
           )}
         </TouchableOpacity>
-        <Text style={[styles.footerNote, { color: C.textSm }]}>
-          {plan.amount > 0
-            ? `You will be charged ${plan.price}${plan.period}. Cancel anytime.`
-            : "No credit card required for the Free plan."}
-        </Text>
+        <Text style={[styles.footerNote, { color: C.textSm }]}>{footerNote}</Text>
       </View>
     </SafeAreaView>
+  );
+};
+
+/* ─── Paid checkout: Stripe CardField + confirmSetupIntent → subscribe ───
+   Rendered INSIDE <StripeProvider> so the useConfirmSetupIntent hook is available. */
+const PaidCheckout: React.FC<{
+  plan: PlanType;
+  backendPlan: Exclude<PlanKey, 'free'>;
+  clientSecret: string;
+  onBack: () => void;
+  onPaid: () => void;
+}> = ({ plan, backendPlan, clientSecret, onBack, onPaid }) => {
+  const { C } = useTheme();
+  const { refreshProfile } = useUser();
+  const { confirmSetupIntent } = useConfirmSetupIntent();
+
+  const [cardComplete, setCardComplete] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handlePay = useCallback(async () => {
+    if (!cardComplete || isProcessing) return;
+    setError(null);
+    setIsProcessing(true);
+    try {
+      // a/c. Tokenise the card on-device — raw PAN never reaches our backend.
+      const { setupIntent, error: stripeError } = await confirmSetupIntent(clientSecret, {
+        paymentMethodType: 'Card',
+      });
+
+      if (stripeError) {
+        setError(stripeError.message || 'We could not validate your card. Please try again.');
+        return;
+      }
+
+      // d. Extract the pm_... id (field name differs slightly across SDK versions).
+      const pmId =
+        setupIntent?.paymentMethod?.id || (setupIntent as any)?.paymentMethodId;
+      if (!pmId) {
+        setError('Could not obtain a payment method from Stripe. Please try again.');
+        return;
+      }
+
+      // e. Create the subscription with the tokenised payment method.
+      await subscriptionService.subscribe(backendPlan, pmId);
+      await refreshProfile();
+      onPaid();
+    } catch (err: any) {
+      // Surface the backend's 422 card-decline message specifically; generic otherwise.
+      if (err instanceof SubscriptionApiError) {
+        setError(
+          err.code === 'card_error'
+            ? err.message
+            : err.message || 'Subscription failed. Please try again.'
+        );
+      } else {
+        setError(err?.message || 'Something went wrong. Please try again.');
+      }
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [cardComplete, isProcessing, confirmSetupIntent, clientSecret, backendPlan, refreshProfile, onPaid]);
+
+  return (
+    <CheckoutChrome
+      plan={plan}
+      onBack={onBack}
+      payLabel={`Pay ${plan.price}${plan.period}`}
+      onPay={handlePay}
+      payDisabled={!cardComplete || isProcessing}
+      isProcessing={isProcessing}
+      footerNote={`You will be charged ${plan.price}${plan.period}. Cancel anytime.`}
+    >
+      <View style={styles.billingSection}>
+        <Text style={[styles.inputLabel, { color: C.text }]}>Card Details</Text>
+        <CardField
+          postalCodeEnabled={false}
+          placeholders={{ number: '4242 4242 4242 4242' }}
+          cardStyle={{
+            backgroundColor: '#FDF9F9',
+            textColor: C.text,
+            placeholderColor: '#C88686',
+            borderColor: C.redBorder || '#F2D0D0',
+            borderWidth: 1,
+            borderRadius: 14,
+            fontSize: 15,
+          }}
+          style={styles.cardField}
+          onCardChange={(d: CardFieldInput.Details) => setCardComplete(d.complete)}
+        />
+
+        {error && (
+          <View style={styles.errorBanner}>
+            <AlertTriangle size={14} color="#D7181D" />
+            <Text style={styles.errorBannerText}>{error}</Text>
+          </View>
+        )}
+
+        {/* Secure note */}
+        <View style={styles.sslBanner}>
+          <Lock size={14} color="#16A34A" />
+          <Text style={styles.sslBannerText}>
+            Your card is encrypted and tokenized by Stripe. We never see or store your card number.
+          </Text>
+        </View>
+      </View>
+    </CheckoutChrome>
+  );
+};
+
+export interface PaymentScreenProps {
+  plan: PlanType;
+  onBack: () => void;
+  onSuccess?: () => void;
+}
+
+const PaymentScreen: React.FC<PaymentScreenProps> = ({ plan, onBack, onSuccess }) => {
+  const { C } = useTheme();
+  const { refreshProfile } = useUser();
+  const backendPlan = PLAN_MAP[plan.id] || 'premium_monthly';
+
+  const [paid, setPaid] = useState(false);
+
+  // Stripe SetupIntent state (paid plans only).
+  const [setupLoading, setSetupLoading] = useState(plan.amount > 0);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [publishableKey, setPublishableKey] = useState<string>(ENV_PUBLISHABLE_KEY);
+
+  // Free-plan flow state.
+  const [freeProcessing, setFreeProcessing] = useState(false);
+  const [freeError, setFreeError] = useState<string | null>(null);
+
+  const loadSetupIntent = useCallback(async () => {
+    setSetupLoading(true);
+    setSetupError(null);
+    try {
+      const res = await subscriptionService.createSetupIntent();
+      setClientSecret(res.client_secret);
+      if (res.publishable_key) setPublishableKey(res.publishable_key);
+    } catch (err: any) {
+      setSetupError(err?.message || 'Could not start a secure checkout. Please try again.');
+    } finally {
+      setSetupLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (plan.amount > 0) loadSetupIntent();
+  }, [plan.amount, loadSetupIntent]);
+
+  const handleDone = () => {
+    onSuccess?.();
+    onBack();
+  };
+
+  // Free plan downgrade (no card needed).
+  const handleActivateFree = useCallback(async () => {
+    setFreeProcessing(true);
+    setFreeError(null);
+    try {
+      try {
+        await subscriptionService.changePlan('free');
+      } catch (e) {
+        // Already free / no active subscription — treat as a no-op success.
+        if (!(e instanceof SubscriptionApiError) || e.status >= 500) throw e;
+      }
+      await refreshProfile();
+      setPaid(true);
+    } catch (err: any) {
+      setFreeError(err?.message || 'Could not update your plan. Please try again.');
+    } finally {
+      setFreeProcessing(false);
+    }
+  }, [refreshProfile]);
+
+  if (paid) {
+    return <SuccessScreen plan={plan} onDone={handleDone} />;
+  }
+
+  // ---- Free plan ----
+  if (plan.amount === 0) {
+    return (
+      <CheckoutChrome
+        plan={plan}
+        onBack={onBack}
+        payLabel="Activate Free Plan"
+        onPay={handleActivateFree}
+        payDisabled={freeProcessing}
+        isProcessing={freeProcessing}
+        footerNote="No credit card required for the Free plan."
+      >
+        <View style={[styles.freeSection, { backgroundColor: C.white, borderColor: C.redBorder }]}>
+          <Text style={[styles.freeTitle, { color: C.text }]}>What's included in Free Plan:</Text>
+          {plan.features.map((f, i) => (
+            <View key={i} style={styles.freeFeatureRow}>
+              <CheckCircle size={16} color={C.red} strokeWidth={2.5} />
+              <Text style={[styles.freeFeatureText, { color: C.text }]}>{f}</Text>
+            </View>
+          ))}
+          {freeError && (
+            <View style={styles.errorBanner}>
+              <AlertTriangle size={14} color="#D7181D" />
+              <Text style={styles.errorBannerText}>{freeError}</Text>
+            </View>
+          )}
+        </View>
+      </CheckoutChrome>
+    );
+  }
+
+  // ---- Paid plan: setup-intent loading / error states ----
+  if (setupLoading || !clientSecret || !publishableKey) {
+    return (
+      <CheckoutChrome
+        plan={plan}
+        onBack={onBack}
+        payLabel={`Pay ${plan.price}${plan.period}`}
+        onPay={() => {}}
+        payDisabled
+        isProcessing={false}
+        footerNote={`You will be charged ${plan.price}${plan.period}. Cancel anytime.`}
+      >
+        <View style={styles.centerState}>
+          {setupError ? (
+            <>
+              <AlertTriangle size={28} color={C.red} />
+              <Text style={[styles.centerStateText, { color: C.text }]}>{setupError}</Text>
+              {!publishableKey && (
+                <Text style={[styles.centerStateSub, { color: C.textSm }]}>
+                  Stripe is not configured (missing publishable key).
+                </Text>
+              )}
+              <TouchableOpacity
+                onPress={loadSetupIntent}
+                style={[styles.retryBtn, { borderColor: C.red }]}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.retryBtnText, { color: C.red }]}>Try again</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <ActivityIndicator size="large" color={C.red} />
+              <Text style={[styles.centerStateText, { color: C.textSm }]}>Preparing secure checkout…</Text>
+            </>
+          )}
+        </View>
+      </CheckoutChrome>
+    );
+  }
+
+  // ---- Paid plan: Stripe-ready checkout ----
+  return (
+    <StripeProvider publishableKey={publishableKey} merchantIdentifier="merchant.com.anonymous.DiabAI">
+      <PaidCheckout
+        plan={plan}
+        backendPlan={backendPlan as Exclude<PlanKey, 'free'>}
+        clientSecret={clientSecret}
+        onBack={onBack}
+        onPaid={() => setPaid(true)}
+      />
+    </StripeProvider>
   );
 };
 
@@ -695,207 +571,33 @@ const styles = StyleSheet.create({
   },
   billingSection: {
     width: '100%',
-  },
-  cardVisualContainer: {
-    width: '100%',
-    height: 190,
-    marginBottom: 20,
-    position: 'relative',
-  },
-  cardSide: {
-    position: 'absolute',
-    inset: 0,
-    borderRadius: 20,
-    padding: 20,
-    justifyContent: 'space-between',
-    backfaceVisibility: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  cardFront: {
-    backgroundColor: '#8B1A1A',
-  },
-  cardBack: {
-    backgroundColor: '#5C0E0E',
-  },
-  chipRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  emvChip: {
-    width: 42,
-    height: 32,
-    borderRadius: 6,
-    backgroundColor: '#E8C97D',
-    padding: 4,
-  },
-  chipGrid: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0,0,0,0.15)',
-    borderRadius: 4,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 1.5,
-  },
-  chipLine: {
-    width: '28%',
-    height: '28%',
-    backgroundColor: 'rgba(0,0,0,0.12)',
-    borderRadius: 1,
-  },
-  cardNumberContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 14,
-    marginVertical: 10,
-  },
-  cardNumberGroup: {
-    fontFamily: 'monospace',
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'rgba(255, 255, 255, 0.95)',
-    letterSpacing: 2,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  cardLabel: {
-    fontSize: 8,
-    color: 'rgba(255,255,255,0.5)',
-    fontWeight: '600',
-    letterSpacing: 1,
-    marginBottom: 2,
-  },
-  cardVal: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: 'rgba(255,255,255,0.92)',
-  },
-  alignRight: {
-    alignItems: 'flex-end',
-  },
-  magneticStripe: {
-    height: 40,
-    backgroundColor: '#111',
-    width: '120%',
-    marginLeft: -20,
-    marginTop: 10,
-  },
-  cvvStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginVertical: 10,
-  },
-  signatureStrip: {
-    flex: 1,
-    height: 32,
-    backgroundColor: '#f0e8e8',
-    borderRadius: 4,
-  },
-  cvvBox: {
-    width: 50,
-    height: 32,
-    borderRadius: 4,
-    backgroundColor: 'white',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cvvLabel: {
-    fontSize: 7,
-    color: '#9CA3AF',
-  },
-  cvvVal: {
-    fontSize: 13,
-    fontWeight: '800',
-    fontFamily: 'monospace',
-  },
-  backNote: {
-    fontSize: 9,
-    color: 'rgba(255, 255, 255, 0.4)',
-    textAlign: 'center',
-    lineHeight: 12,
-  },
-  networkVisa: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
-    fontFamily: 'sans-serif-condensed',
-  },
-  mastercardDots: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  mCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    opacity: 0.9,
-  },
-  networkAmex: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  networkDiscover: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  formContainer: {
-    gap: 16,
-  },
-  inputContainer: {
-    width: '100%',
+    gap: 12,
   },
   inputLabel: {
     fontSize: 12,
     fontWeight: '600',
-    marginBottom: 6,
+    marginBottom: 2,
     letterSpacing: 0.5,
   },
-  inputField: {
+  cardField: {
+    width: '100%',
     height: 50,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: '#111827',
   },
-  rowInputs: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  errorText: {
-    fontSize: 11,
-    color: '#D7181D',
-    marginTop: 4,
-    paddingLeft: 4,
-  },
-  toggleContainer: {
+  errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: 'white',
+    gap: 8,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    marginTop: 8,
+    borderColor: '#FECACA',
   },
-  toggleTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  toggleSub: {
-    fontSize: 11,
-    marginTop: 2,
+  errorBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#B91C1C',
+    lineHeight: 16,
   },
   sslBanner: {
     flexDirection: 'row',
@@ -906,7 +608,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0FDF4',
     borderWidth: 1,
     borderColor: '#BBF7D0',
-    marginTop: 8,
   },
   sslBannerText: {
     flex: 1,
@@ -937,6 +638,34 @@ const styles = StyleSheet.create({
   },
   freeFeatureText: {
     fontSize: 13,
+  },
+  centerState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 14,
+  },
+  centerStateText: {
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '600',
+    paddingHorizontal: 24,
+  },
+  centerStateSub: {
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  retryBtn: {
+    marginTop: 4,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  retryBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   footer: {
     paddingHorizontal: 16,
