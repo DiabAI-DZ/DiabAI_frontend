@@ -137,6 +137,9 @@ const MainNavigation: React.FC = () => {
   // pre-filled with the Premium plan.
   const handlePremiumUpgrade = React.useCallback(() => {
     setPremiumVisible(false);
+    // Reset the home tab to Home so returning from checkout (whether they subscribe or cancel)
+    // never lands a still-free user back on the gated Insights tab.
+    setHomeTab('home');
     const plan = PLANS.find((p) => p.id === 'premium') || PLANS[1];
     setPaymentPlan(plan);
     setCurrentScreen('payment');

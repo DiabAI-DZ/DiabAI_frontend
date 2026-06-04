@@ -13,6 +13,8 @@ import ActionForms from '../components/ActionForms';
 import InsightsFAB, { FabAction } from '../components/InsightsFAB';
 import { InsightsIcon } from '../components/icons/NavIcons';
 import { useData } from '../context/DataContext';
+import { useUser } from '../context/UserContext';
+import { emitPremiumRequired } from '../services/uiEvents';
 
 // Inactive nav icon/label colour (muted red), matching the Figma bottom-nav.
 const NAV_INACTIVE = '#A86262';
@@ -65,6 +67,7 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
 }) => {
   const { C, isDark } = useTheme();
   const { addLog } = useData();
+  const { profile } = useUser();
   const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<'home' | 'log' | 'ai' | 'settings'>(initialTab);
 
@@ -72,6 +75,14 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   React.useEffect(() => {
     onTabChange?.(activeTab);
   }, [activeTab, onTabChange]);
+
+  // Follow the navigator's desired tab when it changes externally. The premium blocker's
+  // "Maybe later" resets the navigator to Home, so this moves a free user off the gated
+  // Insights tab back to Home instead of leaving them stranded on it. Same-value sets are no-ops,
+  // so this never fights the normal tab taps above.
+  React.useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
   const [showScan, setShowScan] = useState(false);
   const [scanMode, setScanMode] = useState<'glucose' | 'meal'>('glucose');
   const [showActionPopup, setShowActionPopup] = useState(false);
@@ -80,13 +91,20 @@ const GlucoVisionHome: React.FC<GlucoVisionHomeProps> = ({
   const [logbookFilter, setLogbookFilter] = useState<'all' | 'measurements' | 'meals' | 'injections' | 'activities'>('all');
 
   const handleTabPress = useCallback((tabName: 'home' | 'log' | 'ai' | 'settings') => {
+    // Insights is premium-only. For a free user, navigate to the Insights page AND raise the
+    // premium blocker so it sits on top of the (blurred) Insights page. Triggered synchronously
+    // on the tap, so it only ever appears here — never on Home/login, even though insights are
+    // prefetched in the background to warm the cache.
+    if (tabName === 'ai' && !profile?.isPremium) {
+      emitPremiumRequired();
+    }
     startTransition(() => {
       if (tabName === 'log') {
         setLogbookFilter('all');
       }
       setActiveTab(tabName);
     });
-  }, []);
+  }, [profile?.isPremium]);
 
   const handleSeeAllMeasurements = useCallback(() => {
     startTransition(() => {

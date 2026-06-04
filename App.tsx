@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 // Ensure Firebase is initialized.
 try {
   const firebase = require('@react-native-firebase/app').default;
@@ -17,55 +17,17 @@ try {
 }
 
 import { StatusBar } from 'expo-status-bar';
-import { Linking } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { UserProvider } from './src/context/UserContext';
 import { DataProvider } from './src/context/DataContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { setPermissionPromptHandler } from './src/services/pushNotifications';
-import NotificationPermissionModal from './src/components/NotificationPermissionModal';
 import MainNavigation from './src/screens/MainNavigation';
 
 export default function App() {
-  const [permissionVisible, setPermissionVisible] = useState(false);
-  const [permissionPhase, setPermissionPhase] = useState<'pre-permission' | 'blocked'>('pre-permission');
-  const [permissionResolver, setPermissionResolver] = useState<((allowed: boolean) => void) | null>(null);
-
-  useEffect(() => {
-    setPermissionPromptHandler((phase) => {
-      setPermissionPhase(phase);
-      setPermissionVisible(true);
-
-      return new Promise<boolean>((resolve) => {
-        setPermissionResolver(() => resolve);
-      });
-    });
-
-    return () => {
-      setPermissionPromptHandler(null);
-    };
-  }, []);
-
-  const handleAllow = () => {
-    permissionResolver?.(true);
-    setPermissionResolver(null);
-    setPermissionVisible(false);
-  };
-
-  const handleCancel = () => {
-    permissionResolver?.(false);
-    setPermissionResolver(null);
-    setPermissionVisible(false);
-  };
-
-  const handleOpenSettings = () => {
-    permissionResolver?.(false);
-    setPermissionResolver(null);
-    setPermissionVisible(false);
-    void Linking.openSettings();
-  };
-
+  // NOTE: The custom "Enable device alerts" pre-permission modal was removed. Push permission is
+  // now requested via the standard OS dialog directly (pushNotifications.requestPushPermission
+  // proceeds without a prompt handler), so no in-app overlay appears on Home/after login.
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -73,13 +35,6 @@ export default function App() {
           <UserProvider>
             <DataProvider>
               <MainNavigation />
-              <NotificationPermissionModal
-                visible={permissionVisible}
-                phase={permissionPhase}
-                onAllow={handleAllow}
-                onCancel={handleCancel}
-                onOpenSettings={handleOpenSettings}
-              />
               <StatusBar style="auto" />
             </DataProvider>
           </UserProvider>

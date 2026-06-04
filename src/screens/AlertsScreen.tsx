@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
-import { apiService } from '../services/apiService';
+import { useUser } from '../context/UserContext';
+import { emitPremiumRequired } from '../services/uiEvents';
 import { 
   AlertTriangle, 
   Zap, 
@@ -41,13 +42,15 @@ type FilterTab = "all" | "critical" | "warning" | "info";
 const AlertsScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { C, isDark } = useTheme();
   const { alerts, markAlertRead, markAllAlertsRead } = useData();
+  const { profile } = useUser();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
 
-  // Opening Notifications is a premium-gated action: hit /api/notifications with the overlay
-  // opt-in so free users get the blocker here (the background refresh on Home stays silent).
+  // Notifications is premium-only: opening this screen as a free user shows the same premium
+  // blocker over it. Triggered here (on mount) rather than from a network 403, so the background
+  // refresh on Home can never pop it — it appears only when the user actually opens Notifications.
   useEffect(() => {
-    apiService.fetchAlerts({ emitPremiumUi: true }).catch(() => {});
-  }, []);
+    if (!profile?.isPremium) emitPremiumRequired();
+  }, [profile?.isPremium]);
 
   const filteredAlerts = useMemo(() => {
     return alerts.filter(a => activeFilter === 'all' || a.severity === activeFilter);

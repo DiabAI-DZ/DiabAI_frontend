@@ -333,23 +333,14 @@ let premiumRequiredLastEmitAt = 0;
       path.includes('/api/insights');
 
     // Default: emit premium overlay events.
-    // Background prefetch can pass { emitPremiumUi: false } to prevent "random" overlay pops.
-    const shouldEmitPremiumUI = config.emitPremiumUi !== false;
-
-    if (shouldGatePremiumUI && shouldEmitPremiumUI) {
-      try {
-        // small guard to avoid rapid repeated emits from multiple quick prefetch calls
-        const now = Date.now();
-        if (!premiumRequiredLastEmitAt || now - premiumRequiredLastEmitAt > 750) {
-          premiumRequiredLastEmitAt = now;
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const { emitPremiumRequired } = require('./uiEvents');
-          emitPremiumRequired();
-        }
-      } catch (e) {
-        // ignore emitter failures
-      }
-    }
+    // NOTE: We deliberately do NOT emit the premium overlay from here anymore.
+    // The Insights tab is prefetched from Home on login (to warm the slow LLM cache), so a
+    // network-driven 403 emit would pop the blocker on Home/after login — unpredictably.
+    // The overlay is now triggered explicitly and synchronously when a free user taps the
+    // Insights tab (see GlucoVisionHome.handleTabPress). Callers still catch PREMIUM_REQUIRED
+    // to render their own empty/offline state. `shouldGatePremiumUI`/`emitPremiumUi` are kept
+    // above only for backwards-compatible logging/guarding.
+    void shouldGatePremiumUI;
 
     throw new Error("PREMIUM_REQUIRED");
   }
