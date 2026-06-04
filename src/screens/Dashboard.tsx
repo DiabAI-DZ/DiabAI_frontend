@@ -105,11 +105,10 @@ const Dashboard: React.FC<DashboardProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Latest Reading */}
+      {/* Latest Reading — display only (not clickable). */}
       <LatestReadingCard
         reading={reading}
         loading={loading}
-        onPress={reading.value ? () => onNavigateDetail({ ...reading, type: 'measurement' }) : undefined}
       />
 
       {/* Glucose Trend */}
