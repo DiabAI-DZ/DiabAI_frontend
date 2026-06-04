@@ -23,6 +23,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { onNavigate, onPremiumRequired } from '../services/uiEvents';
+import { useFirstRunPermissions } from '../hooks/useFirstRunPermissions';
 
 type Screen =
   | 'splash'
@@ -39,13 +40,19 @@ type Screen =
 
 const MainNavigation: React.FC = () => {
   const { profile } = useUser();
+
+  // First authenticated session → ask once for notifications, then camera (native OS dialogs).
+  useFirstRunPermissions(!!profile);
+
   const [currentScreen, setCurrentScreen] = useState<Screen>('splash');
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
   // Whether a persisted session token exists (null = not yet checked). Drives the splash route so
   // a returning user goes straight to Home instead of flashing the sign-in screen.
   const [hasToken, setHasToken] = useState<boolean | null>(null);
-  // Set once the splash animation finishes; lets us route as soon as the bootstrap reads land.
-  const splashDoneRef = React.useRef(false);
+  // True once the splash animation finishes. MUST be state (not a ref) so completing the splash
+  // re-runs the routing effect below — otherwise routing can be missed when the splash finishes
+  // after the bootstrap reads have already landed.
+  const [splashDone, setSplashDone] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [detailEntry, setDetailEntry] = useState<any>(null);
   const [paymentPlan, setPaymentPlan] = useState<any>(null);
@@ -217,19 +224,16 @@ const MainNavigation: React.FC = () => {
     }
   }, [profile, currentScreen, bootReady]);
 
-  const handleSplashComplete = () => {
-    splashDoneRef.current = true;
-    // If the bootstrap reads already landed, route now; otherwise the effect below routes once
-    // they do. Either ordering is handled, so the splash never routes on a stale (null) value.
-    if (bootReady) routeFromSplash();
-  };
+  // Stable callback for SplashScreen (whose animation effect captures it once). It only flips
+  // state; the effect below performs the actual routing once BOTH the splash is done and the
+  // bootstrap reads have landed — in either order.
+  const handleSplashComplete = React.useCallback(() => setSplashDone(true), []);
 
-  // Splash finished before the bootstrap reads resolved → route as soon as they do.
   React.useEffect(() => {
-    if (bootReady && splashDoneRef.current && currentScreen === 'splash') {
+    if (bootReady && splashDone && currentScreen === 'splash') {
       routeFromSplash();
     }
-  }, [bootReady, currentScreen, routeFromSplash]);
+  }, [bootReady, splashDone, currentScreen, routeFromSplash]);
 
   const handleOnboardingComplete = async () => {
     console.log('[MainNavigation] handleOnboardingComplete triggered');
