@@ -1,18 +1,21 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Bell, ChevronRight, X } from 'lucide-react-native';
 import SplashScreen from './SplashScreen';
 import OnboardingFlow from './OnboardingFlow';
-import SignInScreen from './SignInScreen';
-import SignUpScreen from './SignUpScreen';
-import ForgotPasswordScreen from './ForgotPasswordScreen';
-import ResetPasswordScreen from './ResetPasswordScreen';
-import GlucoVisionHome from './GlucoVisionHome';
-import AlertsScreen from './AlertsScreen';
-import DetailScreen from './DetailScreen';
-import AccountSettingsScreen from './AccountSettingsScreen';
-import PaymentScreen, { PLANS } from './PaymentScreen';
+import SignInScreen from './Auth/SignInScreen';
+import SignUpScreen from './Auth/SignUpScreen';
+import ForgotPasswordScreen from './Auth/ForgotPasswordScreen';
+import ResetPasswordScreen from './Auth/ResetPasswordScreen';
+import GlucoVisionHome from './GlucoVisionHome/GlucoVisionHome';
+import AlertsScreen from './Notifications/AlertsScreen';
+import DetailScreen from './Details/DetailScreen';
+import AccountSettingsScreen from './Settings/AccountSettingsScreen';
+import PaymentScreen, { PLANS } from './Checkout/PaymentScreen';
 import PremiumOverlay from './PremiumOverlay';
 import { useUser } from '../context/UserContext';
+import { useTheme } from '../context/ThemeContext';
 import { apiService } from '../services/apiService';
 import { authApi } from '../services/authApi';
 import {
@@ -21,7 +24,7 @@ import {
   DeepLinkTarget,
 } from '../services/pushNotifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, FadeInDown, FadeOutUp } from 'react-native-reanimated';
 import { onNavigate, onPremiumRequired } from '../services/uiEvents';
 import { useFirstRunPermissions } from '../hooks/useFirstRunPermissions';
 
@@ -40,6 +43,7 @@ type Screen =
 
 const MainNavigation: React.FC = () => {
   const { profile } = useUser();
+  const { colors } = useTheme();
 
   // First authenticated session → ask once for notifications, then camera (native OS dialogs).
   useFirstRunPermissions(!!profile);
@@ -340,24 +344,51 @@ const MainNavigation: React.FC = () => {
 
       {/* Foreground push banner (FCM shows no system tray notification while the app is open). */}
       {pushBanner && (
-        <TouchableOpacity
-          style={styles.pushBanner}
-          activeOpacity={0.92}
-          onPress={() => {
-            const target = parseDeepLink(pushBanner.data);
-            setPushBanner(null);
-            handlePushDeepLink(target);
-          }}
+        <Animated.View
+          entering={FadeInDown.springify().damping(18).mass(0.7)}
+          exiting={FadeOutUp.duration(220)}
+          style={[styles.pushBannerWrap, { shadowColor: colors.shadow }]}
         >
-          <Text style={styles.pushBannerTitle} numberOfLines={1}>
-            {pushBanner.title || 'New notification'}
-          </Text>
-          {!!pushBanner.body && (
-            <Text style={styles.pushBannerBody} numberOfLines={2}>
-              {pushBanner.body}
-            </Text>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.pushBanner, { backgroundColor: colors.backgroundCard, borderColor: colors.border }]}
+            activeOpacity={0.9}
+            onPress={() => {
+              const target = parseDeepLink(pushBanner.data);
+              setPushBanner(null);
+              handlePushDeepLink(target);
+            }}
+          >
+            <LinearGradient
+              colors={['#C0392B', '#991B1B']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.pushBannerIcon}
+            >
+              <Bell size={18} color="#FFF" strokeWidth={2.3} fill="#FFF" />
+            </LinearGradient>
+
+            <View style={styles.pushBannerTextWrap}>
+              <Text style={[styles.pushBannerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                {pushBanner.title || 'New notification'}
+              </Text>
+              {!!pushBanner.body && (
+                <Text style={[styles.pushBannerBody, { color: colors.textSecondary }]} numberOfLines={2}>
+                  {pushBanner.body}
+                </Text>
+              )}
+            </View>
+
+            <ChevronRight size={18} color={colors.primary} strokeWidth={2.5} />
+
+            <TouchableOpacity
+              onPress={() => setPushBanner(null)}
+              hitSlop={10}
+              style={[styles.pushBannerClose, { backgroundColor: colors.backgroundMuted }]}
+            >
+              <X size={13} color={colors.textSecondary} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Animated.View>
       )}
 
       {/* Premium blocker — rendered in-tree (not in a Modal) so its BlurView actually blurs the
@@ -372,32 +403,52 @@ const MainNavigation: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  pushBanner: {
+  pushBannerWrap: {
     position: 'absolute',
-    top: 48,
-    left: 16,
-    right: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingHorizontal: 16,
+    top: 52,
+    left: 14,
+    right: 14,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  pushBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 20,
+    paddingLeft: 12,
+    paddingRight: 14,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#F2D0D0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+  },
+  pushBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pushBannerTextWrap: {
+    flex: 1,
   },
   pushBannerTitle: {
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '800',
-    color: '#1F2937',
   },
   pushBannerBody: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 12.5,
     marginTop: 2,
+    lineHeight: 17,
+  },
+  pushBannerClose: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
   },
 });
 

@@ -18,11 +18,18 @@ try {
 
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { ThemeProvider } from './src/context/ThemeContext';
+import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { UserProvider } from './src/context/UserContext';
 import { DataProvider } from './src/context/DataContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import MainNavigation from './src/screens/MainNavigation';
+
+// Status bar lives inside the provider so it can read the active theme: light
+// content on the dark background, dark content on the light one.
+function ThemedStatusBar() {
+  const { isDark, colors } = useTheme();
+  return <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={colors.background} />;
+}
 
 export default function App() {
   // NOTE: The custom "Enable device alerts" pre-permission modal was removed. Push permission is
@@ -35,7 +42,7 @@ export default function App() {
           <UserProvider>
             <DataProvider>
               <MainNavigation />
-              <StatusBar style="auto" />
+              <ThemedStatusBar />
             </DataProvider>
           </UserProvider>
         </ThemeProvider>

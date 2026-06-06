@@ -155,18 +155,44 @@ export interface HomeRecommendation {
   estimated_glucose_impact_mg_dl: number;
 }
 
-export interface HomeTrendPoint {
-  date: string;
-  value: number;
+// ── /api/home payload ───────────────────────────────────────────────────────
+// The real backend shape (returned by apiService.fetchHomeData -> result.data). The previous
+// interface here described fields (profile/measurements/trendData/…) that NO code consumed,
+// while the actually-used fields were missing — which is what produced the long-standing tsc
+// errors in Dashboard + GlucoseTrendChart. Now typed to match what the app reads.
+
+export interface HomeTarget {
+  min: number;
+  max: number;
+}
+
+export interface HomeLatestReading {
+  value_mg_dl: number;
+  health_status?: string | null;
+  measured_at?: string | null;
+  delta_since_last?: number | null;
+  trend?: string | null;
+  target?: HomeTarget | null;
+}
+
+export interface HomeGreeting {
+  name?: string | null;
+  date?: string | null;
+}
+
+export interface HomeGlucoseTrendPoint {
+  label?: string;
+  date?: string;
+  avg_value?: number | null;
+}
+
+export interface HomeGlucoseTrend {
+  points: HomeGlucoseTrendPoint[];
 }
 
 export interface HomeData {
-  profile: UserProfile;
-  measurements: MeasurementEntry[];
-  recentMeals: MealEntry[];
-  recentActivities: ActivityEntry[];
-  recentInjections: InsulinInjectionEntry[];
-  alerts: AlertItem[];
-  trendData: HomeTrendPoint[];
-  dailyInsight?: AISummary;
+  greeting?: HomeGreeting | null;
+  latest_reading?: HomeLatestReading | null;
+  glucose_trend?: HomeGlucoseTrend | null;
+  recommendations?: HomeRecommendation[];
 }

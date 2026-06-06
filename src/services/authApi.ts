@@ -249,7 +249,9 @@ export const authApi = {
 
   async changePassword(currentPassword: string, password: string, passwordConfirmation: string) {
     await this.initBaseUrl();
-    const url = `${this.baseUrl}/api/auth/change-password`;
+    // Settings-scoped change-password route: verifies current_password, rotates the JWT
+    // (bumps token_version to drop other sessions), and returns a fresh access_token.
+    const url = `${this.baseUrl}/api/settings/change-password`;
 
     let response: Response;
     try {

@@ -44,7 +44,7 @@ const STEPS = [
 ];
 
 const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
-  const { C } = useTheme();
+  const { C, colors } = useTheme();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
@@ -65,8 +65,8 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
         <SvgXml xml={item.svgXml} width={width * 0.85} height={width * 0.85} />
       </View>
       <View style={styles.textContainer}>
-        <Text style={[styles.stepTitle, { color: '#451C1C' }]}>{item.title}</Text>
-        <Text style={[styles.stepDescription, { color: '#A86262' }]}>
+        <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>{item.title}</Text>
+        <Text style={[styles.stepDescription, { color: colors.textSecondary }]}>
           {item.description}
         </Text>
       </View>
@@ -74,7 +74,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: '#FCF0F0' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
         ref={flatListRef}
         data={STEPS}
@@ -98,7 +98,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
               style={[
                 styles.indicator,
                 {
-                  backgroundColor: i === currentIndex ? '#D7181D' : '#EAC5C5',
+                  backgroundColor: i === currentIndex ? colors.primary : colors.border,
                   width: 8,
                   height: 8,
                   borderRadius: 4,
@@ -110,12 +110,12 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
 
         {/* Continue Button */}
         <View style={styles.buttonWrapper}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={handleNext}
             activeOpacity={0.85}
-            style={styles.continueButton}
+            style={[styles.continueButton, { backgroundColor: colors.primary, shadowColor: colors.shadow }]}
           >
-            <Text style={styles.continueButtonText}>
+            <Text style={[styles.continueButtonText, { color: colors.textOnPrimary }]}>
               {currentIndex === STEPS.length - 1 ? 'Get Started' : 'Continue'}
             </Text>
           </TouchableOpacity>
@@ -177,18 +177,15 @@ const styles = StyleSheet.create({
   continueButton: {
     width: '100%',
     height: 56,
-    backgroundColor: '#D7181D',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#D7181D',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 3,
   },
   continueButtonText: {
-    color: '#FCF0F0',
     fontSize: 16,
     fontWeight: 'bold',
   },

@@ -956,6 +956,7 @@ export const apiService = {
   async updateProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
     console.log(`[API] Updating profile`, updates);
     const profileUpdates: any = {};
+    const demographicUpdates: any = {};
     const healthUpdates: any = {};
 
     if (updates.name !== undefined) profileUpdates.name = updates.name;
@@ -963,17 +964,19 @@ export const apiService = {
     if (updates.phone_number !== undefined) profileUpdates.phone_number = updates.phone_number;
     if (updates.address !== undefined) profileUpdates.address = updates.address;
 
-    // Explicit casting for demographics to ensure backend compatibility
+    // Demographics go to the settings-scoped /api/settings/demographic endpoint, which only
+    // touches sex/age/weight/height on the users row (never email/password/subscription).
+    // Explicit casting for backend compatibility (numeric weight, integer age/height).
     if (updates.weight !== undefined) {
-      profileUpdates.weight = updates.weight !== null ? parseFloat(String(updates.weight)) : null;
+      demographicUpdates.weight = updates.weight !== null ? parseFloat(String(updates.weight)) : null;
     }
     if (updates.height !== undefined) {
-      profileUpdates.height = updates.height !== null ? parseInt(String(updates.height), 10) : null;
+      demographicUpdates.height = updates.height !== null ? parseInt(String(updates.height), 10) : null;
     }
     if (updates.age !== undefined) {
-      profileUpdates.age = updates.age !== null ? parseInt(String(updates.age), 10) : null;
+      demographicUpdates.age = updates.age !== null ? parseInt(String(updates.age), 10) : null;
     }
-    if (updates.sex !== undefined) profileUpdates.sex = updates.sex || null;
+    if (updates.sex !== undefined) demographicUpdates.sex = updates.sex || null;
 
     if (updates.diabetesType !== undefined) {
       healthUpdates.diabetes_type = unmapDiabetesType(updates.diabetesType);
@@ -995,6 +998,16 @@ export const apiService = {
         });
         const pResult = await pResponse.json();
         console.log(`[API] /api/profile response:`, JSON.stringify(pResult));
+      }
+
+      if (Object.keys(demographicUpdates).length > 0) {
+        console.log(`[API] sending demographicUpdates to /api/settings/demographic:`, JSON.stringify(demographicUpdates));
+        const dResponse = await authenticatedFetch('/api/settings/demographic', {
+          method: 'PATCH',
+          body: JSON.stringify(demographicUpdates)
+        });
+        const dResult = await dResponse.json();
+        console.log(`[API] /api/settings/demographic response:`, JSON.stringify(dResult));
       }
 
       if (Object.keys(healthUpdates).length > 0) {
@@ -1128,6 +1141,46 @@ export const apiService = {
     } catch (error) {
       console.warn("[API] fetchGlucoseForecast failed:", error);
       return [];
+    }
+  },
+
+  // Full glucose-forecast payload ({ calendar, prediction }) for the Insights prediction card.
+  // Contract: GET /api/insights/prediction?date_from&date_to&selected_date (premium-gated).
+  // The forecast is anchored server-side to the user's latest reading (+24h of carbs/insulin),
+  // so callers MUST refetch after a new measurement/meal rather than caching across mutations.
+  // Defaults to a 7-day window ending today, with today selected.
+  async fetchPrediction(
+    dateFrom?: string,
+    dateTo?: string,
+    selectedDate?: string,
+    signal?: AbortSignal
+  ): Promise<{ calendar?: any; prediction?: any } | null> {
+    const today = new Date();
+    const toStr = dateTo || today.toISOString().split('T')[0];
+    const fromStr = dateFrom || new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const params = new URLSearchParams();
+    params.append('date_from', fromStr);
+    params.append('date_to', toStr);
+    params.append('selected_date', selectedDate || toStr);
+
+    console.log(`[API] Fetching prediction ${fromStr}..${toStr} (selected ${selectedDate || toStr})`);
+    try {
+      // The forecast must NEVER be cached — it's re-anchored to the user's latest reading on every
+      // call. Force a fresh network hit (no HTTP/proxy cache) so we always get the current value.
+      const response = await authenticatedFetch(
+        `/api/insights/prediction?${params.toString()}`,
+        {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+        },
+        { timeoutMs: AI_TIMEOUT_MS, signal }
+      );
+      return await response.json();
+    } catch (error: any) {
+      // 403 (premium) is unreachable here — the Insights tab is gated before a free user arrives.
+      // 401/timeout/422 → return null so the card shows its "take a reading" empty state.
+      console.warn('[API] fetchPrediction failed:', error?.message || error);
+      return null;
     }
   },
 

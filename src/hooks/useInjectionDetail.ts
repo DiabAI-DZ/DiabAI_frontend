@@ -31,7 +31,6 @@ export interface InjectionDetail {
   entry_type?: string;
   related_measurement?: RelatedMeasurement | null;
   related_meal?: RelatedMeal | null;
-  [key: string]: any;
 }
 
 // GET /api/injections/{id}. Same { data, loading, error, refetch } contract as the other hooks.
@@ -54,9 +53,9 @@ export function useInjectionDetail(id: number | null | undefined): UseDetailResu
     try {
       const res = await apiService.fetchInjectionDetail(id as number);
       if (reqId === reqIdRef.current) setData(res ?? null);
-    } catch (e: any) {
+    } catch (e) {
       if (reqId === reqIdRef.current) {
-        setError(e instanceof Error ? e : new Error(e?.message || 'Failed to load injection'));
+        setError(e instanceof Error ? e : new Error('Failed to load injection'));
       }
     } finally {
       if (reqId === reqIdRef.current) setLoading(false);

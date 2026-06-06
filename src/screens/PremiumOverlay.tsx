@@ -28,7 +28,7 @@ const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
   onUpgrade,
   onDismiss,
 }) => {
-  const { C } = useTheme();
+  const { C, colors } = useTheme();
 
   // The overlay is a blocker: the user must pick Upgrade or "Maybe later". Trap the Android
   // hardware back button so it can't silently close the gate — route it through "Maybe later"
@@ -55,12 +55,7 @@ const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
       />
 
       {/* Reddish tint on top of the blur, matching the design */}
-      <View
-        style={[
-          styles.overlay,
-          { backgroundColor: (C as any).overlayBg || 'rgba(98, 46, 46, 0.35)' },
-        ]}
-      >
+      <View style={[styles.overlay, { backgroundColor: OVERLAY_TINT }]}>
         {/* Premium badge */}
         <View style={[styles.badge, { backgroundColor: C.redBg, borderColor: `${C.red}20` }]}>
           <Lock size={12} color={C.red} />
@@ -68,10 +63,10 @@ const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
         </View>
 
         {/* Card */}
-        <View style={[styles.card, { backgroundColor: (C as any).overlayCardBg || '#FCF0F0' }]}>
+        <View style={[styles.card, { backgroundColor: colors.backgroundCard, shadowColor: colors.shadow }]}>
           {/* Icon */}
           <View style={[styles.iconWrapper, { backgroundColor: C.red }]}>
-            <Sparkles size={26} color="#fff" />
+            <Sparkles size={26} color={colors.textOnPrimary} />
           </View>
 
           <Text style={[styles.title, { color: C.text }]}>Unlock AI Insights</Text>
@@ -88,7 +83,7 @@ const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
                   <View style={[styles.featureIconBox, { backgroundColor: C.redBg }]}>
                     <IconComponent size={18} color={C.red} />
                   </View>
-                  <Text style={[styles.featureText, { color: C.textMd || '#854444' }]}>
+                  <Text style={[styles.featureText, { color: C.textMd || colors.textSecondary }]}>
                     {f.text}
                   </Text>
                 </View>
@@ -102,7 +97,7 @@ const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
             activeOpacity={0.85}
             style={[styles.upgradeButton, { backgroundColor: C.red }]}
           >
-            <Text style={styles.upgradeButtonText}>Upgrade to Premium</Text>
+            <Text style={[styles.upgradeButtonText, { color: colors.textOnPrimary }]}>Upgrade to Premium</Text>
           </TouchableOpacity>
 
           {/* Dismiss */}
@@ -111,13 +106,16 @@ const PremiumOverlay: React.FC<PremiumOverlayProps> = ({
             activeOpacity={0.8}
             style={styles.dismissButton}
           >
-            <Text style={styles.dismissButtonText}>Maybe later</Text>
+            <Text style={[styles.dismissButtonText, { color: colors.textSecondary }]}>Maybe later</Text>
           </TouchableOpacity>
         </View>
       </View>
     </View>
   );
 };
+
+// Reddish scrim drawn over the live-screen blur (a deliberate overlay tint, not a palette token).
+const OVERLAY_TINT = 'rgba(98, 46, 46, 0.35)';
 
 const styles = StyleSheet.create({
   container: {
@@ -150,7 +148,6 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '100%',
     maxWidth: 340,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
@@ -210,7 +207,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   upgradeButtonText: {
-    color: '#fff',
     fontSize: 15,
     fontWeight: 'bold',
   },
@@ -220,7 +216,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   dismissButtonText: {
-    color: '#9CA3AF',
     fontSize: 13,
     fontWeight: '600',
   },

@@ -3,12 +3,11 @@ import { apiService } from '../services/apiService';
 import { aiService } from '../services/aiService';
 import { insightsService } from '../services/insightsService';
 import { useUser } from './UserContext';
-import { LogEntry, AlertItem, ScanResult, AISummary, HomeData, MealScanResult } from '../services/types';
+import { LogEntry, AlertItem, ScanResult, AISummary, MealScanResult } from '../services/types';
 
 interface DataContextType {
   logs: LogEntry[];
   alerts: AlertItem[];
-  homeData: HomeData | null;
   recommendations: any[];
   loading: boolean;
   refreshData: (period?: '7d' | '30d') => Promise<void>;
@@ -22,8 +21,6 @@ interface DataContextType {
   getDailySummary: () => Promise<AISummary>;
   scanImage: (uri: string) => Promise<ScanResult>;
   scanMeal: (uri: string) => Promise<MealScanResult>;
-  premiumRecommendations: any[];
-  glucoseForecast: any[];
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -31,17 +28,14 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [homeData, setHomeData] = useState<HomeData | null>(null);
   const [recommendations, setRecommendations] = useState<any[]>([]);
-  const [premiumRecommendations, setPremiumRecommendations] = useState<any[]>([]);
-  const [glucoseForecast, setGlucoseForecast] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
 
   const refreshData = useCallback(async (period: '7d' | '30d' = '7d') => {
     setLoading(true);
     try {
-      const [logsData, alertsData, homeDataObj] = await Promise.all([
+      const [logsData, alertsData] = await Promise.all([
         apiService.fetchLogs().catch(err => {
           console.warn("DataContext: Failed to fetch logs:", err);
           return [];
@@ -50,31 +44,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn("DataContext: Failed to fetch alerts:", err);
           return [];
         }),
-        apiService.fetchHomeData(period).catch(err => {
-          console.warn("DataContext: Failed to fetch home data:", err);
-          return null;
-        }),
       ]);
       setLogs(logsData);
       setAlerts(alertsData);
-      setHomeData(homeDataObj);
-      // NOTE: recommendations are intentionally NOT fetched here. The standalone
-      // /api/insights/recommendations call used to run concurrently with the aggregate
-      // /api/insights prefetch, hitting the SAME recommendations LLM twice at once and pushing it
-      // past the backend pool timeout (→ "context canceled" → heuristic fallback). They now come
-      // from the single aggregate call below, so that LLM is hit exactly once per window.
-
-      // Fetch Premium Heavy AI data if applicable (Checkpoint 4)
-      const userProfile = await apiService.fetchProfile().catch(() => null);
-      if (userProfile?.isPremium) {
-        console.log("[DataContext] Fetching heavy AI content for premium member");
-        const [pRecs, gForecast] = await Promise.all([
-          apiService.fetchPremiumRecommendations().catch(() => []),
-          apiService.fetchGlucoseForecast().catch(() => []),
-        ]);
-        setPremiumRecommendations(pRecs);
-        setGlucoseForecast(gForecast);
-      }
+      // NOTE: recommendations + premium AI content are intentionally NOT fetched here. They are
+      // owned by the Insights screen's stale-while-revalidate insightsService (one aggregate
+      // /api/insights call per window), so fetching them here too would hit the same LLM twice.
     } catch (error) {
       console.error("DataContext: Failed to fetch data:", error);
     } finally {
@@ -106,14 +81,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Show fresh predictions on the Insights tab after new data is added.
         insightsService.resetInsightsSession();
 
-        // Refresh alerts + forecast as they may have changed (the backend already
-        // ran AnalyzeEntryJob on creation — no separate /api/analyze call needed).
-        const [newAlerts, newForecast] = await Promise.all([
-          apiService.fetchAlerts().catch(() => []),
-          apiService.fetchGlucoseForecast().catch(() => []),
-        ]);
+        // Refresh alerts as they may have changed (the backend already ran AnalyzeEntryJob on
+        // creation — no separate /api/analyze call needed).
+        const newAlerts = await apiService.fetchAlerts().catch(() => []);
         setAlerts(newAlerts);
-        setGlucoseForecast(newForecast);
       } catch (ae) {
         console.warn("[DataContext] post-log refresh failed:", ae);
       }
@@ -207,7 +178,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Clear data on sign out
       setLogs([]);
       setAlerts([]);
-      setHomeData(null);
       setRecommendations([]);
       setLastRefreshedUser(null);
       // Abort any in-flight insights request and drop the in-memory cache.
@@ -217,9 +187,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <DataContext.Provider value={{ 
-      logs, 
-      alerts, 
-      homeData,
+      logs,
+      alerts,
       recommendations,
       loading, 
       refreshData, 
@@ -229,12 +198,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       markAllAlertsRead,
       selectedDate,
       setSelectedDate,
-      getAIInsight, 
+      getAIInsight,
       getDailySummary,
       scanImage,
       scanMeal,
-      premiumRecommendations,
-      glucoseForecast
     }}>
       {children}
     </DataContext.Provider>

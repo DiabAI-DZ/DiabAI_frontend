@@ -237,6 +237,23 @@ export function resetInsightsSession(): void {
   hydratePromise = null;
 }
 
+/**
+ * Fully empty the insights cache — in-memory AND the device-persisted (AsyncStorage) entries.
+ * Unlike resetInsightsSession (which keeps persisted entries), this guarantees the next fetch hits
+ * the network. Used when the user picks a new date so stale cached insights are never shown.
+ */
+export async function clearCache(): Promise<void> {
+  inflight.clear();
+  memCache.clear();
+  hydratePromise = null;
+  try {
+    const keys = (await AsyncStorage.getAllKeys()).filter(k => k.startsWith(KEY_PREFIX));
+    if (keys.length) await AsyncStorage.multiRemove(keys);
+  } catch {
+    // best-effort — a failed device-cache wipe still leaves the in-memory cache cleared
+  }
+}
+
 export const insightsService = {
   buildInsightsParams,
   hydrate,
@@ -245,4 +262,5 @@ export const insightsService = {
   fetchInsightsBundle,
   prefetchInsights,
   resetInsightsSession,
+  clearCache,
 };

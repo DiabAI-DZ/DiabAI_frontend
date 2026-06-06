@@ -10,7 +10,6 @@ export interface MealNutrition {
   fat_g?: number | null;
   fiber_g?: number | null;
   calories?: number | null;
-  [key: string]: any;
 }
 
 // Shape of GET /api/meals/{id} -> data. Loose by design; the screen merges with the tapped row.
@@ -27,7 +26,7 @@ export interface MealDetail {
   notes?: string | null;
   tags?: string[] | null;
   image_url?: string;
-  food_items?: any[] | null;
+  food_items?: unknown[] | null;
   nutrition?: MealNutrition | null;
   // Some backends inline the macros at the top level instead of under `nutrition`.
   carbohydrates_g?: number | null;
@@ -36,7 +35,6 @@ export interface MealDetail {
   fiber_g?: number | null;
   calories?: number | null;
   health_insights?: HealthInsight[] | null;
-  [key: string]: any;
 }
 
 // GET /api/meals/{id}. Same { data, loading, error, refetch } contract as useMeasurementDetail.
@@ -59,9 +57,9 @@ export function useMealDetail(id: number | null | undefined): UseDetailResult<Me
     try {
       const res = await apiService.fetchMealDetail(id as number);
       if (reqId === reqIdRef.current) setData(res ?? null);
-    } catch (e: any) {
+    } catch (e) {
       if (reqId === reqIdRef.current) {
-        setError(e instanceof Error ? e : new Error(e?.message || 'Failed to load meal'));
+        setError(e instanceof Error ? e : new Error('Failed to load meal'));
       }
     } finally {
       if (reqId === reqIdRef.current) setLoading(false);

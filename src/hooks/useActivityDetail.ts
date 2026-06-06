@@ -22,7 +22,6 @@ export interface ActivityDetail {
   distance_human?: string | null; // "5.2 km"
   image_url?: string;
   entry_type?: string;
-  [key: string]: any;
 }
 
 // GET /api/activities/{id}. Same { data, loading, error, refetch } contract as the other hooks.
@@ -45,9 +44,9 @@ export function useActivityDetail(id: number | null | undefined): UseDetailResul
     try {
       const res = await apiService.fetchActivityDetail(id as number);
       if (reqId === reqIdRef.current) setData(res ?? null);
-    } catch (e: any) {
+    } catch (e) {
       if (reqId === reqIdRef.current) {
-        setError(e instanceof Error ? e : new Error(e?.message || 'Failed to load activity'));
+        setError(e instanceof Error ? e : new Error('Failed to load activity'));
       }
     } finally {
       if (reqId === reqIdRef.current) setLoading(false);

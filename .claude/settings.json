@@ -1,4 +1,14 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(grep -n \"#[0-9A-Fa-f]\\\\{3,6\\\\}\\\\b\\\\|'white'\" /home/lokmane/Desktop/DiabAI_frontend/src/screens/AccountSettingsScreen.tsx)",
+      "Bash(grep -n \"#[0-9A-Fa-f]\\\\{3,6\\\\}\\\\|'#\\\\|\\\\\"#\" /home/lokmane/Desktop/DiabAI_frontend/src/screens/SettingsScreen.tsx)",
+      "Bash(grep -n \"#[0-9A-Fa-f]\\\\{3,6\\\\}\" /home/lokmane/Desktop/DiabAI_frontend/src/screens/ScanFlow.tsx)",
+      "Bash(grep -n \"#[0-9A-Fa-f]\\\\{3,6\\\\}\\\\|'#\\\\|\\\\\"#\" /home/lokmane/Desktop/DiabAI_frontend/src/components/SubscriptionPopups.tsx)",
+      "Bash(grep -n \"'#[0-9A-Fa-f]\\\\{3,6\\\\}'\" /home/lokmane/Desktop/DiabAI_frontend/src/screens/DetailScreen.tsx)"
+    ]
+  },
   "enabledPlugins": {
     "expo@claude-plugins-official": true
   }

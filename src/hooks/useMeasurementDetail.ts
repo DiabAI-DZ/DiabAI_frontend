@@ -34,7 +34,6 @@ export interface MeasurementDetail {
   image_url?: string;
   comparison?: MeasurementComparison | null;
   health_insights?: HealthInsight[] | null;
-  [key: string]: any;
 }
 
 export interface UseDetailResult<T> {
@@ -67,9 +66,9 @@ export function useMeasurementDetail(id: number | null | undefined): UseDetailRe
     try {
       const res = await apiService.fetchMeasurementDetail(id as number);
       if (reqId === reqIdRef.current) setData(res ?? null);
-    } catch (e: any) {
+    } catch (e) {
       if (reqId === reqIdRef.current) {
-        setError(e instanceof Error ? e : new Error(e?.message || 'Failed to load measurement'));
+        setError(e instanceof Error ? e : new Error('Failed to load measurement'));
       }
     } finally {
       if (reqId === reqIdRef.current) setLoading(false);
