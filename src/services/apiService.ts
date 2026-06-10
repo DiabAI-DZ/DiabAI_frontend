@@ -446,6 +446,15 @@ export const apiService = {
 
   async createLog(log: Omit<LogEntry, "id">): Promise<LogEntry> {
     console.log(`[API] Creating log`, log);
+    // Guard against device-vs-server clock skew: the API rejects timestamps even slightly in the
+    // future (`before_or_equal:now`). Clamp any "now" timestamp ~1 min into the past so a fast
+    // device clock can't trip the validation; genuinely past-dated entries are left untouched.
+    const CLOCK_SKEW_BUFFER_MS = 60_000;
+    const clampPast = (iso?: string): string => {
+      const t = iso ? new Date(iso).getTime() : NaN;
+      const max = Date.now() - CLOCK_SKEW_BUFFER_MS;
+      return new Date(Number.isNaN(t) ? max : Math.min(t, max)).toISOString();
+    };
     try {
       if (log.type === 'measurement') {
         const mLog = log as Omit<MeasurementEntry, "id">;
@@ -453,7 +462,7 @@ export const apiService = {
           title: mLog.tag ? `${mLog.tag} check` : "Glucose Measurement",
           value_mg_dl: mLog.value,
           measurement_type: unmapTag(mLog.tag),
-          measured_at: mLog.date,
+          measured_at: clampPast(mLog.date),
           notes: mLog.notes || "",
           tags: []
         };
@@ -486,7 +495,7 @@ export const apiService = {
           dose_units: iLog.dose,
           injection_site: iLog.site,
           reason: iLog.reason,
-          injected_at: iLog.date,
+          injected_at: clampPast(iLog.date),
           notes: iLog.notes || ""
         };
         const response = await authenticatedFetch('/api/injections', {
@@ -512,7 +521,7 @@ export const apiService = {
           activity_type: aLog.activityType,
           duration_minutes: Math.max(1, aLog.duration || 0),
           intensity: aLog.intensity || 'moderate',
-          started_at: aLog.date,
+          started_at: clampPast(aLog.date),
           notes: aLog.notes || "",
           calories_burned: (aLog.calories && aLog.calories > 0) ? aLog.calories : null,
           distance_km: aLog.distance || 0,
@@ -546,7 +555,7 @@ export const apiService = {
         const payload = {
           title: mLog.name,
           meal_type: mLog.mealType,
-          eaten_at: mLog.date,
+          eaten_at: clampPast(mLog.date),
           calories: mLog.calories,
           carbohydrates_g: mLog.carbs,
           protein_g: mLog.protein || 0,

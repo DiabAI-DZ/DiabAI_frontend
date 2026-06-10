@@ -5,6 +5,7 @@ import { useTheme } from '../../../context/ThemeContext';
 import { spacing } from '../../../theme/spacing';
 import { borderRadius } from '../../../theme/borderRadius';
 import { cardStyles } from './insightsStyles';
+import ExpandableText from './ExpandableText';
 import { SkeletonRow } from './Skeletons';
 import { recPriorityStyle, recVisual } from '../insightsVisuals';
 import type { RecommendationView } from '../../../types/insights';
@@ -45,8 +46,8 @@ export const RecommendationsCard: React.FC<RecommendationsCardProps> = ({ recomm
                 <Icon size={18} color={vis.color} />
               </View>
               <View style={styles.center}>
-                <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={1}>{rec.title}</Text>
-                <Text style={[styles.desc, { color: colors.textSecondary }]} numberOfLines={3}>{rec.desc}</Text>
+                <Text style={[styles.title, { color: colors.textPrimary }]}>{rec.title}</Text>
+                <ExpandableText text={rec.desc} collapsedLines={3} linkColor={colors.primary} textStyle={[styles.desc, { color: colors.textSecondary }]} />
               </View>
               <View style={[styles.priorityBadge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
                 <Text style={[styles.priorityText, { color: badge.text }]}>{badge.label}</Text>
@@ -67,7 +68,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'flex-start', padding: spacing.lg, borderRadius: 14, borderWidth: 1, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
   iconBox: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, paddingHorizontal: spacing.md },
-  title: { fontSize: 15, fontWeight: '700' },
+  title: { fontSize: 14, fontWeight: '700', lineHeight: 18 },
   desc: { fontSize: 13, lineHeight: 19, marginTop: 3 },
   priorityBadge: { borderWidth: 1, borderRadius: borderRadius.pill, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, alignSelf: 'flex-start' },
   priorityText: { fontSize: 11, fontWeight: '700' },

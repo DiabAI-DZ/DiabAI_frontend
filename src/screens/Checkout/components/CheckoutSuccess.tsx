@@ -33,7 +33,7 @@ const CheckoutSuccess: React.FC<{ plan: PlanType; onDone: () => void }> = ({ pla
         ))}
       </View>
       <TouchableOpacity onPress={onDone} activeOpacity={0.85} style={[styles.btn, { backgroundColor: colors.primary, shadowColor: colors.shadow }]}>
-        <Text style={[styles.btnText, { color: colors.textOnPrimary }]}>Back to Settings</Text>
+        <Text style={[styles.btnText, { color: colors.textOnPrimary }]}>Back to Home</Text>
       </TouchableOpacity>
     </View>
   );

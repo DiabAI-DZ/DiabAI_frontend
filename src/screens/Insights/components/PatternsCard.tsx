@@ -6,6 +6,7 @@ import { spacing } from '../../../theme/spacing';
 import { borderRadius } from '../../../theme/borderRadius';
 import { cardStyles } from './insightsStyles';
 import { PatternSparkline } from './charts';
+import ExpandableText from './ExpandableText';
 import { SkeletonRow } from './Skeletons';
 import { patternVisual } from '../insightsVisuals';
 import type { PatternView } from '../../../types/insights';
@@ -53,8 +54,8 @@ export const PatternsCard: React.FC<PatternsCardProps> = ({ patterns, loading })
                 <Icon size={18} color={vis.color} />
               </View>
               <View style={styles.center}>
-                <Text style={[styles.titleText, { color: colors.textPrimary }]} numberOfLines={1}>{p.title}</Text>
-                <Text style={[styles.descText, { color: colors.textSecondary }]} numberOfLines={2}>{p.desc}</Text>
+                <Text style={[styles.titleText, { color: colors.textPrimary }]}>{p.title}</Text>
+                <ExpandableText text={p.desc} collapsedLines={2} linkColor={colors.primary} textStyle={[styles.descText, { color: colors.textSecondary }]} />
                 <View style={styles.metaRow}>
                   <View style={[styles.confBadge, { backgroundColor: colors.warningBg }]}>
                     <Text style={[styles.confText, { color: colors.warningText }]}>{p.confidencePct}% confidence</Text>
@@ -86,7 +87,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, borderWidth: 1, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
   iconCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, paddingHorizontal: spacing.md },
-  titleText: { fontSize: 15, fontWeight: '700' },
+  titleText: { fontSize: 14, fontWeight: '700', lineHeight: 18 },
   descText: { fontSize: 13, lineHeight: 17, marginTop: 3 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm },
   confBadge: { borderRadius: borderRadius.pill, paddingHorizontal: 9, paddingVertical: 3 },
