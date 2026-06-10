@@ -14,14 +14,16 @@ import { RecommendationsCard } from './RecommendationsCard';
 import type { InsightsDataResult } from '../hooks/useInsightsData';
 import type { InsightsDerived } from '../hooks/useInsightsDerived';
 import type { UsePredictionResult } from '../hooks/usePrediction';
+import type { UseInsulinEstimateResult } from '../hooks/useInsulinEstimate';
 
 interface InsightsDashboardProps {
   data: InsightsDataResult;
   derived: InsightsDerived;
   prediction: UsePredictionResult;
+  insulin: UseInsulinEstimateResult;
 }
 
-export const InsightsDashboard: React.FC<InsightsDashboardProps> = ({ data, derived }) => {
+export const InsightsDashboard: React.FC<InsightsDashboardProps> = ({ data, derived, insulin }) => {
   const { C, colors } = useTheme();
   const { profile } = useUser();
 
@@ -78,7 +80,7 @@ export const InsightsDashboard: React.FC<InsightsDashboardProps> = ({ data, deri
           loading={data.loading && !predView}
           error={!!data.error && !predView}
         />
-        <InsulinCard insulinEstimate={data.insulinEstimate} loading={data.loading} />
+        <InsulinCard insulinEstimate={insulin.insulinEstimate} loading={insulin.loading} />
         <PatternsCard patterns={derived.patternViews} loading={data.loading} />
         <RecommendationsCard recommendations={derived.recommendationViews} loading={data.loading} />
 

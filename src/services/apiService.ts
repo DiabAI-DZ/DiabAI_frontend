@@ -845,7 +845,13 @@ export const apiService = {
     return result;
   },
 
-  async fetchInsulinEstimate(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string, signal?: AbortSignal): Promise<any> {
+  // Insulin-estimate payload ({ insulin_estimate, calendar }) for the Insights insulin card.
+  // Like the forecast (fetchPrediction), this is its OWN light call so the insulin card loads
+  // independently of the heavy aggregate bundle (patterns + recommendations). Anchored server-side
+  // to the latest reading, so it's never cached and is refetched after a new log. Returns null on
+  // any failure (401/timeout/422) so the card falls back to its empty state. 403 is unreachable —
+  // the Insights tab is premium-gated before a free user arrives.
+  async fetchInsulinEstimate(dateFrom?: string, dateTo?: string, selectedDate?: string, model?: string, signal?: AbortSignal): Promise<{ insulin_estimate?: any; calendar?: any } | null> {
     const params = new URLSearchParams();
     const today = new Date().toISOString().split('T')[0];
     params.append('date_from', dateFrom || today);
@@ -854,9 +860,17 @@ export const apiService = {
     if (model) params.append('model', model);
 
     console.log(`[API] Fetching insulin estimate with model: ${model}`);
-    const response = await authenticatedFetch(`/api/insights/insulin-estimate?${params.toString()}`, {}, { timeoutMs: AI_TIMEOUT_MS, signal });
-    const result = await response.json();
-    return result;
+    try {
+      const response = await authenticatedFetch(
+        `/api/insights/insulin-estimate?${params.toString()}`,
+        { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } },
+        { timeoutMs: AI_TIMEOUT_MS, signal }
+      );
+      return await response.json();
+    } catch (error: any) {
+      console.warn('[API] fetchInsulinEstimate failed:', error?.message || error);
+      return null;
+    }
   },
 
   async fetchMeasurementDetail(id: number): Promise<any> {

@@ -6,6 +6,7 @@ import { InsightsDashboard } from './components/InsightsDashboard';
 import { InsightsChat } from './components/InsightsChat';
 import { useInsightsData } from './hooks/useInsightsData';
 import { usePrediction } from './hooks/usePrediction';
+import { useInsulinEstimate } from './hooks/useInsulinEstimate';
 import { useInsightsDerived } from './hooks/useInsightsDerived';
 import { useInsightsChat } from './hooks/useInsightsChat';
 
@@ -27,6 +28,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts, i
 
   const data = useInsightsData(isActive);
   const prediction = usePrediction(isActive, data.range, data.defaultRange);
+  const insulin = useInsulinEstimate(isActive, data.range, data.defaultRange);
   const derived = useInsightsDerived(data.patterns, data.recommendations, prediction.predictions);
   const chat = useInsightsChat();
 
@@ -37,7 +39,7 @@ const AIInsightsScreen: React.FC<AIInsightsScreenProps> = ({ onNavigateAlerts, i
     >
       <InsightsHeader showClear={activeSegment === 'chat'} onClear={chat.clear} onNavigateAlerts={onNavigateAlerts} />
       {activeSegment === 'dashboard' ? (
-        <InsightsDashboard data={data} derived={derived} prediction={prediction} />
+        <InsightsDashboard data={data} derived={derived} prediction={prediction} insulin={insulin} />
       ) : (
         <InsightsChat chat={chat} />
       )}
