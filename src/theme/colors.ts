@@ -169,6 +169,12 @@ export const DarkTheme = {
 
 export type AppTheme = typeof LightTheme;
 
+/** Canonical dark-red brand gradient (Figma): top-left #A01818 → bottom-right #8B0000.
+ * Shared by the home "Latest Reading" hero card, the insights prediction banner, and the
+ * selected date in the insights date strip so the brand surfaces stay identical. This is a
+ * decorative brand constant, not a themeable token. */
+export const BRAND_RED_GRADIENT = ['#A01818', '#8B0000'] as const;
+
 // ──────────────────────────────────────────────────────────────────────────
 // Legacy palette (`C.*`). Preserved verbatim so screens migrated earlier keep
 // their exact look. New code should prefer the LightTheme/DarkTheme tokens above.

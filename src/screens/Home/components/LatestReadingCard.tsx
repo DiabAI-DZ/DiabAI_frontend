@@ -5,6 +5,7 @@ import { Clock, Target, TrendingUp, TrendingDown, Minus } from 'lucide-react-nat
 import { useTheme } from '../../../theme/ThemeContext';
 import { spacing } from '../../../theme/spacing';
 import { borderRadius } from '../../../theme/borderRadius';
+import { BRAND_RED_GRADIENT } from '../../../theme/colors';
 
 export interface LatestReading {
   value: number | null;
@@ -25,7 +26,7 @@ interface LatestReadingCardProps {
 
 /** Dark-red "Latest Reading" hero card: big glucose value, delta, status pill, measured-at + target. */
 const LatestReadingCard: React.FC<LatestReadingCardProps> = ({ reading, loading, onPress }) => {
-  const { C, colors } = useTheme();
+  const { colors } = useTheme();
   const onGradient = colors.textOnPrimary;
 
   const hasReading = reading.value != null && reading.value > 0;
@@ -45,7 +46,7 @@ const LatestReadingCard: React.FC<LatestReadingCardProps> = ({ reading, loading,
   return (
     <TouchableOpacity activeOpacity={0.92} onPress={onPress} disabled={!onPress || !hasReading}>
       <LinearGradient
-        colors={[C.red, C.redDark]}
+        colors={BRAND_RED_GRADIENT}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.card, { shadowColor: colors.shadow }]}

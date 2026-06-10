@@ -1,158 +1,182 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path, Line, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowDownRight, ArrowRight, ArrowUpRight, TrendingUp } from 'lucide-react-native';
+import { ArrowDownRight, ArrowUpRight, Check, TrendingUp } from 'lucide-react-native';
 import { useTheme } from '../../../context/ThemeContext';
 import { spacing } from '../../../theme/spacing';
 import { borderRadius } from '../../../theme/borderRadius';
-import { cardStyles } from './insightsStyles';
-import { INSIGHTS_BRAND_SHADOW, INSIGHTS_RED_HERO, INSIGHTS_RED_STRIP } from '../insightsVisuals';
-import { CHART_HEIGHT, CHART_WIDTH, type PredictionSVG } from '../insightsMath';
-import type { PredView } from '../../../types/insights';
+import { BRAND_RED_GRADIENT } from '../../../theme/colors';
+
+// Brand-red decorative constants for the prediction card (Figma). These are intentional design
+// constants for the dark-red icon + banner text, NOT themeable tokens, so they live here as the
+// single source of truth. The banner gradient is shared app-wide via BRAND_RED_GRADIENT.
+const PREDICTION = {
+  iconBg: '#8B0000',
+  bannerGradient: BRAND_RED_GRADIENT,
+  bannerText: '#FFFFFF',
+} as const;
+
+type PredictionStatus = 'above_target' | 'in_range' | 'below_target';
 
 interface PredictionCardProps {
-  predView: PredView | null;
-  predictionSVG: PredictionSVG;
-  selectedHasReading: boolean | null;
-  isTodaySelected: boolean;
+  prediction: {
+    predicted_value: number;
+    prediction_time: string;
+    status?: PredictionStatus;
+    unit?: string;
+  } | null;
+  targetMin: number;
+  targetMax: number;
+  loading: boolean;
+  /** When true, the banner renders the muted "Forecast unavailable" error state. */
+  error?: boolean;
 }
 
+/** Format an ISO timestamp to "HH:MM" (24h). Falls back to the raw string if it isn't a date. */
+function formatTime(value: string): string {
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+/** Resolve the banner status from an explicit string, or derive it from the value vs target range. */
+function resolveStatus(value: number, targetMin: number, targetMax: number, explicit?: PredictionStatus): PredictionStatus {
+  if (explicit) return explicit;
+  if (value > targetMax) return 'above_target';
+  if (value < targetMin) return 'below_target';
+  return 'in_range';
+}
+
+const STATUS_TEXT: Record<PredictionStatus, string> = {
+  above_target: 'Above target',
+  in_range: 'In range',
+  below_target: 'Below target',
+};
+
+const StatusIcon: React.FC<{ status: PredictionStatus }> = ({ status }) => {
+  const color = PREDICTION.bannerText;
+  if (status === 'above_target') return <ArrowUpRight size={24} color={color} strokeWidth={2.5} />;
+  if (status === 'below_target') return <ArrowDownRight size={24} color={color} strokeWidth={2.5} />;
+  return <Check size={24} color={color} strokeWidth={2.5} />;
+};
+
 export const PredictionCard: React.FC<PredictionCardProps> = ({
-  predView, predictionSVG, selectedHasReading, isTodaySelected,
+  prediction, targetMin, targetMax, loading, error,
 }) => {
-  const { C, colors } = useTheme();
+  const { colors } = useTheme();
+
+  const Header = (
+    <View style={styles.headerRow}>
+      <View style={[styles.headerIcon, { backgroundColor: PREDICTION.iconBg }]}>
+        <TrendingUp size={28} color={PREDICTION.bannerText} strokeWidth={2.5} />
+      </View>
+      <View style={styles.flex1}>
+        <Text style={[styles.title, { color: colors.textPrimary }]}>Prediction</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>AI-powered glucose forecast</Text>
+      </View>
+    </View>
+  );
+
+  // Loading skeleton — gray header circle + gray banner block.
+  if (loading) {
+    return (
+      <View style={[styles.card, { backgroundColor: colors.backgroundCard, shadowColor: colors.shadow }]}>
+        <View style={styles.headerRow}>
+          <View style={[styles.headerIcon, { backgroundColor: colors.backgroundMuted }]} />
+          <View style={styles.flex1}>
+            <View style={[styles.skelLine, styles.skelTitle, { backgroundColor: colors.backgroundMuted }]} />
+            <View style={[styles.skelLine, styles.skelSubtitle, { backgroundColor: colors.backgroundMuted }]} />
+          </View>
+        </View>
+        <View style={[styles.banner, styles.bannerSkeleton, { backgroundColor: colors.backgroundMuted }]} />
+      </View>
+    );
+  }
 
   return (
-    <View style={[cardStyles.card, cardStyles.cardPad, { backgroundColor: colors.backgroundCard, borderColor: C.redBorder, shadowColor: colors.shadow }]}>
-      <View style={styles.predHeaderRow}>
-        <LinearGradient colors={INSIGHTS_RED_STRIP} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.predHeaderIcon, { shadowColor: INSIGHTS_BRAND_SHADOW }]}>
-          <TrendingUp size={26} color={colors.textOnPrimary} strokeWidth={2.5} />
-        </LinearGradient>
-        <View style={styles.flex1}>
-          <Text style={[styles.predHeaderTitle, { color: colors.textPrimary }]}>Prediction</Text>
-          <Text style={styles.predHeaderSubtitle}>AI-powered glucose forecast</Text>
-        </View>
-      </View>
+    <View style={[styles.card, { backgroundColor: colors.backgroundCard, shadowColor: colors.shadow }]}>
+      {Header}
 
-      {!predView ? (
-        <View style={[styles.predictionBanner, { backgroundColor: C.blueBg, borderColor: C.blueBorder }]}>
-          <Text style={[styles.predBannerLabel, { color: C.textSm }]}>
-            No recent reading to forecast from — take a glucose measurement to see your prediction.
-          </Text>
+      {error ? (
+        <View style={[styles.banner, styles.bannerCentered, { backgroundColor: colors.backgroundMuted }]}>
+          <Text style={[styles.bannerEmptyText, { color: colors.textSecondary }]}>Forecast unavailable</Text>
         </View>
-      ) : selectedHasReading === false ? (
-        <View style={[styles.predictionBanner, styles.predictionBannerColumn, { backgroundColor: C.amberBg, borderColor: C.amber }]}>
-          <Text style={[styles.predBannerLabel, { color: C.amber }]}>NO READING ON THIS DAY</Text>
-          <Text style={[styles.predBannerLabel, { color: C.text }]}>Take a measurement to get a fresh forecast for this day.</Text>
-          {predView.currentAtLabel && (
-            <Text style={[styles.predBannerLabel, styles.predBannerHint, { color: C.textSm }]}>
-              Last forecast (from your {predView.currentAtLabel} reading): {predView.expected} mg/dL
-            </Text>
-          )}
-        </View>
+      ) : !prediction ? (
+        <LinearGradient
+          colors={PREDICTION.bannerGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.banner, styles.bannerCentered]}
+        >
+          <Text style={[styles.bannerEmptyText, { color: PREDICTION.bannerText }]}>Not enough data yet</Text>
+        </LinearGradient>
       ) : (
-        <LinearGradient colors={INSIGHTS_RED_HERO} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.predHero, { shadowColor: INSIGHTS_BRAND_SHADOW }]}>
-          <View style={styles.predHeroTopRow}>
-            <View style={styles.shrink}>
-              <Text style={[styles.predHeroLabel, { color: colors.textOnPrimary }]}>
-                {predView.expectedAt ? `EXPECTED AT ${predView.expectedAt}` : 'NEXT PREDICTION'}
-              </Text>
-              <View style={styles.predHeroValueRow}>
-                <Text style={[styles.predHeroValue, { color: colors.textOnPrimary }]}>{predView.expected}</Text>
-                <Text style={styles.predHeroUnit}>mg/dL</Text>
+        (() => {
+          const status = resolveStatus(prediction.predicted_value, targetMin, targetMax, prediction.status);
+          const unit = prediction.unit ?? 'mg/dL';
+          return (
+            <LinearGradient
+              colors={PREDICTION.bannerGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.banner, styles.bannerRow]}
+            >
+              <View style={styles.bannerLeft}>
+                <Text style={[styles.bannerLabel, { color: PREDICTION.bannerText }]}>
+                  EXPECTED AT {formatTime(prediction.prediction_time)}
+                </Text>
+                <View style={styles.valueRow}>
+                  <Text style={[styles.value, { color: PREDICTION.bannerText }]}>{prediction.predicted_value}</Text>
+                  <Text style={styles.unit}>{unit}</Text>
+                </View>
               </View>
-            </View>
-            <View style={styles.predHeroStatus}>
-              {predView.trendDir === 'up' ? (
-                <ArrowUpRight size={26} color={colors.textOnPrimary} strokeWidth={2.5} />
-              ) : predView.trendDir === 'down' ? (
-                <ArrowDownRight size={26} color={colors.textOnPrimary} strokeWidth={2.5} />
-              ) : (
-                <ArrowRight size={26} color={colors.textOnPrimary} strokeWidth={2.5} />
-              )}
-              <Text style={[styles.predHeroStatusText, { color: colors.textOnPrimary }]}>{predView.statusLabel}</Text>
-            </View>
-          </View>
 
-          <View style={styles.predHeroFooter}>
-            {predView.current != null && (
-              <Text style={styles.predHeroSub}>
-                {predView.current} → {predView.expected} mg/dL {predView.trendArrow}
-                {predView.delta != null ? `  ${predView.delta >= 0 ? '+' : ''}${predView.delta}` : ''}
-              </Text>
-            )}
-            <Text style={styles.predHeroSub}>
-              {isTodaySelected ? '2h from now' : `2h after last reading${predView.currentAtLabel ? ` · ${predView.currentAtLabel}` : ''}`}
-              {predView.confidenceLabel ? `  ·  ${predView.confidenceLabel.toUpperCase()} confidence` : ''}
-            </Text>
-            {predView.confidenceLow && predView.readingIsOld && (
-              <Text style={styles.predHeroSub}>Based on an older reading — take a measurement for a sharper forecast.</Text>
-            )}
-            {!predView.aiPowered && <Text style={styles.predHeroSub}>Heuristic estimate</Text>}
-          </View>
-        </LinearGradient>
+              <View style={styles.bannerRight}>
+                <StatusIcon status={status} />
+                <Text style={[styles.statusText, { color: PREDICTION.bannerText }]}>{STATUS_TEXT[status]}</Text>
+              </View>
+            </LinearGradient>
+          );
+        })()
       )}
-
-      <View style={[styles.predictionGraphBox, { backgroundColor: colors.backgroundMuted, borderColor: colors.border }]}>
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-          <Line x1={predictionSVG.paddingLeft} y1={predictionSVG.limitY} x2={CHART_WIDTH - 10} y2={predictionSVG.limitY} stroke={C.amber} strokeWidth={1} strokeDasharray="4,4" strokeOpacity={0.6} />
-          <Path d={predictionSVG.path} fill="none" stroke={C.blue} strokeWidth={2.5} strokeLinecap="round" strokeDasharray="6,4" />
-          {predictionSVG.points.map((p, idx) => (
-            <Circle key={idx} cx={p.x} cy={p.y} r={idx === predictionSVG.points.length - 1 ? 5 : 3} fill={idx === predictionSVG.points.length - 1 ? C.blue : C.redBorder} stroke={colors.textOnPrimary} strokeWidth={1.5} />
-          ))}
-        </Svg>
-      </View>
-
-      <View style={styles.chartLegend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, styles.legendDotSquare, { backgroundColor: C.blue }]} />
-          <Text style={[styles.legendText, { color: C.textSm }]}>Predicted trend</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, styles.legendDotThin, { backgroundColor: C.amber }]} />
-          <Text style={[styles.legendText, { color: C.textSm }]}>140 mg/dL target</Text>
-        </View>
-      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  shrink: { flexShrink: 1 },
-  predHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: spacing.lg },
-  predHeaderIcon: {
-    width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center',
-    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 3,
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.xxl,
+    padding: spacing.xxl,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  predHeaderTitle: { fontSize: 22, fontWeight: '700' },
-  predHeaderSubtitle: { fontSize: 13.5, fontWeight: '500', color: 'rgba(192,57,43,0.75)', marginTop: 1 },
-  predictionBanner: {
-    borderRadius: borderRadius.lg, borderWidth: 1, paddingHorizontal: 14, paddingVertical: spacing.md,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md,
-  },
-  predictionBannerColumn: { flexDirection: 'column', alignItems: 'flex-start', gap: spacing.xs },
-  predBannerLabel: { fontSize: 8, fontWeight: 'bold', letterSpacing: 0.5 },
-  predBannerHint: { marginTop: 2 },
-  predHero: {
-    borderRadius: borderRadius.xxl, padding: spacing.xl, marginBottom: spacing.md,
-    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.28, shadowRadius: 16, elevation: 5,
-  },
-  predHeroTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  predHeroLabel: { fontSize: 12, fontWeight: '600', letterSpacing: 1.2 },
-  predHeroValueRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: spacing.xs },
-  predHeroValue: { fontSize: 56, fontWeight: '800', lineHeight: 60 },
-  predHeroUnit: { fontSize: 20, fontWeight: '600', color: 'rgba(255,255,255,0.75)', marginLeft: 6, marginBottom: spacing.sm },
-  predHeroStatus: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, justifyContent: 'flex-end' },
-  predHeroStatusText: { fontSize: 17, fontWeight: '600' },
-  predHeroFooter: { marginTop: 14, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.18)', gap: spacing.xs },
-  predHeroSub: { fontSize: 12, fontWeight: '500', color: 'rgba(255,255,255,0.85)' },
-  predictionGraphBox: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: borderRadius.lg, paddingVertical: spacing.sm, marginTop: spacing.xs },
-  chartLegend: { flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, marginTop: spacing.sm },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  legendDot: { width: 10, height: 4, borderRadius: 2 },
-  legendDotSquare: { borderRadius: 0 },
-  legendDotThin: { height: 2 },
-  legendText: { fontSize: 9, fontWeight: '600' },
+
+  // Header
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  headerIcon: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 26, fontWeight: '700' },
+  subtitle: { fontSize: 16, fontWeight: '400', marginTop: 2 },
+
+  // Banner
+  banner: { borderRadius: borderRadius.xl, padding: 28, marginTop: spacing.xl },
+  bannerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  bannerCentered: { alignItems: 'center', justifyContent: 'center' },
+  bannerLeft: { flexShrink: 1 },
+  bannerLabel: { fontSize: 15, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
+  valueRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: spacing.sm },
+  value: { fontSize: 64, fontWeight: '700', lineHeight: 66 },
+  unit: { fontSize: 24, fontWeight: '400', color: 'rgba(255,255,255,0.85)', marginLeft: spacing.sm, marginBottom: spacing.sm },
+  bannerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 0 },
+  statusText: { fontSize: 22, fontWeight: '500' },
+  bannerEmptyText: { fontSize: 18, fontWeight: '600' },
+
+  // Skeleton
+  bannerSkeleton: { height: 140 },
+  skelLine: { borderRadius: borderRadius.sm },
+  skelTitle: { width: '55%', height: 22 },
+  skelSubtitle: { width: '75%', height: 14, marginTop: spacing.sm },
 });

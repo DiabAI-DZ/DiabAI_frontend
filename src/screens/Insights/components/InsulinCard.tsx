@@ -6,7 +6,6 @@ import { useTheme } from '../../../context/ThemeContext';
 import { spacing } from '../../../theme/spacing';
 import { borderRadius } from '../../../theme/borderRadius';
 import { cardStyles } from './insightsStyles';
-import { ProgressRing } from './charts';
 import { InsulinSkeleton } from './Skeletons';
 import { INSIGHTS_RED_STRIP } from '../insightsVisuals';
 import type { InsulinEstimate } from '../../../types/insights';
@@ -55,12 +54,9 @@ export const InsulinCard: React.FC<InsulinCardProps> = ({ insulinEstimate, loadi
         ) : (
           <>
             <View style={styles.content}>
-              <View style={styles.ringContainer}>
-                <ProgressRing value={insulinEstimate?.units ?? 4} max={10} size={96} strokeWidth={9} color={colors.criticalText} bgColor={colors.border} segmented />
-                <View style={styles.unitsBox}>
-                  <Text style={styles.unitsVal}>{insulinEstimate?.units ?? 4}</Text>
-                  <Text style={styles.unitsLbl}>units</Text>
-                </View>
+              <View style={styles.circle}>
+                <Text style={styles.unitsVal}>{insulinEstimate?.units ?? 4}</Text>
+                <Text style={styles.unitsLbl}>units</Text>
               </View>
 
               <View style={styles.flex1}>
@@ -100,8 +96,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 15, fontWeight: '800', letterSpacing: 1 },
   body: { padding: 18 },
   content: { flexDirection: 'row', alignItems: 'center', gap: 18 },
-  ringContainer: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
-  unitsBox: { position: 'absolute', alignItems: 'center' },
+  circle: { width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: INSULIN.value, alignItems: 'center', justifyContent: 'center' },
   unitsVal: { fontSize: 32, fontWeight: '800', color: INSULIN.value, lineHeight: 34 },
   unitsLbl: { fontSize: 12, fontWeight: '600', color: INSULIN.valueMuted, marginTop: 1 },
   title: { fontSize: 17, fontWeight: '600', color: INSULIN.title },

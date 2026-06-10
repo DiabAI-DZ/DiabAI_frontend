@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react'
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../../context/ThemeContext';
+import { BRAND_RED_GRADIENT } from '../../../theme/colors';
 
 export interface DateRange {
   dateFrom: Date | null;
@@ -165,7 +166,7 @@ const DateStrip: React.FC<DateStripProps> = ({
         <TouchableOpacity activeOpacity={0.8} onPress={() => handlePress(item)} style={[styles.cell, ...cellStyle, isEndpoint && { shadowColor: colors.primary }]}>
           {isEndpoint && (
             <LinearGradient
-              colors={['#C0392B', '#991B1B']}
+              colors={BRAND_RED_GRADIENT}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={[StyleSheet.absoluteFill, { borderRadius: 16 }]}

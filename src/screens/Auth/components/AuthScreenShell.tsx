@@ -20,7 +20,7 @@ interface AuthScreenShellProps {
 const AuthScreenShell: React.FC<AuthScreenShellProps> = ({ title, subtitle, children, onBack, backLabel = 'Back' }) => {
   const { colors } = useTheme();
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.primaryLight }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {onBack && (
@@ -36,7 +36,7 @@ const AuthScreenShell: React.FC<AuthScreenShellProps> = ({ title, subtitle, chil
             <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
             <Text style={[styles.subtitle, { color: colors.textMuted }]}>{subtitle}</Text>
           </View>
-          <View style={styles.form}>{children}</View>
+          <View style={[styles.form, { backgroundColor: colors.primaryLight, borderColor: colors.border }]}>{children}</View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', marginBottom: spacing.xxxl },
   title: { fontSize: 28, fontWeight: 'bold', marginBottom: spacing.sm },
   subtitle: { fontSize: 15, textAlign: 'center', paddingHorizontal: spacing.md },
-  form: { width: '100%' },
+  form: { width: '100%', borderRadius: 20, borderWidth: 1, padding: spacing.xl },
   backButton: { flexDirection: 'row', alignItems: 'center', position: 'absolute', top: spacing.xl, left: spacing.xl, zIndex: 1 },
   backText: { fontSize: 14, fontWeight: '600', marginLeft: spacing.xs },
 });

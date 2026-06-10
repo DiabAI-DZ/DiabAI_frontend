@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { AlertCircle } from 'lucide-react-native';
 import { useTheme } from '../../../context/ThemeContext';
+import { useUser } from '../../../context/UserContext';
 import { spacing } from '../../../theme/spacing';
 import { borderRadius } from '../../../theme/borderRadius';
 import DateStrip from './DateStrip';
@@ -22,6 +23,22 @@ interface InsightsDashboardProps {
 
 export const InsightsDashboard: React.FC<InsightsDashboardProps> = ({ data, derived, prediction }) => {
   const { C, colors } = useTheme();
+  const { profile } = useUser();
+
+  const targetMin = profile?.goals?.min ?? 70;
+  const targetMax = profile?.goals?.max ?? 140;
+
+  // Build the prediction card's data model from the derived forecast. A null predView (or a day
+  // with no reading to forecast from) renders the card's "Not enough data yet" empty state.
+  const predView = derived.predView;
+  const predictionData =
+    predView && prediction.selectedHasReading !== false
+      ? {
+          predicted_value: predView.expected,
+          prediction_time: predView.expectedAt ?? '',
+          unit: 'mg/dL',
+        }
+      : null;
 
   return (
     <>
@@ -55,10 +72,11 @@ export const InsightsDashboard: React.FC<InsightsDashboardProps> = ({ data, deri
           weeklyStats={derived.weeklyStats}
         />
         <PredictionCard
-          predView={derived.predView}
-          predictionSVG={derived.predictionSVG}
-          selectedHasReading={prediction.selectedHasReading}
-          isTodaySelected={prediction.isTodaySelected}
+          prediction={predictionData}
+          targetMin={targetMin}
+          targetMax={targetMax}
+          loading={data.loading && !predView}
+          error={!!data.error && !predView}
         />
         <InsulinCard insulinEstimate={data.insulinEstimate} loading={data.loading} />
         <PatternsCard patterns={derived.patternViews} loading={data.loading} />
