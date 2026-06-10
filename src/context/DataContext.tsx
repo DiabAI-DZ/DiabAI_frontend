@@ -179,7 +179,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
           }
           insightsService
-            .fetchInsightsBundle(params, { emitPremiumUi: false })
+            // Free users' insights are gated/empty — fetch for the home dashboard but never
+            // cache, so upgrading later can't serve a stale free-tier bundle from cache.
+            .fetchInsightsBundle(params, { emitPremiumUi: false, noStore: !profile?.isPremium })
             .then(bundle => setRecommendations(bundle?.recommendations?.recommendations ?? []))
             .catch(() => {});
         });

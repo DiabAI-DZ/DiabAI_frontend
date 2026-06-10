@@ -140,7 +140,7 @@ export function isStale(bundle: InsightsBundle): boolean {
  */
 export function fetchInsightsBundle(
   params: InsightsParams,
-  opts: { emitPremiumUi?: boolean } = {}
+  opts: { emitPremiumUi?: boolean; noStore?: boolean } = {}
 ): Promise<InsightsBundle> {
   const key = keyOf(params);
   const existing = inflight.get(key);
@@ -149,6 +149,9 @@ export function fetchInsightsBundle(
   const { dateFrom, dateTo, selectedDate, model } = params;
   const signal = sessionController.signal;
   const emitPremiumUi = opts.emitPremiumUi !== false;
+  // Free users never persist their (gated/empty) bundle, so upgrading later can't serve a
+  // stale free-tier result from cache — the next premium load always fetches fresh.
+  const noStore = opts.noStore === true;
 
   const run = (async (): Promise<InsightsBundle> => {
     // ONE aggregate call (not four parallel) — see apiService.fetchInsights for why.
@@ -202,8 +205,10 @@ export function fetchInsightsBundle(
       model,
       fetchedAt: Date.now(),
     };
-    memCache.set(key, bundle);
-    AsyncStorage.setItem(key, JSON.stringify(bundle)).catch(() => {});
+    if (!noStore) {
+      memCache.set(key, bundle);
+      AsyncStorage.setItem(key, JSON.stringify(bundle)).catch(() => {});
+    }
     return bundle;
   })();
 

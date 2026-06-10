@@ -51,6 +51,11 @@ export const InsulinCard: React.FC<InsulinCardProps> = ({ insulinEstimate, loadi
       <View style={styles.body}>
         {loading && !insulinEstimate ? (
           <InsulinSkeleton colors={colors} />
+        ) : !insulinEstimate ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No estimate available yet</Text>
+            <Text style={styles.emptyDesc}>An insulin estimate will appear here once enough recent data is available.</Text>
+          </View>
         ) : (
           <>
             <View style={styles.content}>
@@ -106,6 +111,9 @@ const styles = StyleSheet.create({
   chipNeutralText: { fontSize: 12.5, fontWeight: '600', color: INSULIN.chipNeutralText },
   chipTarget: { borderRadius: borderRadius.pill, paddingHorizontal: spacing.md, paddingVertical: 7, backgroundColor: INSULIN.chipTargetBg, borderWidth: 1, borderColor: INSULIN.chipTargetBorder },
   chipTargetText: { fontSize: 12.5, fontWeight: '700', color: INSULIN.chipTargetText },
+  emptyState: { paddingVertical: spacing.xl, alignItems: 'center' },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: INSULIN.title },
+  emptyDesc: { fontSize: 12.5, lineHeight: 18, color: INSULIN.desc, textAlign: 'center', marginTop: spacing.xs },
   disclaimer: { flexDirection: 'row', padding: 14, borderRadius: borderRadius.lg, marginTop: spacing.lg, gap: spacing.sm, backgroundColor: INSULIN.disclaimerBg },
   shieldIcon: { marginTop: 1 },
   disclaimerText: { flex: 1, fontSize: 12, lineHeight: 17, color: INSULIN.disclaimerText },

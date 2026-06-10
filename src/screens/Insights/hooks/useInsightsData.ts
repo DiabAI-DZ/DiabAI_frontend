@@ -52,6 +52,9 @@ export function useInsightsData(isActive: boolean): InsightsDataResult {
   const mountedRef = useRef(true);
 
   const patientId = useMemo(() => String(profile?.email ?? 'anon'), [profile]);
+  // Free users get gated/empty insights — never cache those, and always relaunch a fresh
+  // request so the moment they upgrade the screen loads real premium data (no stale free bundle).
+  const isPremium = !!profile?.isPremium;
   const defaultRange = useMemo(() => {
     const to = new Date();
     return { from: new Date(to.getTime() - DEFAULT_WINDOW_DAYS * DAY_MS), to };
@@ -96,9 +99,10 @@ export function useInsightsData(isActive: boolean): InsightsDataResult {
       model: SELECTED_MODEL,
     });
     await insightsService.hydrate();
-    const cached = insightsService.getCached(params);
+    // Free users bypass the cache entirely: always relaunch and never store the result.
+    const cached = isPremium && !force ? insightsService.getCached(params) : null;
 
-    if (cached && !force) {
+    if (cached) {
       applyBundle(cached);
       setError(false);
       setLoading(false);
@@ -111,14 +115,14 @@ export function useInsightsData(isActive: boolean): InsightsDataResult {
       return;
     }
 
-    // No cache / forced retry → clear stale data so skeletons show, then await the long call.
+    // No cache / forced retry / free user → clear stale data so skeletons show, then await the long call.
     setRecommendations([]);
     setPatterns([]);
     setInsulinEstimate(null);
     setError(false);
     setLoading(true);
     try {
-      const bundle = await insightsService.fetchInsightsBundle(params);
+      const bundle = await insightsService.fetchInsightsBundle(params, { noStore: !isPremium });
       if (!mountedRef.current) return;
       applyBundle(bundle);
     } catch (e) {
@@ -130,7 +134,7 @@ export function useInsightsData(isActive: boolean): InsightsDataResult {
       if (mountedRef.current) setLoading(false);
     }
     // `range` is read above but tracked via the stable `rangeKey` string.
-  }, [patientId, rangeKey, applyBundle]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [patientId, rangeKey, applyBundle, isPremium]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lastRangeKeyRef = useRef<string | null>(null); // tells an initial load apart from a date change
 

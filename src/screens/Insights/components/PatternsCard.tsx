@@ -44,6 +44,8 @@ export const PatternsCard: React.FC<PatternsCardProps> = ({ patterns, loading })
             <SkeletonRow colors={colors} />
             <SkeletonRow colors={colors} />
           </>
+        ) : patterns.length === 0 ? (
+          <Text style={[styles.emptyText, { color: C.textSm }]}>No patterns detected yet. Keep logging and AI-identified trends will show up here.</Text>
         ) : patterns.map((p) => {
           const vis = patternVisual(p.category, p.title);
           const Icon = vis.Icon;
@@ -84,6 +86,7 @@ const styles = StyleSheet.create({
   badge: { borderRadius: borderRadius.pill, paddingHorizontal: spacing.md, paddingVertical: 6 },
   badgeText: { fontSize: 12, fontWeight: '700' },
   list: { gap: spacing.sm, marginTop: 14 },
+  emptyText: { fontSize: 13, lineHeight: 19, paddingVertical: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, borderWidth: 1, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
   iconCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, paddingHorizontal: spacing.md },

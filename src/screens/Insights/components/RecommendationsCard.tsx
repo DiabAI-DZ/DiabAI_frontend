@@ -36,6 +36,8 @@ export const RecommendationsCard: React.FC<RecommendationsCardProps> = ({ recomm
             <SkeletonRow colors={colors} />
             <SkeletonRow colors={colors} />
           </>
+        ) : recommendations.length === 0 ? (
+          <Text style={[styles.emptyText, { color: C.textSm }]}>No recommendations right now. Personalized advice will appear here once the AI has enough data.</Text>
         ) : recommendations.map((rec) => {
           const vis = recVisual(rec.category, rec.title);
           const Icon = vis.Icon;
@@ -65,6 +67,7 @@ const styles = StyleSheet.create({
   headerIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '700' },
   list: { gap: spacing.sm, marginTop: 14 },
+  emptyText: { fontSize: 13, lineHeight: 19, paddingVertical: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'flex-start', padding: spacing.lg, borderRadius: 14, borderWidth: 1, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
   iconBox: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, paddingHorizontal: spacing.md },
