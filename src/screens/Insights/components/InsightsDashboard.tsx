@@ -21,24 +21,24 @@ interface InsightsDashboardProps {
   prediction: UsePredictionResult;
 }
 
-export const InsightsDashboard: React.FC<InsightsDashboardProps> = ({ data, derived, prediction }) => {
+export const InsightsDashboard: React.FC<InsightsDashboardProps> = ({ data, derived }) => {
   const { C, colors } = useTheme();
   const { profile } = useUser();
 
   const targetMin = profile?.goals?.min ?? 70;
   const targetMax = profile?.goals?.max ?? 140;
 
-  // Build the prediction card's data model from the derived forecast. A null predView (or a day
-  // with no reading to forecast from) renders the card's "Not enough data yet" empty state.
+  // Build the prediction card's data model from the derived forecast. The forecast is anchored
+  // server-side to the latest reading (not the selected day), so it's shown whenever one exists;
+  // only a missing forecast (predView === null) falls back to the "Not enough data yet" state.
   const predView = derived.predView;
-  const predictionData =
-    predView && prediction.selectedHasReading !== false
-      ? {
-          predicted_value: predView.expected,
-          prediction_time: predView.expectedAt ?? '',
-          unit: 'mg/dL',
-        }
-      : null;
+  const predictionData = predView
+    ? {
+        predicted_value: predView.expected,
+        prediction_time: predView.expectedAt ?? '',
+        unit: 'mg/dL',
+      }
+    : null;
 
   return (
     <>

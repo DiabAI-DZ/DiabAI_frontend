@@ -34,7 +34,9 @@ export function usePrediction(
   const logCount = logs.length;
   const predFrom = formatDateStr(range?.from ?? defaultRange.from);
   const predTo = formatDateStr(range?.to ?? defaultRange.to);
-  const predSelected = formatDateStr(selectedDate ?? range?.to ?? defaultRange.to);
+  // Anchor the forecast to the strip's date_to (its last 24h of data) — same as the insulin
+  // estimate — rather than the global "today" selectedDate.
+  const predSelected = formatDateStr(range?.to ?? selectedDate ?? defaultRange.to);
   // Today predicts from "now"; past dates stay anchored to that day's last reading.
   const isTodaySelected = predSelected === formatDateStr(new Date());
 
