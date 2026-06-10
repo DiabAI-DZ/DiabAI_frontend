@@ -90,7 +90,7 @@ export const InsightsDashboard: React.FC<InsightsDashboardProps> = ({ data, deri
 
 const styles = StyleSheet.create({
   scrollArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: spacing.xl, paddingTop: spacing.xs, gap: spacing.lg },
+  scrollContent: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, gap: spacing.lg },
   errorCard: { borderRadius: borderRadius.lg, borderWidth: 1, padding: spacing.xl, marginBottom: spacing.lg, alignItems: 'center' },
   errorIconBox: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
   errorTitle: { fontSize: 15, fontWeight: '800', marginBottom: spacing.xs },

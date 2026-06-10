@@ -9,7 +9,7 @@ const CriticalBanner: React.FC = () => {
   const { colors } = useTheme();
   return (
     <View style={[styles.banner, { backgroundColor: colors.primary }]}>
-      <AlertTriangle size={13} color={colors.textOnPrimary} strokeWidth={2.4} />
+      <AlertTriangle size={11} color={colors.textOnPrimary} strokeWidth={2.4} />
       <Text style={[styles.text, { color: colors.textOnPrimary }]}>REQUIRES IMMEDIATE ATTENTION</Text>
     </View>
   );
@@ -19,14 +19,14 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 9,
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
   },
   text: {
-    fontSize: 11,
+    fontSize: 9.5,
     fontWeight: '800',
-    letterSpacing: 0.6,
+    letterSpacing: 0.5,
   },
 });
 

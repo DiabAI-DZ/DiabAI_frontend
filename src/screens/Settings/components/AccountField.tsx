@@ -21,19 +21,19 @@ const AccountField: React.FC<AccountFieldProps> = ({ label, icon: Icon, value, o
   return (
     <View style={styles.container}>
       <Text style={[styles.label, { color: focused ? colors.primary : colors.textSecondary }]}>{label}</Text>
-      <View style={[styles.inputWrapper, { backgroundColor: colors.backgroundInput, borderColor: focused ? colors.primary : colors.border }]}>
+      <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: focused ? colors.primary : colors.inputBorder }]}>
         <View style={styles.icon}>
-          <Icon size={18} color={colors.textMuted} strokeWidth={1.8} />
+          <Icon size={18} color={colors.inputText} strokeWidth={1.8} />
         </View>
         <TextInput
-          style={[styles.input, { color: colors.textPrimary }]}
+          style={[styles.input, { color: colors.inputText }]}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           keyboardType={keyboardType || 'default'}
           placeholder={label}
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={colors.inputText}
           autoCorrect={false}
         />
       </View>

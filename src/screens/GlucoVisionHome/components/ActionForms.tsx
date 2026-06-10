@@ -21,7 +21,7 @@ interface ActionPopupProps {
 }
 
 const ActionForms: React.FC<ActionPopupProps> = ({ visible, onClose, type, onSave }) => {
-  const { C, colors, isDark } = useTheme();
+  const { C, colors } = useTheme();
   
   // Injection States
   const [insulinType, setInsulinType] = useState('rapid_acting');
@@ -90,9 +90,10 @@ const ActionForms: React.FC<ActionPopupProps> = ({ visible, onClose, type, onSav
       </View>
 
       <Text style={[styles.label, { color: C.textSm, marginTop: 20 }]}>Dose Units</Text>
-      <View style={[styles.inputBox, { backgroundColor: isDark ? colors.backgroundInput : C.redBg, borderColor: isDark ? colors.border : C.redBorder }]}>
+      <View style={[styles.inputBox, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
         <TextInput
-          style={[styles.input, { color: C.text }]}
+          style={[styles.input, { color: colors.inputText }]}
+          placeholderTextColor={colors.inputText}
           placeholder="0.0"
           value={dose}
           onChangeText={setDose}
@@ -135,9 +136,10 @@ const ActionForms: React.FC<ActionPopupProps> = ({ visible, onClose, type, onSav
       </View>
 
       <Text style={[styles.label, { color: C.textSm, marginTop: 20 }]}>Duration (minutes)</Text>
-      <View style={[styles.inputBox, { backgroundColor: isDark ? colors.backgroundInput : C.redBg, borderColor: isDark ? colors.border : C.redBorder }]}>
+      <View style={[styles.inputBox, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
         <TextInput
-          style={[styles.input, { color: C.text }]}
+          style={[styles.input, { color: colors.inputText }]}
+          placeholderTextColor={colors.inputText}
           placeholder="30"
           value={duration}
           onChangeText={setDuration}
@@ -149,9 +151,10 @@ const ActionForms: React.FC<ActionPopupProps> = ({ visible, onClose, type, onSav
       {(activityType === 'walking' || activityType === 'running' || activityType === 'cycling') && (
         <>
           <Text style={[styles.label, { color: C.textSm, marginTop: 20 }]}>Distance (km)</Text>
-          <View style={[styles.inputBox, { backgroundColor: isDark ? colors.backgroundInput : C.redBg, borderColor: isDark ? colors.border : C.redBorder }]}>
+          <View style={[styles.inputBox, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
             <TextInput
-              style={[styles.input, { color: C.text }]}
+              style={[styles.input, { color: colors.inputText }]}
+          placeholderTextColor={colors.inputText}
               placeholder="0.0"
               value={distance}
               onChangeText={setDistance}
@@ -212,9 +215,9 @@ const ActionForms: React.FC<ActionPopupProps> = ({ visible, onClose, type, onSav
             
             <Text style={[styles.label, { color: C.textSm, marginTop: 20 }]}>Notes</Text>
             <TextInput
-              style={[styles.notesInput, { backgroundColor: isDark ? colors.backgroundInput : C.redBg, borderColor: isDark ? colors.border : C.redBorder, color: C.text }]}
+              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.inputText }]}
               placeholder="Add details..."
-              placeholderTextColor={C.textXs}
+              placeholderTextColor={colors.inputText}
               multiline
               value={notes}
               onChangeText={setNotes}

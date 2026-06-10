@@ -13,11 +13,11 @@ export const LightTheme = {
   backgroundCard:    '#FFFFFF',
   backgroundInput:   '#FFFFFF',
   backgroundMuted:   '#F0F0F0',
-  // Pink-tinted input fill + border, used on the auth form (which itself sits on
-  // `primaryLight`). The input fill is a touch deeper than the form so the fields
-  // still read as distinct surfaces, with a soft pink outline.
-  inputPinkBg:       '#FFE4E8',
-  inputPinkBorder:   '#F4B8C2',
+
+  // Form inputs (pink-tinted fields used app-wide)
+  inputBg:           '#FCF0F0',
+  inputBorder:       '#EAC5C5',
+  inputText:         '#C88686',
 
   // Brand
   primary:           '#8B0000',
@@ -97,10 +97,11 @@ export const DarkTheme = {
   backgroundCard:    '#1C1C22',
   backgroundInput:   '#2A2A32',
   backgroundMuted:   '#252530',
-  // Pink-tinted input fill + border (dark-red tints so the pink intent survives
-  // on the dark `primaryLight` form background).
-  inputPinkBg:       '#4A1518',
-  inputPinkBorder:   '#6E2A2E',
+
+  // Form inputs (pink-tinted fields used app-wide; dark variants)
+  inputBg:           '#241A1C',
+  inputBorder:       '#5A3A3A',
+  inputText:         '#D8A9A9',
 
   // Brand (keep red — it works on dark)
   primary:           '#C0392B',

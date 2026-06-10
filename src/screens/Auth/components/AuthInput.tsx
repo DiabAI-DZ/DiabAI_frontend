@@ -34,11 +34,11 @@ const AuthInput: React.FC<AuthInputProps> = ({
 
   if (secure) {
     return (
-      <View style={[styles.passwordContainer, { backgroundColor: colors.inputPinkBg, borderColor: colors.inputPinkBorder }, containerStyle]}>
+      <View style={[styles.passwordContainer, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, containerStyle]}>
         <TextInput
-          style={[styles.input, styles.passwordInput, { color: colors.textPrimary }]}
+          style={[styles.input, styles.passwordInput, { color: colors.inputText }]}
           placeholder={placeholder}
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={colors.inputText}
           secureTextEntry={hidden}
           autoCapitalize="none"
           autoCorrect={false}
@@ -46,7 +46,7 @@ const AuthInput: React.FC<AuthInputProps> = ({
           onChangeText={onChangeText}
         />
         <TouchableOpacity onPress={() => setHidden(!hidden)} style={styles.eyeIcon}>
-          {hidden ? <EyeOff size={20} color={colors.textMuted} /> : <Eye size={20} color={colors.textMuted} />}
+          {hidden ? <EyeOff size={20} color={colors.inputText} /> : <Eye size={20} color={colors.inputText} />}
         </TouchableOpacity>
       </View>
     );
@@ -54,9 +54,9 @@ const AuthInput: React.FC<AuthInputProps> = ({
 
   return (
     <TextInput
-      style={[styles.input, { backgroundColor: colors.inputPinkBg, borderColor: colors.inputPinkBorder, color: colors.textPrimary }, containerStyle]}
+      style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.inputText }, containerStyle]}
       placeholder={placeholder}
-      placeholderTextColor={colors.textMuted}
+      placeholderTextColor={colors.inputText}
       keyboardType={keyboardType}
       autoCapitalize={autoCapitalize}
       autoCorrect={false}

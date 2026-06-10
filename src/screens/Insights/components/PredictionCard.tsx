@@ -55,9 +55,9 @@ const STATUS_TEXT: Record<PredictionStatus, string> = {
 
 const StatusIcon: React.FC<{ status: PredictionStatus }> = ({ status }) => {
   const color = PREDICTION.bannerText;
-  if (status === 'above_target') return <ArrowUpRight size={24} color={color} strokeWidth={2.5} />;
-  if (status === 'below_target') return <ArrowDownRight size={24} color={color} strokeWidth={2.5} />;
-  return <Check size={24} color={color} strokeWidth={2.5} />;
+  if (status === 'above_target') return <ArrowUpRight size={22} color={color} strokeWidth={2.5} />;
+  if (status === 'below_target') return <ArrowDownRight size={22} color={color} strokeWidth={2.5} />;
+  return <Check size={22} color={color} strokeWidth={2.5} />;
 };
 
 export const PredictionCard: React.FC<PredictionCardProps> = ({
@@ -68,11 +68,11 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
   const Header = (
     <View style={styles.headerRow}>
       <View style={[styles.headerIcon, { backgroundColor: PREDICTION.iconBg }]}>
-        <TrendingUp size={28} color={PREDICTION.bannerText} strokeWidth={2.5} />
+        <TrendingUp size={26} color={PREDICTION.bannerText} strokeWidth={2.5} />
       </View>
       <View style={styles.flex1}>
-        <Text style={[styles.title, { color: colors.textPrimary }]}>Prediction</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>AI-powered glucose forecast</Text>
+        <Text allowFontScaling={false} style={[styles.title, { color: colors.textPrimary }]}>Prediction</Text>
+        <Text allowFontScaling={false} style={[styles.subtitle, { color: colors.textSecondary }]}>AI-powered glucose forecast</Text>
       </View>
     </View>
   );
@@ -99,7 +99,7 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
 
       {error ? (
         <View style={[styles.banner, styles.bannerCentered, { backgroundColor: colors.backgroundMuted }]}>
-          <Text style={[styles.bannerEmptyText, { color: colors.textSecondary }]}>Forecast unavailable</Text>
+          <Text allowFontScaling={false} style={[styles.bannerEmptyText, { color: colors.textSecondary }]}>Forecast unavailable</Text>
         </View>
       ) : !prediction ? (
         <LinearGradient
@@ -108,7 +108,7 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
           end={{ x: 1, y: 1 }}
           style={[styles.banner, styles.bannerCentered]}
         >
-          <Text style={[styles.bannerEmptyText, { color: PREDICTION.bannerText }]}>Not enough data yet</Text>
+          <Text allowFontScaling={false} style={[styles.bannerEmptyText, { color: PREDICTION.bannerText }]}>Not enough data yet</Text>
         </LinearGradient>
       ) : (
         (() => {
@@ -119,21 +119,22 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
               colors={PREDICTION.bannerGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[styles.banner, styles.bannerRow]}
+              style={styles.banner}
             >
-              <View style={styles.bannerLeft}>
-                <Text style={[styles.bannerLabel, { color: PREDICTION.bannerText }]}>
-                  EXPECTED AT {formatTime(prediction.prediction_time)}
+              <Text allowFontScaling={false} numberOfLines={1} style={[styles.bannerLabel, { color: PREDICTION.bannerText }]}>
+                EXPECTED AT {formatTime(prediction.prediction_time)}
+              </Text>
+              <View style={styles.valueRow}>
+                <Text allowFontScaling={false} numberOfLines={1} style={[styles.value, { color: PREDICTION.bannerText }]}>
+                  {prediction.predicted_value}
                 </Text>
-                <View style={styles.valueRow}>
-                  <Text style={[styles.value, { color: PREDICTION.bannerText }]}>{prediction.predicted_value}</Text>
-                  <Text style={styles.unit}>{unit}</Text>
-                </View>
+                <Text allowFontScaling={false} style={styles.unit}>{unit}</Text>
               </View>
-
-              <View style={styles.bannerRight}>
+              <View style={styles.statusRow}>
                 <StatusIcon status={status} />
-                <Text style={[styles.statusText, { color: PREDICTION.bannerText }]}>{STATUS_TEXT[status]}</Text>
+                <Text allowFontScaling={false} numberOfLines={1} style={[styles.statusText, { color: PREDICTION.bannerText }]}>
+                  {STATUS_TEXT[status]}
+                </Text>
               </View>
             </LinearGradient>
           );
@@ -148,7 +149,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: borderRadius.xxl,
-    padding: spacing.xxl,
+    padding: spacing.xl,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -156,27 +157,25 @@ const styles = StyleSheet.create({
   },
 
   // Header
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
-  headerIcon: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 26, fontWeight: '700' },
-  subtitle: { fontSize: 16, fontWeight: '400', marginTop: 2 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  headerIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 22, fontWeight: '700' },
+  subtitle: { fontSize: 15, fontWeight: '400', marginTop: 2 },
 
-  // Banner
-  banner: { borderRadius: borderRadius.xl, padding: 28, marginTop: spacing.xl },
-  bannerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  bannerCentered: { alignItems: 'center', justifyContent: 'center' },
-  bannerLeft: { flexShrink: 1 },
-  bannerLabel: { fontSize: 15, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
+  // Banner — compact, vertically stacked: label · value+unit · status
+  banner: { borderRadius: borderRadius.xl, paddingHorizontal: spacing.xl, paddingVertical: spacing.lg, marginTop: spacing.lg },
+  bannerCentered: { alignItems: 'center', justifyContent: 'center', minHeight: 112 },
+  bannerLabel: { fontSize: 14, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
   valueRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: spacing.sm },
-  value: { fontSize: 64, fontWeight: '700', lineHeight: 66 },
-  unit: { fontSize: 24, fontWeight: '400', color: 'rgba(255,255,255,0.85)', marginLeft: spacing.sm, marginBottom: spacing.sm },
-  bannerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 0 },
-  statusText: { fontSize: 22, fontWeight: '500' },
+  value: { fontSize: 56, fontWeight: '800', lineHeight: 58 },
+  unit: { fontSize: 22, fontWeight: '400', color: 'rgba(255,255,255,0.85)', marginLeft: 8, marginBottom: 6 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.md },
+  statusText: { fontSize: 20, fontWeight: '600' },
   bannerEmptyText: { fontSize: 18, fontWeight: '600' },
 
   // Skeleton
-  bannerSkeleton: { height: 140 },
+  bannerSkeleton: { minHeight: 112 },
   skelLine: { borderRadius: borderRadius.sm },
-  skelTitle: { width: '55%', height: 22 },
+  skelTitle: { width: '55%', height: 20 },
   skelSubtitle: { width: '75%', height: 14, marginTop: spacing.sm },
 });

@@ -36,12 +36,12 @@ const LogbookHeader: React.FC<LogbookHeaderProps> = ({ searchQuery, setSearchQue
       </View>
 
       <View style={styles.searchRow}>
-        <View style={[styles.searchBox, { backgroundColor: C.redBg, borderColor: C.redBorder }]}>
-          <Search size={16} color={C.redMuted} />
+        <View style={[styles.searchBox, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+          <Search size={16} color={colors.inputText} />
           <TextInput
-            style={[styles.searchInput, { color: C.text }]}
+            style={[styles.searchInput, { color: colors.inputText }]}
             placeholder="Search meals or measurements..."
-            placeholderTextColor={C.redMuted}
+            placeholderTextColor={colors.inputText}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />

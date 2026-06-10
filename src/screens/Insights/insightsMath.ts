@@ -131,9 +131,13 @@ export function computeAvgWeekDelta(logs: LogEntry[], selectedDate: Date): numbe
 export interface WeeklySVG {
   points: { x: number; y: number }[];
   path: string;
+  /** Line path closed down to the chart baseline — used for the gradient area fill. */
+  areaPath: string;
   limitMinY: number;
   limitMaxY: number;
   paddingLeft: number;
+  /** Y of the chart baseline (where the area fill bottoms out). */
+  chartBottom: number;
 }
 
 /** Smooth cubic-bezier path + target lines for the weekly trend chart. */
@@ -154,9 +158,13 @@ export function buildWeeklySVG(interpolated: { value: number }[]): WeeklySVG {
     const cpX = p0.x + (p1.x - p0.x) / 2;
     path += ` C ${cpX} ${p0.y}, ${cpX} ${p1.y}, ${p1.x} ${p1.y}`;
   }
+  const chartBottom = paddingTop + graphHeight;
+  const areaPath = points.length
+    ? `${path} L ${points[points.length - 1].x} ${chartBottom} L ${points[0].x} ${chartBottom} Z`
+    : '';
   const limitMinY = paddingTop + graphHeight - ((70 - minVal) / (maxVal - minVal)) * graphHeight;
   const limitMaxY = paddingTop + graphHeight - ((140 - minVal) / (maxVal - minVal)) * graphHeight;
-  return { points, path, limitMinY, limitMaxY, paddingLeft };
+  return { points, path, areaPath, limitMinY, limitMaxY, paddingLeft, chartBottom };
 }
 
 export interface PredictionSVG {

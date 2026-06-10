@@ -7,7 +7,7 @@ import { spacing } from '../../../theme/spacing';
 import { borderRadius } from '../../../theme/borderRadius';
 import { cardStyles } from './insightsStyles';
 import { InsulinSkeleton } from './Skeletons';
-import { INSIGHTS_RED_STRIP } from '../insightsVisuals';
+import { BRAND_RED_GRADIENT } from '../../../theme/colors';
 import type { InsulinEstimate } from '../../../types/insights';
 
 // Bespoke warm-red palette for the insulin card (Figma) — intentional decorative constants,
@@ -43,7 +43,7 @@ export const InsulinCard: React.FC<InsulinCardProps> = ({ insulinEstimate, loadi
 
   return (
     <View style={[cardStyles.card, styles.overflow, { backgroundColor: colors.backgroundCard, borderColor: C.redBorder, shadowColor: colors.shadow }]}>
-      <LinearGradient colors={INSIGHTS_RED_STRIP} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.headerStrip}>
+      <LinearGradient colors={BRAND_RED_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerStrip}>
         <Syringe size={20} color={colors.textOnPrimary} strokeWidth={2.2} />
         <Text style={[styles.headerTitle, { color: colors.textOnPrimary }]}>ESTIMATED INSULIN NEED</Text>
       </LinearGradient>

@@ -48,11 +48,11 @@ export const DemographicsModal: React.FC<DemographicsModalProps> = ({ open, onCl
           <View key={f.key}>
             <Text style={[formStyles.label, { color: C.textSm }]}>{f.label}</Text>
             <TextInput
-              style={[formStyles.input, { backgroundColor: colors.backgroundInput, borderColor: colors.border, color: colors.textPrimary }]}
+              style={[formStyles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.inputText }]}
               value={form[f.key]}
               onChangeText={(v) => setField(f.key, v.replace(/[^0-9.]/g, ''))}
               placeholder={f.placeholder}
-              placeholderTextColor={C.textXs || colors.textMuted}
+              placeholderTextColor={colors.inputText}
               keyboardType="numeric"
             />
           </View>

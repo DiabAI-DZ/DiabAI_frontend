@@ -68,9 +68,9 @@ export const InsightsChat: React.FC<{ chat: UseInsightsChatResult }> = ({ chat }
 
       <View style={[styles.inputContainer, { backgroundColor: C.white, borderTopColor: C.divider }]}>
         <TextInput
-          style={[styles.input, { color: C.text, backgroundColor: colors.backgroundInput }]}
+          style={[styles.input, { color: colors.inputText, backgroundColor: colors.inputBg, borderWidth: 1, borderColor: colors.inputBorder }]}
           placeholder="Ask about your trends, sugar levels..."
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={colors.inputText}
           value={input}
           onChangeText={setInput}
           onSubmitEditing={send}

@@ -65,7 +65,7 @@ export const GlucoseConfirm: React.FC<GlucoseConfirmProps> = ({ scanResult, setS
         <View style={styles.detectedRow}>
           {isEditing ? (
             <TextInput
-              style={[styles.detectedValue, styles.detectedValueEdit, { color: C.text, borderBottomColor: C.red }]}
+              style={[styles.detectedValue, styles.detectedValueEdit, { color: colors.inputText, borderBottomColor: colors.inputBorder }]}
               value={scanResult.value?.toString()}
               onChangeText={(v) => update({ value: parseFloat(v) || 0 })}
               keyboardType="numeric"
@@ -100,9 +100,9 @@ export const GlucoseConfirm: React.FC<GlucoseConfirmProps> = ({ scanResult, setS
 
       <Text style={[styles.subLabel, styles.notesLabel, { color: C.text }]}>Notes</Text>
       <TextInput
-        style={[styles.notesInput, { color: C.text, backgroundColor: cardBg, borderColor: cardBorder }]}
+        style={[styles.notesInput, { color: colors.inputText, backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}
         placeholder="Add a note about this reading..."
-        placeholderTextColor={C.textXs}
+        placeholderTextColor={colors.inputText}
         value={notes}
         onChangeText={setNotes}
         multiline

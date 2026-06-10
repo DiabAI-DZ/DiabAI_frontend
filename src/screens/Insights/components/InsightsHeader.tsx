@@ -26,11 +26,11 @@ export const InsightsHeader: React.FC<InsightsHeaderProps> = ({ showClear, onCle
   const unreadCount = useMemo(() => alerts.filter((a) => !a.read).length, [alerts]);
 
   return (
-    <View style={[styles.header, { borderBottomColor: C.divider }]}>
+    <View style={styles.header}>
       <View style={styles.flex1}>
-        <Text style={[styles.dateText, { color: C.textSm }]}>{dateLabel}</Text>
+        <Text style={[styles.dateText, { color: C.redMuted }]}>{dateLabel}</Text>
         <Text style={[styles.titleText, { color: C.text }]}>Hello, {profile?.name || 'there'}</Text>
-        <Text style={[styles.subText, { color: C.textSm }]}>Track your glucose with confidence</Text>
+        <Text style={[styles.subText, { color: C.redMuted }]}>Track your glucose with confidence</Text>
       </View>
       <View style={styles.actions}>
         {showClear && (
@@ -55,14 +55,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: 60,
     paddingBottom: spacing.lg,
-    borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  dateText: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3, marginBottom: 2 },
-  titleText: { fontSize: 20, fontWeight: '900' },
-  subText: { fontSize: 11, fontWeight: '600', marginTop: 1 },
+  dateText: { fontSize: 13, fontWeight: '600', letterSpacing: 0.3, marginBottom: 3 },
+  titleText: { fontSize: 28, fontWeight: '800' },
+  subText: { fontSize: 14, fontWeight: '500', marginTop: 3 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   clearBtn: { padding: spacing.sm, borderRadius: borderRadius.md },
   alertButton: { position: 'relative' },

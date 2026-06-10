@@ -57,7 +57,7 @@ export const MealConfirm: React.FC<MealConfirmProps> = ({ scanResult, setScanRes
         {isEditing ? (
           <View style={styles.full}>
             <TextInput
-              style={[styles.titleInput, { color: C.text, borderBottomColor: C.redBorder }]}
+              style={[styles.titleInput, { color: colors.inputText, borderBottomColor: colors.inputBorder }]}
               value={title}
               onChangeText={(val) => setScanResult((prev) => applyMealSelection(prev || {}, val))}
               autoFocus
@@ -129,9 +129,9 @@ export const MealConfirm: React.FC<MealConfirmProps> = ({ scanResult, setScanRes
           <Text style={[styles.subLabel, styles.notesLabel, { color: C.text }]}>Add Notes <Text style={[styles.optional, { color: C.red + 'AA' }]}>(optional)</Text></Text>
         </View>
         <TextInput
-          style={[styles.notesInput, { color: C.text, backgroundColor: C.white, borderColor: C.redBorder }]}
+          style={[styles.notesInput, { color: colors.inputText, backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}
           placeholder="How are you feeling? Any specific details about this meal?"
-          placeholderTextColor={C.textXs}
+          placeholderTextColor={colors.inputText}
           multiline
           value={notes}
           onChangeText={setNotes}

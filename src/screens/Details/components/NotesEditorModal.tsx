@@ -43,9 +43,9 @@ const NotesEditorModal: React.FC<NotesEditorModalProps> = ({
             value={value}
             onChangeText={onChange}
             placeholder={placeholder}
-            placeholderTextColor={C.textXs}
+            placeholderTextColor={colors.inputText}
             multiline
-            style={[styles.input, { color: C.text, borderColor: C.divider, backgroundColor: C.bg }]}
+            style={[styles.input, { color: colors.inputText, borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}
           />
           <TouchableOpacity
             style={[styles.saveBtn, { backgroundColor: colors.primary, opacity: saving ? 0.7 : 1 }]}
