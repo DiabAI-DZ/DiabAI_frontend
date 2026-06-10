@@ -34,7 +34,7 @@ const AuthInput: React.FC<AuthInputProps> = ({
 
   if (secure) {
     return (
-      <View style={[styles.passwordContainer, { backgroundColor: colors.backgroundInput, borderColor: colors.border }, containerStyle]}>
+      <View style={[styles.passwordContainer, { backgroundColor: colors.inputPinkBg, borderColor: colors.inputPinkBorder }, containerStyle]}>
         <TextInput
           style={[styles.input, styles.passwordInput, { color: colors.textPrimary }]}
           placeholder={placeholder}
@@ -54,7 +54,7 @@ const AuthInput: React.FC<AuthInputProps> = ({
 
   return (
     <TextInput
-      style={[styles.input, { backgroundColor: colors.backgroundInput, borderColor: colors.border, color: colors.textPrimary }, containerStyle]}
+      style={[styles.input, { backgroundColor: colors.inputPinkBg, borderColor: colors.inputPinkBorder, color: colors.textPrimary }, containerStyle]}
       placeholder={placeholder}
       placeholderTextColor={colors.textMuted}
       keyboardType={keyboardType}

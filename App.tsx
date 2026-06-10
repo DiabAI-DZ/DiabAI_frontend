@@ -17,7 +17,9 @@ try {
 }
 
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { satoshiFonts, enableSatoshi } from './src/theme/fonts';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { UserProvider } from './src/context/UserContext';
 import { DataProvider } from './src/context/DataContext';
@@ -31,10 +33,18 @@ function ThemedStatusBar() {
   return <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={colors.background} />;
 }
 
+// Patch Text/TextInput to render in Satoshi. Done at module scope so the patch is in place
+// before any screen mounts; fonts still need to finish loading (gated in App below).
+enableSatoshi();
+
 export default function App() {
   // NOTE: The custom "Enable device alerts" pre-permission modal was removed. Push permission is
   // now requested via the standard OS dialog directly (pushNotifications.requestPushPermission
   // proceeds without a prompt handler), so no in-app overlay appears on Home/after login.
+  const [fontsLoaded] = useFonts(satoshiFonts);
+  // Hold rendering until Satoshi is available so the UI never flashes the system font first.
+  if (!fontsLoaded) return null;
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
