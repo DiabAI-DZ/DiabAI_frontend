@@ -82,12 +82,12 @@ const DateStrip: React.FC<DateStripProps> = ({
   const fromStr = dateFrom ? fmt(dateFrom) : null;
   const toStr = dateTo ? fmt(dateTo) : null;
 
-  // Keep the (start of the) range — or today — centred.
+  // Keep the END of the range (the selected day) — or the start, or today — centred.
   const focusIndex = useMemo(() => {
-    const target = startOfDay(dateFrom ?? new Date());
+    const target = startOfDay(dateTo ?? dateFrom ?? new Date());
     const ts = fmt(target);
     return dates.findIndex(d => fmt(d) === ts);
-  }, [dates, dateFrom]);
+  }, [dates, dateTo, dateFrom]);
 
   useEffect(() => {
     if (focusIndex < 0) return;

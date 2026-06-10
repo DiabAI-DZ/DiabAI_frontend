@@ -38,13 +38,14 @@ export function useInsightsData(isActive: boolean): InsightsDataResult {
   const [insulinEstimate, setInsulinEstimate] = useState<InsulinEstimate | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  // Insights window driven by the DateStrip range. Defaults to the 11-day window ending TODAY
-  // (today + the 10 days before it) so the strip opens pre-selected on that range.
+  // Insights window driven by the DateStrip range. Defaults to the 11-day window ending YESTERDAY
+  // (yesterday + the 10 days before it) so the strip opens pre-selected on that range.
   const [range, setRange] = useState<{ from: Date; to: Date } | null>(() => {
     const to = new Date();
-    to.setHours(0, 0, 0, 0); // today
+    to.setHours(0, 0, 0, 0);
+    to.setDate(to.getDate() - 1); // yesterday
     const from = new Date(to);
-    from.setDate(from.getDate() - 10); // 10 days before today
+    from.setDate(from.getDate() - 10); // 10 days before yesterday
     return { from, to };
   });
   // Ignore late async results WITHOUT cancelling the request (a prefetch must keep running).
