@@ -11,6 +11,7 @@ interface DataContextType {
   recommendations: any[];
   loading: boolean;
   refreshData: (period?: '7d' | '30d') => Promise<void>;
+  refreshAlerts: () => Promise<void>;
   addLog: (log: Omit<LogEntry, "id">) => Promise<void>;
   deleteLog: (id: number) => Promise<void>;
   markAlertRead: (id: number) => Promise<void>;
@@ -105,6 +106,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [logs]);
 
+  // Fetch just the alerts (used when entering the Notifications screen — always a fresh GET).
+  const refreshAlerts = useCallback(async () => {
+    try {
+      const alertsData = await apiService.fetchAlerts();
+      setAlerts(alertsData);
+    } catch (err) {
+      console.warn('DataContext: Failed to refresh alerts:', err);
+    }
+  }, []);
+
   const markAlertRead = useCallback(async (id: number) => {
     try {
       await apiService.markAlertRead(id);
@@ -117,8 +128,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const markAllAlertsRead = useCallback(async (): Promise<number> => {
     try {
       const marked = await apiService.markAllAlertsRead();
-      // Optimistically mark all in-memory alerts as read so UI updates immediately
-      setAlerts((prev) => prev.map(a => ({ ...a, read: true })));
+      // On success, clear the notifications from the front-end immediately (no refetch).
+      setAlerts([]);
       return marked;
     } catch (error) {
       console.error('DataContext: Failed to mark all alerts read:', error);
@@ -190,9 +201,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logs,
       alerts,
       recommendations,
-      loading, 
-      refreshData, 
-      addLog, 
+      loading,
+      refreshData,
+      refreshAlerts,
+      addLog,
       deleteLog,
       markAlertRead, 
       markAllAlertsRead,

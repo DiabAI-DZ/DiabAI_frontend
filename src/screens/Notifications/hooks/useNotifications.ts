@@ -21,8 +21,13 @@ interface UseNotificationsResult {
 
 /** Owns the notifications screen state: premium gate, severity grouping, unread count, actions. */
 export function useNotifications(): UseNotificationsResult {
-  const { alerts, markAlertRead, markAllAlertsRead } = useData();
+  const { alerts, markAlertRead, markAllAlertsRead, refreshAlerts } = useData();
   const { profile } = useUser();
+
+  // Always pull a fresh list of alerts when the screen is entered (it mounts per visit).
+  useEffect(() => {
+    refreshAlerts();
+  }, [refreshAlerts]);
 
   // Notifications is premium-only: opening as a free user pops the blocker over this screen.
   useEffect(() => {

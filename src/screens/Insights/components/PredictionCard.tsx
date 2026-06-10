@@ -6,6 +6,7 @@ import { useTheme } from '../../../context/ThemeContext';
 import { spacing } from '../../../theme/spacing';
 import { borderRadius } from '../../../theme/borderRadius';
 import { BRAND_RED_GRADIENT } from '../../../theme/colors';
+import { cardStyles } from './insightsStyles';
 
 // Brand-red decorative constants for the prediction card (Figma). These are intentional design
 // constants for the dark-red icon + banner text, NOT themeable tokens, so they live here as the
@@ -14,6 +15,8 @@ const PREDICTION = {
   iconBg: '#8B0000',
   bannerGradient: BRAND_RED_GRADIENT,
   bannerText: '#FFFFFF',
+  /** Muted white for the secondary first-line text (label + status + icon). */
+  bannerTextMuted: 'rgba(255,255,255,0.65)',
 } as const;
 
 type PredictionStatus = 'above_target' | 'in_range' | 'below_target';
@@ -53,26 +56,26 @@ const STATUS_TEXT: Record<PredictionStatus, string> = {
   below_target: 'Below target',
 };
 
-const StatusIcon: React.FC<{ status: PredictionStatus }> = ({ status }) => {
-  const color = PREDICTION.bannerText;
-  if (status === 'above_target') return <ArrowUpRight size={22} color={color} strokeWidth={2.5} />;
-  if (status === 'below_target') return <ArrowDownRight size={22} color={color} strokeWidth={2.5} />;
-  return <Check size={22} color={color} strokeWidth={2.5} />;
+const StatusIcon: React.FC<{ status: PredictionStatus; size?: number }> = ({ status, size = 16 }) => {
+  const color = PREDICTION.bannerTextMuted;
+  if (status === 'above_target') return <ArrowUpRight size={size} color={color} strokeWidth={2.5} />;
+  if (status === 'below_target') return <ArrowDownRight size={size} color={color} strokeWidth={2.5} />;
+  return <Check size={size} color={color} strokeWidth={2.5} />;
 };
 
 export const PredictionCard: React.FC<PredictionCardProps> = ({
   prediction, targetMin, targetMax, loading, error,
 }) => {
-  const { colors } = useTheme();
+  const { C, colors } = useTheme();
 
   const Header = (
-    <View style={styles.headerRow}>
+    <View style={cardStyles.sectionTitleRow}>
       <View style={[styles.headerIcon, { backgroundColor: PREDICTION.iconBg }]}>
-        <TrendingUp size={26} color={PREDICTION.bannerText} strokeWidth={2.5} />
+        <TrendingUp size={20} color={PREDICTION.bannerText} strokeWidth={2.2} />
       </View>
       <View style={styles.flex1}>
         <Text allowFontScaling={false} style={[styles.title, { color: colors.textPrimary }]}>Prediction</Text>
-        <Text allowFontScaling={false} style={[styles.subtitle, { color: colors.textSecondary }]}>AI-powered glucose forecast</Text>
+        <Text allowFontScaling={false} style={[cardStyles.sectionSubtitle, { color: C.textSm }]}>AI-powered glucose forecast</Text>
       </View>
     </View>
   );
@@ -80,8 +83,8 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
   // Loading skeleton — gray header circle + gray banner block.
   if (loading) {
     return (
-      <View style={[styles.card, { backgroundColor: colors.backgroundCard, shadowColor: colors.shadow }]}>
-        <View style={styles.headerRow}>
+      <View style={[cardStyles.card, cardStyles.cardPad, { backgroundColor: colors.backgroundCard, borderColor: C.redBorder, shadowColor: colors.shadow }]}>
+        <View style={cardStyles.sectionTitleRow}>
           <View style={[styles.headerIcon, { backgroundColor: colors.backgroundMuted }]} />
           <View style={styles.flex1}>
             <View style={[styles.skelLine, styles.skelTitle, { backgroundColor: colors.backgroundMuted }]} />
@@ -94,7 +97,7 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
   }
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.backgroundCard, shadowColor: colors.shadow }]}>
+    <View style={[cardStyles.card, cardStyles.cardPad, { backgroundColor: colors.backgroundCard, borderColor: C.redBorder, shadowColor: colors.shadow }]}>
       {Header}
 
       {error ? (
@@ -121,20 +124,22 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
               end={{ x: 1, y: 1 }}
               style={styles.banner}
             >
-              <Text allowFontScaling={false} numberOfLines={1} style={[styles.bannerLabel, { color: PREDICTION.bannerText }]}>
-                EXPECTED AT {formatTime(prediction.prediction_time)}
-              </Text>
+              <View style={styles.topRow}>
+                <Text allowFontScaling={false} numberOfLines={1} style={[styles.bannerLabel, { color: PREDICTION.bannerTextMuted }]}>
+                  EXPECTED AT {formatTime(prediction.prediction_time)}
+                </Text>
+                <View style={styles.statusRow}>
+                  <StatusIcon status={status} size={16} />
+                  <Text allowFontScaling={false} numberOfLines={1} style={[styles.statusText, { color: PREDICTION.bannerTextMuted }]}>
+                    {STATUS_TEXT[status]}
+                  </Text>
+                </View>
+              </View>
               <View style={styles.valueRow}>
                 <Text allowFontScaling={false} numberOfLines={1} style={[styles.value, { color: PREDICTION.bannerText }]}>
                   {prediction.predicted_value}
                 </Text>
                 <Text allowFontScaling={false} style={styles.unit}>{unit}</Text>
-              </View>
-              <View style={styles.statusRow}>
-                <StatusIcon status={status} />
-                <Text allowFontScaling={false} numberOfLines={1} style={[styles.statusText, { color: PREDICTION.bannerText }]}>
-                  {STATUS_TEXT[status]}
-                </Text>
               </View>
             </LinearGradient>
           );
@@ -146,31 +151,21 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.xxl,
-    padding: spacing.xl,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
-  },
 
-  // Header
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  headerIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 22, fontWeight: '700' },
-  subtitle: { fontSize: 15, fontWeight: '400', marginTop: 2 },
+  // Header (matches Patterns / What-You-Should-Do cards)
+  headerIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 18, fontWeight: '700' },
 
-  // Banner — compact, vertically stacked: label · value+unit · status
-  banner: { borderRadius: borderRadius.xl, paddingHorizontal: spacing.xl, paddingVertical: spacing.lg, marginTop: spacing.lg },
-  bannerCentered: { alignItems: 'center', justifyContent: 'center', minHeight: 112 },
-  bannerLabel: { fontSize: 14, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
+  // Banner — first line: label + status (small) · second line: value (a little big)
+  banner: { borderRadius: borderRadius.xl, paddingHorizontal: spacing.xl, paddingVertical: spacing.lg },
+  bannerCentered: { alignItems: 'center', justifyContent: 'center', minHeight: 96 },
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm },
+  bannerLabel: { fontSize: 13, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', flexShrink: 1 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0 },
+  statusText: { fontSize: 14, fontWeight: '600' },
   valueRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: spacing.sm },
-  value: { fontSize: 56, fontWeight: '800', lineHeight: 58 },
-  unit: { fontSize: 22, fontWeight: '400', color: 'rgba(255,255,255,0.85)', marginLeft: 8, marginBottom: 6 },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.md },
-  statusText: { fontSize: 20, fontWeight: '600' },
+  value: { fontSize: 40, fontWeight: '800', lineHeight: 44 },
+  unit: { fontSize: 18, fontWeight: '400', color: 'rgba(255,255,255,0.85)', marginLeft: 6, marginBottom: 4 },
   bannerEmptyText: { fontSize: 18, fontWeight: '600' },
 
   // Skeleton
